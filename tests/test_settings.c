@@ -26,19 +26,20 @@ int main(void)
     unsigned line = 0;
 
     odq_settings_defaults(&settings);
-    if (!settings.auto_tsr || !settings.confirm_exit ||
+    if (!settings.auto_tsr || !settings.auto_ansi || !settings.confirm_exit ||
         !settings.reload_catalog || !settings.show_memory ||
         !settings.hotkey_launch || !settings.quick_help)
         fail("defaults are incorrect");
 
     write_text("build/test-settings.ini",
-               "# test\nAUTO_TSR=no\nCONFIRM_EXIT=0\n"
+               "# test\nAUTO_TSR=no\nAUTO_ANSI=0\nCONFIRM_EXIT=0\n"
                "RELOAD_CATALOG=yes\nSHOW_MEMORY=no\n"
                "HOTKEY_LAUNCH=yes\nQUICK_HELP=no\n");
     if (odq_settings_load("build/test-settings.ini", &settings, &line) !=
         ODQ_SETTINGS_OK)
         fail("valid settings rejected");
-    if (settings.auto_tsr || settings.confirm_exit || settings.show_memory ||
+    if (settings.auto_tsr || settings.auto_ansi || settings.confirm_exit ||
+        settings.show_memory ||
         settings.quick_help || !settings.reload_catalog ||
         !settings.hotkey_launch)
         fail("valid settings parsed incorrectly");
@@ -50,7 +51,8 @@ int main(void)
         ODQ_SETTINGS_OK || memcmp(&settings, &loaded, sizeof(settings)) != 0)
         fail("settings did not round-trip");
     if (odq_settings_load("build/test-settings.BAK", &loaded, &line) !=
-        ODQ_SETTINGS_OK || loaded.auto_tsr != 0 || loaded.quick_help != 0)
+        ODQ_SETTINGS_OK || loaded.auto_tsr != 0 || loaded.auto_ansi != 0 ||
+        loaded.quick_help != 0)
         fail("settings backup was not retained");
 
     write_text("build/test-settings-bad.ini",
@@ -59,7 +61,8 @@ int main(void)
     if (odq_settings_load("build/test-settings-bad.ini", &loaded, &line) !=
         ODQ_SETTINGS_SYNTAX || line != 2)
         fail("unknown setting accepted");
-    if (!loaded.auto_tsr || !loaded.confirm_exit || !loaded.quick_help)
+    if (!loaded.auto_tsr || !loaded.auto_ansi || !loaded.confirm_exit ||
+        !loaded.quick_help)
         fail("partial invalid settings escaped instead of defaults");
 
     write_text("build/test-settings-bool.ini", "AUTO_TSR=maybe\n");

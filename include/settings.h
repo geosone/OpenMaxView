@@ -4,6 +4,7 @@
 
 typedef struct odq_settings {
     unsigned auto_tsr;
+    unsigned auto_ansi;
     unsigned confirm_exit;
     unsigned reload_catalog;
     unsigned show_memory;

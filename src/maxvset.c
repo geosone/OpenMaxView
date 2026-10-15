@@ -8,10 +8,11 @@
 #include "mvui.h"
 #include "settings.h"
 
-#define OPTION_COUNT 6
+#define OPTION_COUNT 7
 
 static const char *option_names[OPTION_COUNT] = {
     "Load resident API automatically",
+    "Load ANSI console automatically",
     "Confirm before leaving MaxView",
     "Reload program catalogue after a child",
     "Show memory limits in program list",
@@ -23,10 +24,11 @@ static unsigned *option_value(odq_settings *settings, unsigned index)
 {
     switch (index) {
     case 0: return &settings->auto_tsr;
-    case 1: return &settings->confirm_exit;
-    case 2: return &settings->reload_catalog;
-    case 3: return &settings->show_memory;
-    case 4: return &settings->hotkey_launch;
+    case 1: return &settings->auto_ansi;
+    case 2: return &settings->confirm_exit;
+    case 3: return &settings->reload_catalog;
+    case 4: return &settings->show_memory;
+    case 5: return &settings->hotkey_launch;
     default: return &settings->quick_help;
     }
 }
@@ -35,10 +37,11 @@ static unsigned option_enabled(const odq_settings *settings, unsigned index)
 {
     switch (index) {
     case 0: return settings->auto_tsr;
-    case 1: return settings->confirm_exit;
-    case 2: return settings->reload_catalog;
-    case 3: return settings->show_memory;
-    case 4: return settings->hotkey_launch;
+    case 1: return settings->auto_ansi;
+    case 2: return settings->confirm_exit;
+    case 3: return settings->reload_catalog;
+    case 4: return settings->show_memory;
+    case 5: return settings->hotkey_launch;
     default: return settings->quick_help;
     }
 }
@@ -148,6 +151,7 @@ static int interactive(const char *path)
 static void print_settings(const odq_settings *settings)
 {
     printf("AUTO_TSR=%s\n", settings->auto_tsr ? "YES" : "NO");
+    printf("AUTO_ANSI=%s\n", settings->auto_ansi ? "YES" : "NO");
     printf("CONFIRM_EXIT=%s\n", settings->confirm_exit ? "YES" : "NO");
     printf("RELOAD_CATALOG=%s\n",
            settings->reload_catalog ? "YES" : "NO");

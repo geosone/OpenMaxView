@@ -25,6 +25,8 @@
 #define ATTR_ACTIVE       0x3f  /* FG_WHITE   | BG_CYAN  */
 #define ATTR_TRIGGER      0x34  /* FG_RED     | BG_CYAN  */
 #define ATTR_SHADOW       0x08
+#define MAXVANSI_MUX_QUERY     0xd710
+#define MAXVANSI_MUX_SIGNATURE 0x4e41
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
 
@@ -135,6 +137,15 @@ static int odq_resident(void)
     return outregs.x.bx == ODQ_MUX_SIGNATURE;
 }
 
+static int ansi_resident(void)
+{
+    union REGS inregs, outregs;
+    inregs.x.ax = MAXVANSI_MUX_QUERY;
+    inregs.x.bx = 0;
+    int86(0x2f, &inregs, &outregs);
+    return outregs.x.bx == MAXVANSI_MUX_SIGNATURE;
+}
+
 static void reset_resident_state(void)
 {
     union REGS inregs, outregs;
@@ -207,7 +218,7 @@ static void show_desktop(const odq_catalog *catalog, unsigned selected,
     write_at(0, 25, "Help", ATTR_MENU);
     put_cell(0, 25, 'H', ATTR_MENU_TRIGGER);
     fill(0, 60, 0, 79, ' ', ATTR_DATA);
-    write_at(0, 62, "Open MaxView 0.7", ATTR_DATA);
+    write_at(0, 62, "Open MaxView 0.8", ATTR_DATA);
     shadow(0, 60, 0, 79);
 
     fill(2, 1, 21, 52, ' ', ATTR_DATA);
@@ -289,7 +300,7 @@ static void show_diagnostics(void)
         write_at(13, 12, "Open 386MAX MaxView backend: not detected",
                  ATTR_ACTIVE);
     }
-    write_at(16, 12, "0.7 mode: configurable foreground environment",
+    write_at(16, 12, "0.8 mode: configurable foreground environment",
              ATTR_ACTIVE);
     write_at(18, 12, "Press any key to return.", ATTR_ACTIVE);
     getch();
@@ -322,6 +333,20 @@ static void reload_settings(odq_settings *settings)
 {
     if (odq_settings_load("MAXVSET.INI", settings, NULL) != ODQ_SETTINGS_OK)
         odq_settings_defaults(settings);
+}
+
+static void apply_resident_services(const odq_settings *settings, char *status)
+{
+    if (settings->auto_tsr && !odq_resident()) {
+        system("MAXVTSR.COM >NUL");
+        if (odq_resident())
+            strcpy(status, "Resident compatibility API installed.");
+    }
+    if (settings->auto_ansi && !ansi_resident()) {
+        system("MAXVANSI.COM >NUL");
+        if (ansi_resident())
+            strcpy(status, "ANSI console service installed.");
+    }
 }
 
 static void reload_catalog_after_child(odq_catalog *catalog,
@@ -386,11 +411,7 @@ int main(void)
 
     reload_settings(&settings);
 
-    if (settings.auto_tsr && !odq_resident()) {
-        system("MAXVTSR.COM >NUL");
-        if (odq_resident())
-            strcpy(status, "Resident compatibility API installed.");
-    }
+    apply_resident_services(&settings, status);
     initialise_video();
 
     for (;;) {
@@ -421,6 +442,7 @@ int main(void)
         if (key == 13 && catalog.count != 0) {
             launch(&catalog.programs[selected], status);
             reload_settings(&settings);
+            apply_resident_services(&settings, status);
             reload_catalog_after_child(&catalog, &selected, &settings);
             continue;
         }
@@ -431,6 +453,7 @@ int main(void)
                     selected = index;
                     launch(&catalog.programs[selected], status);
                     reload_settings(&settings);
+                    apply_resident_services(&settings, status);
                     reload_catalog_after_child(&catalog, &selected, &settings);
                     break;
                 }

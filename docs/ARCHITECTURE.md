@@ -22,7 +22,7 @@ on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
 next launch.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
-contains no memory-manager logic.  In 0.7 it launches a child through DOS and
+contains no memory-manager logic.  In 0.8 it launches a child through DOS and
 regains control when that child exits.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
@@ -40,11 +40,11 @@ VCPI and the versioned Open 386MAX backend interface.  It reports unavailable
 data explicitly instead of deriving unsupported VM state from legacy APIs.
 
 `MAXVSET.EXE` maintains the separate `MAXVSET.INI` global preference file.
-Every exposed setting has a current launcher consumer: TSR autoload, exit
-confirmation, post-child catalogue reload, memory-column visibility, hotkey
-launching and Quick Help visibility.  VM scheduling, swapping, private memory,
-video/I/O and interrupt options remain absent while backend ABI 1.0 exposes
-only its read-only status capability.
+Every exposed setting has a current launcher consumer: resident-API and ANSI
+autoload, exit confirmation, post-child catalogue reload, memory-column
+visibility, hotkey launching and Quick Help visibility.  VM scheduling,
+swapping, private memory, video/I/O and interrupt options remain absent while
+backend ABI 1.0 exposes only its read-only status capability.
 
 `MAXVAUTO.EXE` provides clean-room automatic program setup.  Its declarative
 `MAXVAUTO.DAT` database maps DOS 8.3 filenames to catalogue records.  The

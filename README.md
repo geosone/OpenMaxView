@@ -10,7 +10,7 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.7
+## Current milestone: 0.8
 
 This first runnable milestone provides:
 
@@ -36,7 +36,7 @@ This first runnable milestone provides:
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.7 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.8 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -98,7 +98,7 @@ DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
-Version 0.7 validates its private ABI and reports the root-context status.  It
+Version 0.8 validates its private ABI and reports the root-context status.  It
 does not claim or request multiple VM services until Open 386MAX advertises
 the corresponding capability.
 
@@ -110,7 +110,7 @@ Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
 hotkey|title|command|working-directory|min-kb|max-kb
 ```
 
-The working directory may be empty.  Memory values are advisory in 0.7 and
+The working directory may be empty.  Memory values are advisory in 0.8 and
 will become enforced limits when the VM backend lands.
 
 `MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
@@ -133,11 +133,12 @@ Open 386MAX backend.  Values which cannot be measured safely are shown as
 
 `MAXVSET.EXE` edits launcher-local preferences in `MAXVSET.INI`.  The distinct
 basename prevents its `.NEW` and `.BAK` files from colliding with catalogue
-updates.  The current options control resident-API autoload, exit confirmation,
-catalogue reload after children, memory-limit display, program hotkeys and the
-Quick Help text.  Scheduler, swapping and per-VM settings are deliberately not
-offered until the Open 386MAX backend advertises those capabilities.  For
-automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and optional `/F:file`.
+updates.  The current options control resident-API and ANSI-console autoload,
+exit confirmation, catalogue reload after children, memory-limit display,
+program hotkeys and the Quick Help text.  Scheduler, swapping and per-VM
+settings are deliberately not offered until the Open 386MAX backend advertises
+those capabilities.  For automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and
+optional `/F:file`.
 
 `MAXVAUTO.EXE` detects known DOS programs in the current directory and every
 directory on `PATH`.  The interactive screen lets the user select discoveries

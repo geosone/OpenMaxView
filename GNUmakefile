@@ -224,6 +224,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
 	rg -q 'MAX_ABI=1.0' $(BUILD)/MEMMAX.TXT
 	rg -q 'settings valid' $(BUILD)/SETCHK.TXT
 	rg -q 'AUTO_TSR=YES' $(BUILD)/SETLIST.TXT
+	rg -q 'AUTO_ANSI=YES' $(BUILD)/SETLIST.TXT
 	rg -q 'valid detection rule' $(BUILD)/AUTOCHEC.TXT
 	rg -q 'EDIT.COM|DOS text editor|C:\\BUILD\\AUTOTEST' $(BUILD)/AUTOSCAN.TXT
 	rg -q 'added 1 program' $(BUILD)/AUTOAPLY.TXT

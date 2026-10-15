@@ -44,6 +44,7 @@ static int parse_boolean(const char *text, unsigned *value)
 void odq_settings_defaults(odq_settings *settings)
 {
     settings->auto_tsr = 1;
+    settings->auto_ansi = 1;
     settings->confirm_exit = 1;
     settings->reload_catalog = 1;
     settings->show_memory = 1;
@@ -84,6 +85,8 @@ int odq_settings_load(const char *path, odq_settings *settings,
         value = trim(separator + 1);
         if (equal_text(name, "AUTO_TSR"))
             destination = &parsed.auto_tsr;
+        else if (equal_text(name, "AUTO_ANSI"))
+            destination = &parsed.auto_ansi;
         else if (equal_text(name, "CONFIRM_EXIT"))
             destination = &parsed.confirm_exit;
         else if (equal_text(name, "RELOAD_CATALOG"))
@@ -138,6 +141,8 @@ int odq_settings_save(const char *path, const odq_settings *settings)
         return ODQ_SETTINGS_IO;
     fputs("# Open MaxView global settings version 1\n", stream);
     fprintf(stream, "AUTO_TSR=%s\n", settings->auto_tsr ? "YES" : "NO");
+    fprintf(stream, "AUTO_ANSI=%s\n",
+            settings->auto_ansi ? "YES" : "NO");
     fprintf(stream, "CONFIRM_EXIT=%s\n",
             settings->confirm_exit ? "YES" : "NO");
     fprintf(stream, "RELOAD_CATALOG=%s\n",
