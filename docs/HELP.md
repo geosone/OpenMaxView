@@ -54,8 +54,8 @@ keeps the previous catalogue as `MAXVIEW.BAK`.
 
 `MAXVDVP PROGRAM.DVP` validates and previews an existing DVP before importing
 its launch fields. The source is never changed. Advanced serial, scheduler
-and virtual-machine fields remain visible through `/LIST` for later 1.x
-migration.
+and virtual-machine fields remain visible through `/LIST` and are retained in
+the versioned catalogue profile for later 1.x enforcement.
 
 `MAXVAUTO` compares filenames in the current directory and `PATH` with rules
 in `MAXVAUTO.DAT`. `/R:directory` adds a recursive root. Detection never

@@ -244,10 +244,10 @@ static int interactive(const dvp_info *info, const char *catalog_path,
     mvui_write(4, 64, "Quick Help", MVUI_QUICK_HIGH);
     mvui_write(7, 64, "Enter imports", MVUI_QUICK);
     mvui_write(9, 64, "Esc cancels", MVUI_QUICK);
-    mvui_write(12, 64, "Advanced DVP", MVUI_QUICK_HIGH);
-    mvui_write(13, 64, "fields remain", MVUI_QUICK);
-    mvui_write(14, 64, "documented", MVUI_QUICK);
-    mvui_write(15, 64, "for 1.x.", MVUI_QUICK);
+    mvui_write(12, 64, "DVP profile", MVUI_QUICK_HIGH);
+    mvui_write(13, 64, "is retained", MVUI_QUICK);
+    mvui_write(14, 64, "for later 1.x", MVUI_QUICK);
+    mvui_write(15, 64, "enforcement.", MVUI_QUICK);
     mvui_button(24, 2, 15, "Cancel Esc");
     mvui_button(24, 20, 18, "Import Enter");
     for (;;) {

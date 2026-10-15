@@ -141,5 +141,22 @@ int dvp_make_program(const dvp_info *info, char hotkey,
     }
     program->min_kb = info->min_kb;
     program->max_kb = info->max_kb;
+    program->profile.version = ODQ_PROFILE_VERSION;
+    program->profile.source_version = info->version;
+    program->profile.system_kb = info->system_kb;
+    program->profile.script_bytes = info->script_bytes;
+    program->profile.idle_polls = info->idle_polls;
+    program->profile.max_ems_kb = info->max_ems_kb;
+    program->profile.extra_system = info->extra_system;
+    program->profile.rows = info->rows;
+    program->profile.columns = info->columns;
+    program->profile.text_pages = info->text_pages;
+    program->profile.graphics_pages = info->graphics_pages;
+    program->profile.serial_ports = info->serial_ports;
+    program->profile.protection = info->protection;
+    program->profile.flags1 = info->flags1;
+    program->profile.flags2 = info->flags2;
+    program->profile.flags3 = info->flags3;
+    program->profile.flags4 = info->flags4;
     return odq_program_valid(program) ? DVP_OK : DVP_INVALID;
 }

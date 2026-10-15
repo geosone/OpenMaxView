@@ -345,6 +345,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'imported Sample editor as hotkey Q' $(BUILD)/DVPIMP.TXT
 	rg -q 'valid program' $(BUILD)/DVPCAT.TXT
 	rg -q 'Q|Sample editor|C:\\DOS\\EDIT.COM NOTES.TXT|C:\\WORK|192|640' $(BUILD)/DVPREC.TXT
+	rg -q '192|640|1|2|4|1000|7|2048|8|25|80|2|1|3|154|18|52|86|120' $(BUILD)/DVPREC.TXT
 	cmp $(BUILD)/FILETEST/OTHER.BIN $(BUILD)/FILETEST/COPY.BIN
 	test ! -f '$(BUILD)/FILETEST/COPY.$$MV'
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \

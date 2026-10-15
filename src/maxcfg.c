@@ -143,6 +143,9 @@ static int edit_program(odq_catalog *catalog, unsigned index, int adding,
     mvui_write(11, 11, "Directory", MVUI_ACTIVE);
     mvui_write(13, 11, "Minimum KB", MVUI_ACTIVE);
     mvui_write(15, 11, "Maximum KB (0=unlimited)", MVUI_ACTIVE);
+    if (work.profile.version != 0)
+        mvui_write(17, 11, "Imported process profile is preserved.",
+                   MVUI_DATA_HIGH);
     mvui_write(18, 11, "Enter accepts each field; Esc cancels.", MVUI_ACTIVE);
 
     if (!input_field(5, 38, 1, hotkey, sizeof(hotkey)) ||
@@ -311,9 +314,22 @@ int main(int argc, char **argv)
     if (list)
         for (item = 0; item < catalog.count; ++item) {
             odq_program *program = &catalog.programs[item];
-            printf("%c|%s|%s|%s|%u|%u\n", program->hotkey,
+            printf("%c|%s|%s|%s|%u|%u", program->hotkey,
                    program->title, program->command, program->directory,
                    program->min_kb, program->max_kb);
+            if (program->profile.version != 0) {
+                odq_process_profile *profile = &program->profile;
+                printf("|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u|%u",
+                       profile->version, profile->source_version,
+                       profile->system_kb, profile->script_bytes,
+                       profile->idle_polls, profile->max_ems_kb,
+                       profile->extra_system, profile->rows,
+                       profile->columns, profile->text_pages,
+                       profile->graphics_pages, profile->serial_ports,
+                       profile->protection, profile->flags1,
+                       profile->flags2, profile->flags3, profile->flags4);
+            }
+            putchar('\n');
         }
     else
         printf("MAXVAPP: %u valid program(s)\n", catalog.count);

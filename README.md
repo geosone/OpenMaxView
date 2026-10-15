@@ -34,7 +34,8 @@ This first runnable milestone provides:
 * `MAXVANSI.COM`, a compact resident ANSI console for foreground DOS output;
 * `MAXVDVP.EXE`, a validated DESQview `.DVP` inspector and catalogue importer;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
-* a plain-text, versioned program-description format (`MAXVIEW.CFG`);
+* a plain-text, versioned program-description format (`MAXVIEW.CFG`) which
+  retains advanced DVP process profiles without claiming they are enforced;
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
@@ -132,7 +133,7 @@ the corresponding capability.
 
 ## Program catalogue
 
-Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
+Each non-comment line in `MAXVIEW.CFG` starts with six pipe-separated fields:
 
 ```text
 hotkey|title|command|working-directory|min-kb|max-kb
@@ -140,6 +141,9 @@ hotkey|title|command|working-directory|min-kb|max-kb
 
 The working directory may be empty.  Memory values are advisory in 0.8 and
 will become enforced limits when the VM backend lands.
+
+DVP imports append the versioned scheduler, video, EMS, serial and protection
+profile documented in `CONFIG.TXT`. Six-field records remain valid.
 
 `MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
 launcher.  For scripts and diagnostics, `MAXVAPP /CHECK` validates it and

@@ -6,8 +6,8 @@ use `.NEW` and `.BAK` files so an update does not overwrite the only copy.
 
 ## MAXVIEW.CFG
 
-The version-1 program catalogue contains at most 24 records. Each record has
-six pipe-separated fields:
+The version-2 program catalogue contains at most 24 records. Every record
+starts with the six fields used by version 1:
 
 ```text
 hotkey|title|command|working-directory|min-kb|max-kb
@@ -26,6 +26,23 @@ E|Text editor|EDIT.COM C:\AUTOEXEC.BAT|C:\|192|640
 ```
 
 Use `MAXVAPP /CHECK` after hand editing.
+
+An imported DVP appends a versioned process profile:
+
+```text
+|profile-version|source-version|system-kb|script-bytes|idle-polls|
+max-ems-kb|extra-system|rows|columns|text-pages|graphics-pages|
+serial-ports|protection|flags1|flags2|flags3|flags4
+```
+
+The display above wraps the definition for readability; one catalogue record
+always occupies one physical line.
+
+These fields retain the decoded scheduler, video, EMS, serial and protection
+requirements even before every capability can be enforced. Profile version 1
+is currently defined. Six-field version-1 records remain valid and are saved
+unchanged unless a profile is attached. Unknown profile versions and values
+outside their byte-sized DVP ranges are rejected rather than guessed.
 
 ## MAXVSET.INI
 
@@ -76,8 +93,9 @@ maps these values plus the menu key and conventional-memory limits into a new
 catalogue record. The source file is opened read-only.
 
 DESQview-specific script-buffer, idle-poll, text/graphics-page, EMS,
-serial-port and protection fields are decoded for `/LIST`. They are not stored
-in the version-1 catalogue because the foreground launcher cannot enforce
-them. A later versioned process descriptor will retain them when the matching
-1.x scheduler and VM capabilities exist. The serial fields and safe migration
-rules are specified in [Serial and BBS design guide](SERIAL_BBS.md).
+serial-port and protection fields are decoded for `/LIST` and retained in the
+catalogue's version-1 process profile during import. The foreground launcher
+does not yet enforce them; each field becomes active only with its matching
+1.x scheduler or VM capability. `MAXVAPP` preserves the profile while editing
+the basic launch fields. The serial fields and safe migration rules are
+specified in [Serial and BBS design guide](SERIAL_BBS.md).

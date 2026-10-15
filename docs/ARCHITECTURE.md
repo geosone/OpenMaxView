@@ -92,8 +92,10 @@ Open 386MAX video-virtualisation boundary.
 `MAXVDVP.EXE` and the host-testable `dvp` module parse the documented binary
 TopView/DESQview program-information layout without using Quarterdeck code.
 The parser validates the base checksum and bounded ASCIZ fields. Import maps
-only fields represented by the open catalogue; it exposes advanced DVP values
-for diagnostics rather than pretending that foreground mode enforces them.
+launch fields into the open catalogue and retains scheduler, video, EMS,
+serial, protection and raw flag values in a versioned process profile. The
+profile is durable but not treated as enforced until the corresponding
+backend capability exists.
 
 The shared 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,
@@ -134,7 +136,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
 | Concurrent V86 tasks | planned | Requires Open 386MAX extension |
 | Per-task video and I/O | planned | Requires page mapping and port traps |
-| `.DVP` import | basic fields implemented | Advanced VM/scheduler fields decoded but not enforced |
+| `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
 
 ## VM-backend contract (planned)
 

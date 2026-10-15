@@ -30,9 +30,10 @@ once before starting the launcher.
 
 ## A program is absent or the catalogue is rejected
 
-Run `MAXVAPP /CHECK`. Verify that every non-comment record has six fields,
-unique one-character hotkeys, a nonempty title and command, and valid memory
-limits. Use `MAXVAPP` for repair. If the latest save was interrupted, compare
+Run `MAXVAPP /CHECK`. Verify that every non-comment record has either the six
+base fields or all fields of the documented process profile, a unique
+one-character hotkey, a nonempty title and command, and valid memory limits.
+Use `MAXVAPP` for repair. If the latest save was interrupted, compare
 `MAXVIEW.CFG`, `MAXVIEW.BAK` and `MAXVIEW.NEW` before choosing a copy.
 
 ## Automatic setup finds nothing

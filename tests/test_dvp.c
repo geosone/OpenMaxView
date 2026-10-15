@@ -30,12 +30,20 @@ static void make_sample(const char *path, int valid_checksum)
     data[0xe9] = 25;
     data[0xea] = 80;
     put_word(data, 0xed, 4);
+    data[0x16f] = 0x12;
+    data[0x170] = 0x34;
     data[0x171] = 'E';
     data[0x172] = 'D';
     put_word(data, 0x173, 1000);
+    put_word(data, 0x175, 7);
     data[0x17e] = 2;
     put_word(data, 0x182, 2048);
+    data[0x184] = 0x56;
     data[0x186] = 1;
+    put_word(data, 0x187, 8);
+    data[0x18a] = 3;
+    data[0x18b] = 0x78;
+    data[0x18c] = 0x9a;
     for (index = 2; index <= 0x170; ++index)
         checksum = (checksum + data[index]) & 0xff;
     data[1] = (unsigned char)(valid_checksum ? checksum : checksum + 1);
@@ -66,6 +74,22 @@ int main(int argc, char **argv)
     assert(strcmp(program.directory, "C:\\WORK") == 0);
     assert(strcmp(program.command,
                   "C:\\DOS\\EDIT.COM NOTES.TXT") == 0);
+    assert(program.profile.version == ODQ_PROFILE_VERSION);
+    assert(program.profile.source_version == 2);
+    assert(program.profile.system_kb == 4);
+    assert(program.profile.script_bytes == 1000);
+    assert(program.profile.idle_polls == 7);
+    assert(program.profile.max_ems_kb == 2048);
+    assert(program.profile.extra_system == 8);
+    assert(program.profile.rows == 25 && program.profile.columns == 80);
+    assert(program.profile.text_pages == 2 &&
+           program.profile.graphics_pages == 1);
+    assert(program.profile.serial_ports == 3);
+    assert(program.profile.protection == 0x9a);
+    assert(program.profile.flags1 == 0x12 &&
+           program.profile.flags2 == 0x34 &&
+           program.profile.flags3 == 0x56 &&
+           program.profile.flags4 == 0x78);
 
     make_sample(path, 0);
     assert(dvp_load(path, &info) == DVP_CHECKSUM);

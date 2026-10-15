@@ -131,6 +131,6 @@ Serial/BBS support is ready only after tests demonstrate:
 * stable counters after injected overruns;
 * a multi-node BBS soak test lasting several hours.
 
-Until then, serial fields remain visible migration data rather than a
+Until then, serial fields remain retained migration data rather than a runtime
 compatibility claim.
 
