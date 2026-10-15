@@ -161,7 +161,9 @@ the same 386MAX-inspired colours, panes, double borders, shadows and command
 buttons as the rest of Open MaxView.  `MAXVMEM /T` emits testable key/value
 status for DOS conventional memory, EMS, XMS, the resident API, VCPI and the
 Open 386MAX backend.  Values which cannot be measured safely are shown as
-`N/A`; the tool does not pretend that ABI 1.0 supplies multiple V86 contexts.
+`N/A`. With a current Open 386MAX it also reports the QPI version and active
+page-table frame; those facts do not by themselves mean that a scheduler is
+running.
 
 `MAXVSET.EXE` edits launcher-local preferences in `MAXVSET.INI`.  The distinct
 basename prevents its `.NEW` and `.BAK` files from colliding with catalogue

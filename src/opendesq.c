@@ -296,6 +296,13 @@ static void show_diagnostics(void)
         sprintf(line, "Backend contexts: %u active, limit %u",
                 backend.active_contexts, backend.context_limit);
         write_at(14, 12, line, ATTR_ACTIVE);
+        if (backend.qpi_version != 0) {
+            sprintf(line, "QPI %u.%u, active page table %04X",
+                    backend.qpi_version >> 8,
+                    backend.qpi_version & 0xff,
+                    backend.qpi_context);
+            write_at(15, 12, line, ATTR_ACTIVE);
+        }
     } else {
         write_at(13, 12, "Open 386MAX MaxView backend: not detected",
                  ATTR_ACTIVE);

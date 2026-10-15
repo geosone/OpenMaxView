@@ -16,8 +16,8 @@ hotkey|title|command|working-directory|min-kb|max-kb
 The hotkey is one unique printable letter. Title and command are required.
 The working directory may be empty. Minimum and maximum memory are decimal
 kilobytes, with the minimum not exceeding the maximum. In milestone 0.8 the
-memory values are displayed and advisory; a future multi-context backend will
-enforce them.
+memory values are displayed and advisory; the future MaxView scheduler will
+enforce them through the available QPI context backend.
 
 Example:
 

@@ -47,13 +47,16 @@ contents. Existing catalogue commands are intentionally filtered out.
 Milestone 0.8 works as a foreground launcher without it. Backend discovery
 requires a compatible Open 386MAX development build exposing the versioned
 ABI. EMS, XMS or VCPI presence alone does not imply this ABI. Use
-`MAXVMEM /T` and `DVPROBE` for stable diagnostics.
+`MAXVMEM /T` and `DVPROBE` for stable diagnostics. A current build also emits
+the QPI version and active page-table frame; zero or absent QPI data is not
+treated as context support.
 
 ## Programs do not run concurrently
 
 This is the expected 0.8 limitation, not a configuration error. The launcher
-uses DOS EXEC and waits for the child. Concurrent V86 tasks require the
-planned Open 386MAX multi-context backend and are part of the 1.x target.
+uses DOS EXEC and waits for the child. Open 386MAX now supplies the QPI
+context, IRQ, timer and trap primitives, but MaxView's task-state manager and
+scheduler are still part of the 1.x target.
 
 ## ANSI sequences are printed or ignored
 

@@ -33,7 +33,8 @@ checks:
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `LOCATE`/`GETBUF`,
   `PROCESSMEM`, foreground `PUSHKEY` and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
-* absent and stubbed Open 386MAX backend reporting;
+* absent and stubbed Open 386MAX backend reporting, including QPI version and
+  active page-table frame;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;
 * duplicate-free automatic application;

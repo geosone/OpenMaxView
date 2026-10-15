@@ -19,8 +19,9 @@ Further 0.x work should land in independently testable slices:
    scheduler, video, serial and protection enforcement as backend capabilities
    land.
 3. Add cooperative execution primitives for Open MaxView-aware tasks.
-4. Specify, implement and test Open 386MAX VM create/destroy, register state,
-   memory maps, virtual interrupts, video and I/O trapping.
+4. Wrap and test Open 386MAX QPI context allocation/switching, memory maps,
+   virtual interrupts, timer, video and I/O trapping; implement register state
+   in MaxView where QPI deliberately leaves it to the V86 scheduler.
 5. Add scheduling, per-task DOS state, task switching and true local windows.
 6. Add serial ownership, UART I/O trapping, virtual IRQ delivery and a FOSSIL
    path; validate sustained background BBS transfers.

@@ -647,9 +647,12 @@ int main(void)
     int86(0x2f, &inregs, &outregs);
 
     if (odq_max_backend_query(&backend))
-        printf("Open 386MAX backend ABI %u.%u, %u/%u contexts.\n",
+        printf("Open 386MAX backend ABI %u.%u, %u/%u contexts, "
+               "QPI %u.%u, table %04X.\n",
                backend.abi_version >> 8, backend.abi_version & 0xff,
-               backend.active_contexts, backend.context_limit);
+               backend.active_contexts, backend.context_limit,
+               backend.qpi_version >> 8, backend.qpi_version & 0xff,
+               backend.qpi_context);
     else
         puts("Open 386MAX backend not detected (foreground mode).");
     return 0;

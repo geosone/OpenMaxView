@@ -36,6 +36,10 @@ int2f_chain:
         jmp     dword ptr cs:old2f
 
 qpi_entry:
+        cmp     ax,0300h
+        je      short qpi_version
+        cmp     ax,0700h
+        je      short qpi_context
         cmp     ax,4D00h
         je      short qpi_query
         cmp     ax,4D01h
@@ -55,6 +59,15 @@ qpi_status:
         mov     bx,0001h
         mov     cx,0002h
         mov     dx,0004h
+        clc
+        retf
+qpi_version:
+        mov     ax,0703h
+        mov     bx,ax
+        clc
+        retf
+qpi_context:
+        mov     dx,1234h
         clc
         retf
 

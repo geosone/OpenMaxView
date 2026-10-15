@@ -24,11 +24,11 @@
 | Automatic setup | Implemented | Filename-rule scan; no binary inspection. |
 | Settings, file and memory tools | Implemented | Current foreground-safe features only. |
 | ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
-| Open 386MAX backend | Discovery/status only | ABI 1.0 has no multi-context capability. |
+| Open 386MAX backend | Discovery/status plus QPI observation | Private ABI 1.0 identifies the provider; QPI version and active page table are queried without changing state. |
 | `.DVP` compatibility | Versioned import implemented | Launch and advanced task fields persist; advanced enforcement awaits backend support. |
 | Objects, panels, mailboxes, timers | Planned for 1.x | Must be independently specified and tested. |
-| Concurrent V86 tasks and scheduler | Planned for 1.x | Requires the new Open 386MAX contract. |
-| Per-task video, keyboard and I/O | Planned for 1.x | Requires context isolation and traps. |
+| Concurrent V86 tasks and scheduler | Planned for 1.x | QPI context/IRQ primitives exist; MaxView register, DOS-state and scheduling code is still required. |
+| Per-task video, keyboard and I/O | Planned for 1.x | QPI mapping and trap primitives exist; MaxView integration is still required. |
 | Remote viewing | Deferred to 2.x | No remote code is present in 0.8 or the 1.x goal. |
 
 ## Meaning of the version lines

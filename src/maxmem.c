@@ -223,6 +223,12 @@ static void print_text(const memory_status *status)
         printf("MAX_CAPS=%04X\n", status->backend.capabilities);
         printf("MAX_CONTEXTS=%u/%u\n", status->backend.active_contexts,
                status->backend.context_limit);
+        if (status->backend.qpi_version != 0) {
+            printf("MAX_QPI=%u.%u\n", status->backend.qpi_version >> 8,
+                   status->backend.qpi_version & 0xff);
+            printf("MAX_QPI_CONTEXT=%04X\n",
+                   status->backend.qpi_context);
+        }
     }
 }
 
@@ -297,8 +303,14 @@ static void draw(const memory_status *status)
     else
         strcpy(line, "Open 386MAX MaxView backend: not detected");
     mvui_write(18, 9, line, MVUI_ACTIVE);
-    mvui_write(19, 9, "Multiple V86 contexts: not available in ABI 1.0",
-               MVUI_ACTIVE);
+    if (status->backend_present && status->backend.qpi_version != 0)
+        sprintf(line, "QPI %u.%u active page table %04X",
+                status->backend.qpi_version >> 8,
+                status->backend.qpi_version & 0xff,
+                status->backend.qpi_context);
+    else
+        strcpy(line, "QPI context interface: unavailable");
+    mvui_write(19, 9, line, MVUI_ACTIVE);
     mvui_button(24, 1, 12, "Exit Esc");
     mvui_button(24, 15, 14, "Refresh F5");
 }

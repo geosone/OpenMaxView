@@ -85,15 +85,19 @@ preferences.
 independently implemented equivalent of the essential Add/Change/Delete
 Program utilities and writes updates through `.NEW` while retaining `.BAK`.
 `MAXVMEM.EXE` is a read-only status client for DOS, EMS, XMS, the resident API,
-VCPI and the versioned Open 386MAX backend interface.  It reports unavailable
-data explicitly instead of deriving unsupported VM state from legacy APIs.
+VCPI, the versioned Open 386MAX backend interface and QPI. It reports the
+negotiated QPI version and current page-table frame when available, and
+reports unavailable data explicitly instead of deriving unsupported VM state
+from legacy APIs.
 
 `MAXVSET.EXE` maintains the separate `MAXVSET.INI` global preference file.
 Every exposed setting has a current launcher consumer: resident-API and ANSI
 autoload, exit confirmation, post-child catalogue reload, memory-column
 visibility, hotkey launching and Quick Help visibility.  VM scheduling,
 swapping, private memory, video/I/O and interrupt options remain absent while
-backend ABI 1.0 exposes only its read-only status capability.
+the private backend ABI exposes only its read-only status capability. QPI has
+the VM primitives, but settings are withheld until MaxView has a tested
+scheduler which consumes them.
 
 `MAXVAUTO.EXE` provides clean-room automatic program setup.  Its declarative
 `MAXVAUTO.DAT` database maps DOS 8.3 filenames to catalogue records.  The
@@ -139,7 +143,9 @@ the QEMM programming interface (QPI) as QEMM 97 behaves (mapping contexts,
 port trapping, IRQ calldowns, timer and video virtualization; every group is
 checked against QEMM 97 by a conformance test, see Open 386MAX `docs/qpi.md`)
 and an Open-MaxView-specific ABI query.  The launcher validates that query and
-reports its root-context status.  The current capability mask of the
+reports its administrative context status. It then queries standard QPI
+function `03h` for the interface version and `07h` for the active page-table
+frame. The current capability mask of the
 Open-MaxView ABI intentionally exposes no multi-context service; the QPI
 functions below are the documented way to build one.
 
@@ -239,7 +245,8 @@ of the current backend contract.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal
    process descriptor as scheduler and VM capabilities become available.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.
-4. Define and implement the Open 386MAX VM extension.
+4. Wrap and conformance-test the available QPI context, interrupt, timer and
+   video primitives without weakening the private-ABI identity check.
 5. Add preemptive scheduling, private DOS state, video virtualisation and
    foreground switching.
 6. Test real applications and document deviations from DESQview 2.8.

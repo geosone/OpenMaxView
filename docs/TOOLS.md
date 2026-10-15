@@ -103,6 +103,8 @@ not allocate memory or change the Open 386MAX configuration. When resident
 API 0.7 or later is loaded, it also reports the total, available and largest
 Open MaxView common-memory block in bytes. API 0.14 additionally reports the
 current DOS-process allocation and bounded task-system pool in paragraphs.
+With the validated Open 386MAX private ABI, `MAX_QPI` and
+`MAX_QPI_CONTEXT` report standard QPI function `03h` and `07h` results.
 
 ## MAXVDVP.EXE
 
@@ -139,7 +141,8 @@ checks common-memory, conventional/expanded status and `PROCESSMEM`
 accounting, validates physical `DBGPOKE` output, the foreground task object and
 its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
 keyboard injection, verifies the resident installation path, and prints a
-pass/fail report.
+pass/fail report. Its backend line includes the negotiated QPI version and
+active page-table frame without allocating or switching contexts.
 
 ## qipinfo.py
 

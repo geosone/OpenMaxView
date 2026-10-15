@@ -157,4 +157,5 @@ window-information record,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
 alternate video-buffer calls, foreground `PUSHKEY` and targeted `PUTKEY`,
 including invalid-handle rejection. It also reports whether the versioned
-Open 386MAX backend ABI is available.
+Open 386MAX backend ABI is available and, when it is, the standard QPI version
+and active page-table frame.

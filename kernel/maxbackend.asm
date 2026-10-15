@@ -13,6 +13,8 @@ MV_ABI_1_0      equ 00100h
 MV_SIGNATURE_1  equ 04D56h
 MV_SIGNATURE_2  equ 04D58h
 MV_CAP_STATUS   equ 00001h
+QPI_VERSION     equ 00300h
+QPI_GET_CONTEXT equ 00700h
 
 odq_max_backend_query_ proc near
         push    bp
@@ -44,10 +46,13 @@ odq_max_backend_query_ proc near
         mov     dx,4D4Dh              ; 'MM'
         int     67h
         or      ah,ah
-        jnz     short backend_absent
+        jz      short int67_signature_ok
+        jmp     backend_absent
+int67_signature_ok:
         mov     ax,es
         or      ax,di
-        jz      short backend_absent
+        jnz     short backend_found
+        jmp     backend_absent
 backend_found:
         mov     word ptr cs:qpi_entry,di
         mov     ax,es
@@ -58,7 +63,7 @@ backend_found:
         call    dword ptr cs:qpi_entry
         jnc     short query_returned
         add     sp,2
-        jmp     short backend_absent
+        jmp     backend_absent
 query_returned:
         ; The legacy QPI entry is a FAR procedure.  PUSHF is required by the
         ; interface but its word is not consumed by the callee.
@@ -80,7 +85,7 @@ query_returned:
         call    dword ptr cs:qpi_entry
         jnc     short status_returned
         add     sp,2
-        jmp     short backend_absent
+        jmp     backend_absent
 status_returned:
         add     sp,2
         or      ax,ax
@@ -88,6 +93,37 @@ status_returned:
         mov     word ptr [si+4],bx
         mov     word ptr [si+6],cx
         mov     word ptr [si+8],dx
+
+        ; The private 4Dxxh ABI identifies Open 386MAX and reports its
+        ; administrative status.  Standard QPI calls expose the page-table
+        ; context used by the future scheduler.  They are optional here so
+        ; older ABI 1.0 builds remain detectable.
+        mov     word ptr [si+10],0
+        mov     word ptr [si+12],0
+        mov     ax,QPI_VERSION
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short qpi_version_returned
+        add     sp,2
+        jmp     short backend_present
+qpi_version_returned:
+        add     sp,2
+        or      ax,ax
+        jz      short backend_present
+        cmp     ax,bx
+        jne     short backend_present
+        mov     word ptr [si+10],ax
+
+        mov     ax,QPI_GET_CONTEXT
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short qpi_context_returned
+        add     sp,2
+        jmp     short backend_present
+qpi_context_returned:
+        add     sp,2
+        mov     word ptr [si+12],dx
+backend_present:
         mov     ax,1
         jmp     short backend_done
 

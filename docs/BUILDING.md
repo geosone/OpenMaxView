@@ -75,5 +75,6 @@ package. The only external source dependency used by the DOS runtime design
 is the separately maintained Open 386MAX project.
 
 Open 386MAX's `9x` branch is the development target for the backend contract.
-Milestone 0.8 only detects and validates ABI 1.0; it does not pretend that the
-read-only status interface can create multiple V86 contexts.
+Milestone 0.8 validates private ABI 1.0 and read-only QPI functions `03h` and
+`07h`. Context allocation and switching are not yet performed by the shipped
+launcher, even though current Open 386MAX provides the required QPI calls.
