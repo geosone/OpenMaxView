@@ -10,6 +10,7 @@
 #define ODQ_DVC_IS_OBJECT       0x1016
 #define ODQ_DVC_BEGIN_CRITICAL  0x101b
 #define ODQ_DVC_END_CRITICAL    0x101c
+#define ODQ_DVC_GET_VERSION     0x1022
 #define ODQ_DVC_COMMON_STATUS   0xde04
 #define ODQ_DVC_APP_NUMBER      0xde07
 #define ODQ_DVC_API_LEVEL       0xde0b
@@ -37,7 +38,7 @@
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0008
+#define ODQ_MUX_VERSION         0x0009
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -60,7 +61,8 @@
 #define ODQ_CAP2_IS_OBJECT      0x0001
 #define ODQ_CAP2_OBJECT_TYPE    0x0002
 #define ODQ_CAP2_FOREGROUND     0x0004
-#define ODQ_CAPABILITIES2       0x0007
+#define ODQ_CAP2_GET_VERSION    0x0008
+#define ODQ_CAPABILITIES2       0x000f
 
 #define ODQ_OBJECT_WINDOW_TASK  0x08
 

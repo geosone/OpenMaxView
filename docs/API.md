@@ -16,6 +16,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1016h ES:DI=handle` | `BX=FFFFh` if valid, otherwise zero | `ISOBJ` |
 | `INT 15h AX=101Bh` | Increments a saturating nesting count | `BEGINC` |
 | `INT 15h AX=101Ch` | Decrements the count without underflow | `ENDC` |
+| `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE07h` | `AX=0001h` | `APPNUM`; one foreground program |
 | `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0280h` | `APILEVEL` |
@@ -72,16 +73,16 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0008h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0009h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=0007h` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=000Fh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 2 advertise
-`ISOBJ`, object-type and foreground-handle support. The declarations are in
-`include/odqapi.h`.
+C-style linefeed interpretation. For `D704h`, bits 0 through 3 advertise
+`ISOBJ`, object-type, foreground-handle and `GETVER` support. The declarations
+are in `include/odqapi.h`.
 
 ## Conformance probe
 

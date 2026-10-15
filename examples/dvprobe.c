@@ -107,6 +107,16 @@ int main(void)
     printf("DESQview-compatible API version %u.%02X detected.\n",
            outregs.x.bx >> 8, outregs.x.bx & 0xff);
 
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_GET_VERSION;
+    inregs.x.bx = 0;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.bx != 0x0a01) {
+        puts("TopView-compatible GETVER identity failed.");
+        return 27;
+    }
+    puts("TopView-compatible GETVER identity passed.");
+
     inregs.x.ax = ODQ_DVC_PAUSE;
     int86(0x15, &inregs, &outregs);
     puts("PAUSE call returned successfully.");

@@ -9,6 +9,7 @@
 ;   INT 15h AX=1001h/1002h           system-memory allocate/release aliases
 ;   INT 15h AX=1016h                 object-handle validation
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
+;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE07h                 foreground program number
 ;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
@@ -40,9 +41,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0008h
+MUX_VERSION    equ 0009h
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 0007h
+CAPABILITIES2  equ 000Fh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -185,6 +186,13 @@ int15_not_isobj:
         je      int15_begin
         cmp     ax,101Ch              ; ENDC
         je      int15_end
+        cmp     ax,1022h              ; GETVER
+        jne     short int15_not_getver
+        or      bx,bx
+        jne     int15_chain
+        mov     bx,0A01h              ; DESQview 2.x-compatible identity
+        jmp     int15_handled
+int15_not_getver:
         cmp     ax,0DE04h             ; GET AVAILABLE COMMON MEMORY
         jne     short int15_not_common_status
         jmp     int15_common_status
@@ -616,7 +624,7 @@ task_object    label byte
         dw      0,0                   ; canonical address, patched at install
         dw      0,0,0,0,0,0,0,0      ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.8 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.9 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
