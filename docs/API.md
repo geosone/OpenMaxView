@@ -19,16 +19,22 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE11h BL=mode` | Zero disables, nonzero enables cursor-follow mode | `JUSTIFY` state |
 | `INT 15h AX=DE12h BX=mode` | Zero selects normal, nonzero C-style linefeeds | `CSTYLE` state |
 | `INT 15h AX=DE13h` | `BX=critical nesting count` | `GETCRIT` |
+| `INT 15h AX=DE15h BL=mode` | Selects error-return policy 0, 1 or 2 | `SET ERROR HANDLING` state |
+| `INT 15h AX=DE16h` | `BL=error-return policy` | `GET ERROR HANDLING` |
+| `INT 15h AX=DE1Ch` | Increments the critical count | Interrupt-safe `ENTERC` |
 | `INT 10h AH=FEh` | `ES:DI` points to the active text buffer | Foreground buffer alias |
 | `INT 10h AH=FFh` | Notification accepted | No separate virtual buffer yet |
 
 The default API level is 1.00, automatic viewport justification starts
-enabled, and C-style linefeeds start disabled. `MAXVIEW` resets these values
-and the critical count before and after each DOS child. In foreground mode
+enabled, C-style linefeeds start disabled, and error policy 0 is selected.
+`MAXVIEW` resets these values and the critical count before and after each DOS
+child. In foreground mode
 `JUSTIFY` and `CSTYLE` preserve compatibility state; their visible windowing
 effects require the future per-task virtual console. Requesting an API level
 above 2.80 returns the supported maximum but does not yet display DESQview's
-error dialog.
+error dialog. The selected error policy is observable now; its carry/null
+failure behaviour becomes relevant as mailbox and system-memory calls are
+implemented.
 
 ## Open MaxView private diagnostics
 
@@ -37,8 +43,8 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0004h`, `DX=0280h` |
-| `D701h` | `BX=00FFh` capability bits, `CX=critical depth`, `DX=video segment` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0005h`, `DX=0280h` |
+| `D701h` | `BX=03FFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 
@@ -48,7 +54,7 @@ C-style linefeed interpretation. The declarations are in `include/odqapi.h`.
 ## Conformance probe
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
-call, task defaults, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, nested
-critical regions, `GETCRIT`, alternate video-buffer calls and foreground
-`PUSHKEY`. It also reports whether the versioned Open 386MAX backend ABI is
-available.
+call, task defaults, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, error policy,
+nested `BEGINC`/`ENTERC` regions, `GETCRIT`, alternate video-buffer calls and
+foreground `PUSHKEY`. It also reports whether the versioned Open 386MAX
+backend ABI is available.

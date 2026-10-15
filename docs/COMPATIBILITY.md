@@ -7,7 +7,7 @@
 | DESQview presence query | Implemented | Reports API 2.80. |
 | Cooperative pause | Implemented | Returns safely through the resident service. |
 | Critical markers | Implemented | Nested, saturating state reset around each child. |
-| Task-state calls | Foreground implementation | `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE` and `GETCRIT`. |
+| Task-state calls | Foreground implementation | `APPNUM`, `APILEVEL`, modes, error policy and critical-state calls. |
 | Alternate text-video buffer | Foreground implementation | Aliases B000h/B800h and accepts change notification. |
 | DESQview `PUSHKEY` | Foreground implementation | Adds scan/character pair to the BIOS keyboard buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |

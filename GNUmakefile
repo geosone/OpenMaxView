@@ -272,12 +272,13 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\INPUT.BIN /Y > FILESAME.TXT' \
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\OTHER.BIN C:\BUILD\FILETEST\COPY.BIN /Y > FILEOVER.TXT' \
 		-c 'exit' >/dev/null 2>&1
-	rg -q 'resident API 0.4 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'resident API 0.5 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'PAUSE call returned successfully' $(BUILD)/MVPROBE.TXT
 	rg -q 'Foreground APPNUM and task defaults passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'APILEVEL, JUSTIFY and CSTYLE APIs passed' $(BUILD)/MVPROBE.TXT
+	rg -q 'SET/GET ERROR APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Nested critical-section state passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Alternate video-buffer API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Foreground PUSHKEY API passed' $(BUILD)/MVPROBE.TXT
@@ -289,7 +290,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	rg -q 'valid program' $(BUILD)/CFGCHK.TXT
 	rg -q 'MAXVAPP.EXE' $(BUILD)/CFGLIST.TXT
-	rg -q 'MV_API=0.4' $(BUILD)/MEMSTAT.TXT
+	rg -q 'MV_API=0.5' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MAX_BACKEND=0' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MAX_BACKEND=1' $(BUILD)/MEMMAX.TXT
 	rg -q 'MAX_ABI=1.0' $(BUILD)/MEMMAX.TXT

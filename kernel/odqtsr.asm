@@ -13,6 +13,8 @@
 ;   INT 15h AX=DE11h, BL=mode        viewport justification mode
 ;   INT 15h AX=DE12h, BX=mode        C-style linefeed mode
 ;   INT 15h AX=DE13h                 critical nesting query
+;   INT 15h AX=DE15h/DE16h           set/get error-return policy
+;   INT 15h AX=DE1Ch                 interrupt-safe critical entry
 ;   INT 10h AH=FEh                   alternate text-video buffer
 ;   INT 10h AH=FFh                   video-buffer change notification
 ;   INT 2Fh AX=D700h                 Open MaxView-private status query
@@ -26,8 +28,8 @@ MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0004h
-CAPABILITIES   equ 00FFh
+MUX_VERSION    equ 0005h
+CAPABILITIES   equ 03FFh
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -151,12 +153,28 @@ int15_handler:
         cmp     ax,0DE10h             ; PUSHKEY
         je      short int15_pushkey
         cmp     ax,0DE11h             ; JUSTIFY
-        je      short int15_justify
+        jne     short int15_not_justify
+        jmp     int15_justify
+int15_not_justify:
         cmp     ax,0DE12h             ; CSTYLE
-        je      short int15_cstyle
+        jne     short int15_not_cstyle
+        jmp     int15_cstyle
+int15_not_cstyle:
         cmp     ax,0DE13h             ; GETCRIT
-        jne     short int15_chain_jump
+        jne     short int15_not_getcrit
         jmp     int15_getcrit
+int15_not_getcrit:
+        cmp     ax,0DE15h             ; SET ERROR HANDLING
+        jne     short int15_not_set_error
+        jmp     int15_set_error
+int15_not_set_error:
+        cmp     ax,0DE16h             ; GET ERROR HANDLING
+        jne     short int15_not_get_error
+        jmp     int15_get_error
+int15_not_get_error:
+        cmp     ax,0DE1Ch             ; ENTERC
+        jne     short int15_chain_jump
+        jmp     int15_begin
 int15_chain_jump:
         jmp     int15_chain
 int15_begin:
@@ -167,9 +185,10 @@ int15_begin_done:
         jmp     int15_handled
 int15_end:
         cmp     word ptr cs:critical_depth,0
-        je      short int15_handled
+        je      short int15_end_done
         dec     word ptr cs:critical_depth
-        jmp     short int15_handled
+int15_end_done:
+        jmp     int15_handled
 int15_appnum:
         mov     ax,1                   ; sole foreground program
         jmp     short int15_handled
@@ -215,6 +234,12 @@ int15_cstyle:
         jmp     short int15_handled
 int15_getcrit:
         mov     bx,word ptr cs:critical_depth
+        jmp     short int15_handled
+int15_set_error:
+        mov     byte ptr cs:error_mode,bl
+        jmp     short int15_handled
+int15_get_error:
+        mov     bl,byte ptr cs:error_mode
 int15_handled:
         popf
         iret
@@ -249,6 +274,7 @@ int2f_reset:
         mov     word ptr cs:critical_depth,0
         mov     word ptr cs:api_level,0100h
         mov     word ptr cs:task_flags,TASK_JUSTIFY
+        mov     byte ptr cs:error_mode,0
         popf
         iret
 int2f_task_info:
@@ -268,9 +294,10 @@ old2f          dd 0
 critical_depth dw 0
 api_level      dw 0100h
 task_flags     dw TASK_JUSTIFY
+error_mode     db 0
 video_segment  dw 0B800h
 
-installed_msg  db 'Open MaxView resident API 0.4 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.5 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
