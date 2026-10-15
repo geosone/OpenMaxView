@@ -7,6 +7,7 @@
 ;   INT 21h AX=2B01h CX='DE' DX='SQ'  presence/version query
 ;   INT 15h AX=1000h                 cooperative PAUSE
 ;   INT 15h AX=1001h/1002h           system-memory allocate/release aliases
+;   INT 15h AX=1016h                 object-handle validation
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE07h                 foreground program number
@@ -16,10 +17,12 @@
 ;   INT 15h AX=DE11h, BL=mode        viewport justification mode
 ;   INT 15h AX=DE12h, BX=mode        C-style linefeed mode
 ;   INT 15h AX=DE13h                 critical nesting query
+;   INT 15h AX=DE14h                 object type query
 ;   INT 15h AX=DE15h/DE16h           set/get error-return policy
 ;   INT 15h AX=DE1Ch                 interrupt-safe critical entry
 ;   INT 15h AX=DE1Eh                 physical screen information
 ;   INT 15h AX=DE19h/DE1Ah           common-memory allocate/release
+;   INT 15h AX=DE26h                 foreground task handle
 ;   INT 15h AX=DE2Fh                 direct-video activation query
 ;   INT 15h AX=DE30h                 DESQview/X version query
 ;   INT 10h AH=FEh                   alternate text-video buffer
@@ -28,15 +31,18 @@
 ;   INT 2Fh AX=D701h                 private capabilities/state query
 ;   INT 2Fh AX=D702h                 reset per-foreground-task state
 ;   INT 2Fh AX=D703h                 query per-foreground-task state
+;   INT 2Fh AX=D704h                 extended capability query
 
 DV_VERSION     equ 0280h
 MUX_STATUS     equ 0D700h
 MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
+MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0007h
+MUX_VERSION    equ 0008h
 CAPABILITIES   equ 0FFFFh
+CAPABILITIES2  equ 0007h
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -66,6 +72,15 @@ start:
         int     21h
 
 install:
+        mov     ax,cs
+        mov     bx,offset task_object
+        mov     cl,4
+        shr     bx,cl
+        add     ax,bx
+        mov     word ptr task_handle_segment,ax
+        mov     word ptr task_object+0Ah,ax
+        mov     word ptr task_object+0Eh,ax
+
         mov     ah,0Fh
         int     10h
         mov     word ptr video_segment,0B800h
@@ -162,6 +177,10 @@ int15_not_getmem_alias:
         jne     short int15_not_putmem_alias
         jmp     int15_putmem
 int15_not_putmem_alias:
+        cmp     ax,1016h              ; ISOBJ
+        jne     short int15_not_isobj
+        jmp     int15_isobj
+int15_not_isobj:
         cmp     ax,101Bh              ; BEGINC
         je      int15_begin
         cmp     ax,101Ch              ; ENDC
@@ -196,6 +215,10 @@ int15_not_cstyle:
         jne     short int15_not_getcrit
         jmp     int15_getcrit
 int15_not_getcrit:
+        cmp     ax,0DE14h             ; GET OBJECT TYPE
+        jne     short int15_not_object_type
+        jmp     int15_object_type
+int15_not_object_type:
         cmp     ax,0DE15h             ; SET ERROR HANDLING
         jne     short int15_not_set_error
         jmp     int15_set_error
@@ -220,6 +243,10 @@ int15_not_putcommon:
         jne     short int15_not_scrninfo
         jmp     int15_scrninfo
 int15_not_scrninfo:
+        cmp     ax,0DE26h             ; GETFOREGROUND
+        jne     short int15_not_foreground
+        jmp     int15_foreground
+int15_not_foreground:
         cmp     ax,0DE2Fh             ; VIDEONOTIFY
         jne     short int15_not_videonotify
         jmp     int15_videonotify
@@ -316,6 +343,36 @@ int15_videonotify:
         jmp     int15_handled
 int15_getdvxversion:
         xor     bx,bx                 ; Open MaxView is not DESQview/X
+        jmp     int15_handled
+
+int15_isobj:
+        xor     bx,bx
+        or      di,di
+        jnz     int15_handled
+        mov     bx,es
+        cmp     bx,word ptr cs:task_handle_segment
+        jne     short int15_isobj_invalid
+        mov     bx,0FFFFh
+        jmp     int15_handled
+int15_isobj_invalid:
+        xor     bx,bx
+        jmp     int15_handled
+
+int15_object_type:
+        xor     bx,bx
+        or      di,di
+        jnz     int15_handled
+        mov     bx,es
+        cmp     bx,word ptr cs:task_handle_segment
+        jne     short int15_object_type_invalid
+        mov     bl,08h                ; window/task object
+        jmp     int15_handled
+int15_object_type_invalid:
+        xor     bx,bx
+        jmp     int15_handled
+
+int15_foreground:
+        mov     bx,word ptr cs:task_handle_segment
         jmp     int15_handled
 
 int15_getmem:
@@ -481,6 +538,8 @@ int2f_handler:
         je      short int2f_reset
         cmp     ax,MUX_TASK_INFO
         je      short int2f_task_info
+        cmp     ax,MUX_CAPS2
+        je      short int2f_caps2
         jmp     short int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
@@ -522,6 +581,12 @@ int2f_task_info:
         mov     dx,word ptr cs:task_flags
         popf
         iret
+int2f_caps2:
+        mov     bx,CAPABILITIES2
+        xor     cx,cx
+        xor     dx,dx
+        popf
+        iret
 int2f_chain:
         popf
         jmp     dword ptr cs:old2f
@@ -535,12 +600,23 @@ api_level      dw 0100h
 task_flags     dw TASK_JUSTIFY
 error_mode     db 0
 video_segment  dw 0B800h
+task_handle_segment dw 0
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 common_used    db COMMON_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.7 installed.',13,10,'$'
+; Keep this label paragraph-aligned: GETFOREGROUND returns segment:0000.
+        org     1200h
+task_object    label byte
+        dw      0,0                   ; previous and next task objects
+        dw      0FEDCh                ; DESQview-compatible object signature
+        dw      0                     ; window/task object type
+        dw      0,0                   ; public handle, patched at install
+        dw      0,0                   ; canonical address, patched at install
+        dw      0,0,0,0,0,0,0,0      ; bounded public header storage
+
+installed_msg  db 'Open MaxView resident API 0.8 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

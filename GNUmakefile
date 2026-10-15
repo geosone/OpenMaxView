@@ -272,7 +272,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\INPUT.BIN /Y > FILESAME.TXT' \
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\OTHER.BIN C:\BUILD\FILETEST\COPY.BIN /Y > FILEOVER.TXT' \
 		-c 'exit' >/dev/null 2>&1
-	rg -q 'resident API 0.7 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'resident API 0.8 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'PAUSE call returned successfully' $(BUILD)/MVPROBE.TXT
@@ -281,6 +281,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'SET/GET ERROR APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Resident system-memory APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Resident common-memory APIs passed' $(BUILD)/MVPROBE.TXT
+	rg -q 'Foreground task object APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Nested critical-section state passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'SCRNINFO and video identity APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Alternate video-buffer API passed' $(BUILD)/MVPROBE.TXT
@@ -293,7 +294,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	rg -q 'valid program' $(BUILD)/CFGCHK.TXT
 	rg -q 'MAXVAPP.EXE' $(BUILD)/CFGLIST.TXT
-	rg -q 'MV_API=0.7' $(BUILD)/MEMSTAT.TXT
+	rg -q 'MV_API=0.8' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_TOTAL_BYTES=1024' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_AVAILABLE_BYTES=1024' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_LARGEST_BYTES=256' $(BUILD)/MEMSTAT.TXT

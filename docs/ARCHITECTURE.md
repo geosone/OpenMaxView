@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.7 resident API tracks foreground task compatibility state and nested
+The 0.8 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -32,6 +32,12 @@ at the foreground-task reset boundary; common slots remain global until their
 owner releases them. This supplies genuine backing memory for the documented
 `GETMEM`, `PUTMEM`, `GETCOMMON` and `PUTCOMMON` calls without pretending that
 the variable-sized multi-task allocator already exists.
+
+The sole foreground task is represented by a paragraph-aligned resident
+object header. Its public handle is a genuine `segment:0000` pointer, so
+`GETFOREGROUND`, `ISOBJ` and the object-type query share one identity. Dynamic
+objects are not exposed until the message-call stack ABI is implemented and
+tested.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.8 it launches a child through DOS and
@@ -118,6 +124,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Physical video queries | implemented for foreground | `SCRNINFO`, `VIDEONOTIFY`, non-DV/X identity |
 | Keyboard `PUSHKEY` | implemented for foreground | BIOS buffer injection; no per-task queue yet |
 | System/common memory | bounded foreground implementation | Resident 256-byte slots with allocation, release and status |
+| Foreground task object | implemented | Pointer-compatible handle, validation and type query |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
 | Concurrent V86 tasks | planned | Requires Open 386MAX extension |

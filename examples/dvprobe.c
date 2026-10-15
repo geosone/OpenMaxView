@@ -64,7 +64,10 @@ static int query_state(unsigned expected_depth, unsigned *video_segment)
         outregs.x.cx != expected_depth)
         return 0;
     *video_segment = outregs.x.dx;
-    return 1;
+    inregs.x.ax = ODQ_MUX_CAPS2;
+    int86(0x2f, &inregs, &outregs);
+    return outregs.x.bx == ODQ_CAPABILITIES2 &&
+           outregs.x.cx == 0 && outregs.x.dx == 0;
 }
 
 static int query_task(unsigned expected_level, unsigned expected_flags)
@@ -82,6 +85,7 @@ int main(void)
     union REGS inregs, outregs;
     struct SREGS segreg;
     unsigned video_segment = 0;
+    unsigned task_segment;
     unsigned i;
     far_block system_blocks[ODQ_SYSTEM_SLOT_COUNT];
     far_block common_block;
@@ -205,9 +209,55 @@ int main(void)
     }
     puts("Resident common-memory APIs passed.");
 
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_GET_FOREGROUND;
+    int86(0x15, &inregs, &outregs);
+    task_segment = outregs.x.bx;
+    if (task_segment == 0) {
+        puts("Foreground task handle query failed.");
+        return 13;
+    }
+    memory = (unsigned char far *)MK_FP(task_segment, 0);
+    if (*((unsigned far *)(memory + 4)) != 0xfedc ||
+        *((unsigned far *)(memory + 6)) != 0) {
+        puts("Foreground task object header failed.");
+        return 14;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_IS_OBJECT;
+    inregs.x.di = 0;
+    segreg.es = task_segment;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.bx != 0xffff) {
+        puts("ISOBJ rejected the foreground task handle.");
+        return 15;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_OBJECT_TYPE;
+    inregs.x.di = 0;
+    segreg.es = task_segment;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.h.bl != ODQ_OBJECT_WINDOW_TASK) {
+        puts("Foreground object type query failed.");
+        return 16;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_IS_OBJECT;
+    inregs.x.di = 1;
+    segreg.es = task_segment;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.bx != 0) {
+        puts("ISOBJ accepted an invalid task pointer.");
+        return 17;
+    }
+    puts("Foreground task object APIs passed.");
+
     if (!query_state(0, &video_segment)) {
         puts("Private capability query failed.");
-        return 13;
+        return 18;
     }
     inregs.x.ax = ODQ_DVC_BEGIN_CRITICAL;
     int86(0x15, &inregs, &outregs);
@@ -217,13 +267,13 @@ int main(void)
     int86(0x15, &inregs, &outregs);
     if (outregs.x.bx != 2) {
         puts("GETCRIT API failed.");
-        return 14;
+        return 19;
     }
     inregs.x.ax = ODQ_DVC_PAUSE;
     int86(0x15, &inregs, &outregs);
     if (!query_state(2, &video_segment)) {
         puts("Nested critical-section state failed.");
-        return 15;
+        return 20;
     }
     inregs.x.ax = ODQ_DVC_END_CRITICAL;
     int86(0x15, &inregs, &outregs);
@@ -231,7 +281,7 @@ int main(void)
     int86(0x15, &inregs, &outregs);
     if (!query_state(0, &video_segment)) {
         puts("Critical-section underflow protection failed.");
-        return 16;
+        return 21;
     }
     puts("Nested critical-section state passed.");
 
@@ -239,19 +289,19 @@ int main(void)
     int86(0x15, &inregs, &outregs);
     if (outregs.h.ch != 80 || outregs.h.cl != 25 || outregs.h.bl != 3) {
         puts("SCRNINFO API failed (80x25 colour mode expected).");
-        return 17;
+        return 22;
     }
     inregs.x.ax = ODQ_DVC_VIDEO_NOTIFY;
     int86(0x15, &inregs, &outregs);
     if (outregs.x.bx != 0) {
         puts("VIDEONOTIFY foreground state failed.");
-        return 18;
+        return 23;
     }
     inregs.x.ax = ODQ_DVC_DVX_VERSION;
     int86(0x15, &inregs, &outregs);
     if (outregs.x.bx != 0) {
         puts("DESQview/X identity guard failed.");
-        return 19;
+        return 24;
     }
     puts("SCRNINFO and video identity APIs passed.");
 
@@ -262,7 +312,7 @@ int main(void)
     int86x(0x10, &inregs, &outregs, &segreg);
     if (segreg.es != video_segment || outregs.x.di != 0) {
         puts("Alternate video-buffer query failed.");
-        return 20;
+        return 25;
     }
     inregs.h.ah = 0xff;
     int86(0x10, &inregs, &outregs);
@@ -276,7 +326,7 @@ int main(void)
     int86(0x16, &inregs, &outregs);
     if (outregs.h.ah != 0x2d || outregs.h.al != 'x') {
         puts("Foreground PUSHKEY API failed.");
-        return 21;
+        return 26;
     }
     puts("Foreground PUSHKEY API passed.");
 

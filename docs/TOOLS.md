@@ -129,7 +129,8 @@ for later 1.x scheduler and VM work but are not silently claimed as enforced.
 Developer diagnostic for the resident DESQview-compatible calls and the
 Open 386MAX backend query. It exercises pause, critical nesting and alternate
 video-buffer behaviour, exhausts and releases the bounded task-memory pool,
-checks common-memory accounting and prints a pass/fail report.
+checks common-memory accounting, validates the foreground task object and
+prints a pass/fail report.
 
 ## qipinfo.py
 
