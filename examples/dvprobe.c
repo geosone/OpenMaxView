@@ -131,6 +131,26 @@ int main(void)
     }
     puts("Nested critical-section state passed.");
 
+    inregs.x.ax = ODQ_DVC_SCREEN_INFO;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.h.ch != 80 || outregs.h.cl != 25 || outregs.h.bl != 3) {
+        puts("SCRNINFO API failed (80x25 colour mode expected).");
+        return 11;
+    }
+    inregs.x.ax = ODQ_DVC_VIDEO_NOTIFY;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.bx != 0) {
+        puts("VIDEONOTIFY foreground state failed.");
+        return 12;
+    }
+    inregs.x.ax = ODQ_DVC_DVX_VERSION;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.bx != 0) {
+        puts("DESQview/X identity guard failed.");
+        return 13;
+    }
+    puts("SCRNINFO and video identity APIs passed.");
+
     segread(&segreg);
     segreg.es = video_segment;
     inregs.h.ah = 0xfe;
@@ -138,7 +158,7 @@ int main(void)
     int86x(0x10, &inregs, &outregs, &segreg);
     if (segreg.es != video_segment || outregs.x.di != 0) {
         puts("Alternate video-buffer query failed.");
-        return 11;
+        return 14;
     }
     inregs.h.ah = 0xff;
     int86(0x10, &inregs, &outregs);
@@ -152,7 +172,7 @@ int main(void)
     int86(0x16, &inregs, &outregs);
     if (outregs.h.ah != 0x2d || outregs.h.al != 'x') {
         puts("Foreground PUSHKEY API failed.");
-        return 12;
+        return 15;
     }
     puts("Foreground PUSHKEY API passed.");
 

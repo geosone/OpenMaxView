@@ -28,7 +28,7 @@ checks:
 * first and repeated installation of `MAXVTSR` and `MAXVANSI`;
 * API version, pause, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, error policy,
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `PUSHKEY` and
-  alternate video buffer;
+  alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;

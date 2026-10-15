@@ -15,6 +15,9 @@
 ;   INT 15h AX=DE13h                 critical nesting query
 ;   INT 15h AX=DE15h/DE16h           set/get error-return policy
 ;   INT 15h AX=DE1Ch                 interrupt-safe critical entry
+;   INT 15h AX=DE1Eh                 physical screen information
+;   INT 15h AX=DE2Fh                 direct-video activation query
+;   INT 15h AX=DE30h                 DESQview/X version query
 ;   INT 10h AH=FEh                   alternate text-video buffer
 ;   INT 10h AH=FFh                   video-buffer change notification
 ;   INT 2Fh AX=D700h                 Open MaxView-private status query
@@ -28,8 +31,8 @@ MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0005h
-CAPABILITIES   equ 03FFh
+MUX_VERSION    equ 0006h
+CAPABILITIES   equ 1FFFh
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -173,8 +176,20 @@ int15_not_set_error:
         jmp     int15_get_error
 int15_not_get_error:
         cmp     ax,0DE1Ch             ; ENTERC
-        jne     short int15_chain_jump
+        jne     short int15_not_enterc
         jmp     int15_begin
+int15_not_enterc:
+        cmp     ax,0DE1Eh             ; SCRNINFO
+        jne     short int15_not_scrninfo
+        jmp     int15_scrninfo
+int15_not_scrninfo:
+        cmp     ax,0DE2Fh             ; VIDEONOTIFY
+        jne     short int15_not_videonotify
+        jmp     int15_videonotify
+int15_not_videonotify:
+        cmp     ax,0DE30h             ; GETDVXVERSION
+        jne     short int15_chain_jump
+        jmp     int15_getdvxversion
 int15_chain_jump:
         jmp     int15_chain
 int15_begin:
@@ -191,11 +206,11 @@ int15_end_done:
         jmp     int15_handled
 int15_appnum:
         mov     ax,1                   ; sole foreground program
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_apilevel:
         mov     word ptr cs:api_level,bx
         mov     ax,DV_VERSION          ; maximum supported API level
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_pushkey:
         push    ax
         push    dx
@@ -240,6 +255,30 @@ int15_set_error:
         jmp     short int15_handled
 int15_get_error:
         mov     bl,byte ptr cs:error_mode
+        jmp     short int15_handled
+int15_scrninfo:
+        push    ax
+        push    es
+        mov     ah,0Fh
+        int     10h
+        mov     bl,al                 ; physical video mode
+        mov     ch,ah                 ; physical columns
+        mov     ax,40h
+        mov     es,ax
+        mov     cl,byte ptr es:[84h]  ; rows minus one on EGA/VGA BIOSes
+        or      cl,cl
+        jnz     short scrninfo_rows
+        mov     cl,24                 ; conservative 25-row fallback
+scrninfo_rows:
+        inc     cl
+        pop     es
+        pop     ax
+        jmp     short int15_handled
+int15_videonotify:
+        xor     bx,bx                 ; no direct-window switch has occurred
+        jmp     short int15_handled
+int15_getdvxversion:
+        xor     bx,bx                 ; Open MaxView is not DESQview/X
 int15_handled:
         popf
         iret
@@ -297,7 +336,7 @@ task_flags     dw TASK_JUSTIFY
 error_mode     db 0
 video_segment  dw 0B800h
 
-installed_msg  db 'Open MaxView resident API 0.5 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.6 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

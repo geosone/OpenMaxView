@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.5 resident API tracks foreground task compatibility state and nested
+The 0.6 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -108,6 +108,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Foreground task metadata | implemented | `APPNUM`, `APILEVEL`, modes and error policy |
 | Critical-state queries | implemented | `BEGINC`, `ENDC`, `ENTERC`, `GETCRIT` |
 | Alternate video buffer | implemented for foreground | B000h/B800h alias plus change notification |
+| Physical video queries | implemented for foreground | `SCRNINFO`, `VIDEONOTIFY`, non-DV/X identity |
 | Keyboard `PUSHKEY` | implemented for foreground | BIOS buffer injection; no per-task queue yet |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
