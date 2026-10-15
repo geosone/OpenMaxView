@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="500" viewBox="0 0 960 500" role="img" aria-labelledby="title desc">
+  <title id="title">BBS serial data path</title>
+  <desc id="desc">A physical UART interrupt is dispatched by Open MaxView into the owning DOS node while Open 386MAX supplies trapping and virtual interrupt mechanisms.</desc>
+  <rect width="960" height="500" fill="#d9d9d9"/>
+  <text x="480" y="48" text-anchor="middle" font-family="sans-serif" font-size="27" font-weight="bold" fill="#800000">Interrupt-driven BBS data path</text>
+  <g font-family="sans-serif" text-anchor="middle">
+    <rect x="40" y="170" width="170" height="110" rx="8" fill="#202020"/>
+    <text x="125" y="210" font-size="21" font-weight="bold" fill="white">UART</text>
+    <text x="125" y="240" font-size="16" fill="#80ffff">COM / FIFO</text>
+    <text x="125" y="264" font-size="16" fill="#80ffff">IRQ + I/O</text>
+    <rect x="270" y="140" width="250" height="170" rx="8" fill="#0055a4"/>
+    <text x="395" y="178" font-size="21" font-weight="bold" fill="white">Open MaxView</text>
+    <text x="395" y="211" font-size="16" fill="white">ownership</text>
+    <text x="395" y="236" font-size="16" fill="white">buffering</text>
+    <text x="395" y="261" font-size="16" fill="white">IRQ dispatch</text>
+    <text x="395" y="286" font-size="16" fill="white">FOSSIL policy</text>
+    <rect x="580" y="90" width="330" height="110" rx="8" fill="#003b80"/>
+    <text x="745" y="128" font-size="21" font-weight="bold" fill="white">BBS node A</text>
+    <text x="745" y="160" font-size="16" fill="#ffff80">owning V86 task • background runnable</text>
+    <rect x="580" y="255" width="330" height="110" rx="8" fill="#606060"/>
+    <text x="745" y="293" font-size="21" font-weight="bold" fill="white">Other DOS task</text>
+    <text x="745" y="325" font-size="16" fill="white">no access to the owned UART</text>
+    <rect x="270" y="395" width="640" height="70" rx="8" fill="#202020"/>
+    <text x="590" y="425" font-size="20" font-weight="bold" fill="white">Open 386MAX mechanism layer</text>
+    <text x="590" y="451" font-size="15" fill="#80ffff">V86 context • port trap • virtual PIC • IRQ injection</text>
+  </g>
+  <g stroke="#800000" stroke-width="5" fill="none" marker-end="url(#arrow2)">
+    <path d="M210 225 H260"/>
+    <path d="M520 190 L570 155"/>
+    <path d="M520 265 L570 305"/>
+    <path d="M395 310 V385"/>
+    <path d="M745 365 V385"/>
+  </g>
+  <defs><marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#800000"/></marker></defs>
+</svg>

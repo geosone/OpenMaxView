@@ -64,7 +64,11 @@ static const install_file files[] = {
     { "ROADMAP.TXT", "ROADMAP.TXT", 1, 0 },
     { "REMOTE2.TXT", "REMOTE2.TXT", 1, 0 },
     { "TROUBLE.TXT", "TROUBLE.TXT", 1, 0 },
-    { "ARCHITEC.TXT", "ARCHITEC.TXT", 1, 0 }
+    { "ARCHITEC.TXT", "ARCHITEC.TXT", 1, 0 },
+    { "HELP.TXT",    "HELP.TXT",    1, 0 },
+    { "BBSGUIDE.TXT", "BBSGUIDE.TXT", 1, 0 },
+    { "PROGDEV.TXT", "PROGDEV.TXT", 1, 0 },
+    { "QUICK.TXT",   "QUICK.TXT",   1, 0 }
 };
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;

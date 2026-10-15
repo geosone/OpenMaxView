@@ -57,6 +57,10 @@ guides. Released 0.8 behaviour, the 1.x DESQview-compatible target, and 2.x
 ideas are documented separately so future plans are never mistaken for
 implemented features.
 
+For generated manuals, `make book-html` creates the self-contained developer
+handbook and `make book-pdf` creates the user handbook. The short
+[`quick-start guide`](docs/QUICKSTART.md) is also installed as `QUICK.TXT`.
+
 The proposed secure remote-view architecture is recorded as a **2.x-only**
 design note in [`docs/REMOTE_VIEW_2X.md`](docs/REMOTE_VIEW_2X.md), including
 the requirement to coexist with Microsoft NDIS and Novell ODI clients on the
@@ -90,7 +94,9 @@ USERGUID.TXT    TOOLS.TXT       CONFIG.TXT
 BUILDING.TXT    TESTING.TXT     COMPAT.TXT
 API.TXT         DEVELOP.TXT     ROADMAP.TXT
 REMOTE2.TXT
-TROUBLE.TXT     ARCHITEC.TXT
+TROUBLE.TXT     ARCHITEC.TXT    HELP.TXT
+BBSGUIDE.TXT    PROGDEV.TXT
+QUICK.TXT
 ```
 
 Run `MAXVIEW`.  The launcher installs `MAXVTSR.COM` automatically when it is

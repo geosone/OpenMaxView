@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">Open MaxView component overview</title>
+  <desc id="desc">DOS programs use the resident API and tools, Open MaxView owns task policy, and Open 386MAX supplies memory and virtual machine mechanisms.</desc>
+  <rect width="960" height="520" fill="#d9d9d9"/>
+  <rect x="30" y="25" width="900" height="58" rx="8" fill="#800000"/>
+  <text x="480" y="62" text-anchor="middle" font-family="sans-serif" font-size="26" font-weight="bold" fill="white">Open MaxView 1.x architecture</text>
+  <g font-family="sans-serif" text-anchor="middle">
+    <rect x="70" y="120" width="240" height="90" rx="8" fill="#003b80" stroke="#001b3d" stroke-width="3"/>
+    <text x="190" y="154" font-size="21" font-weight="bold" fill="white">DOS applications</text>
+    <text x="190" y="184" font-size="16" fill="#ffff80">DOS / BIOS / task API</text>
+    <rect x="360" y="120" width="240" height="90" rx="8" fill="#007070" stroke="#003838" stroke-width="3"/>
+    <text x="480" y="154" font-size="21" font-weight="bold" fill="white">Open MaxView tools</text>
+    <text x="480" y="184" font-size="16" fill="#ffff80">catalogue, setup, status</text>
+    <rect x="650" y="120" width="240" height="90" rx="8" fill="#003b80" stroke="#001b3d" stroke-width="3"/>
+    <text x="770" y="154" font-size="21" font-weight="bold" fill="white">BBS nodes</text>
+    <text x="770" y="184" font-size="16" fill="#ffff80">BIOS / UART / FOSSIL</text>
+    <rect x="160" y="270" width="640" height="95" rx="8" fill="#0055a4" stroke="#002b52" stroke-width="3"/>
+    <text x="480" y="305" font-size="23" font-weight="bold" fill="white">Open MaxView runtime</text>
+    <text x="480" y="337" font-size="17" fill="white">task objects • scheduler • windows • serial policy • DOS state</text>
+    <rect x="160" y="410" width="640" height="80" rx="8" fill="#202020" stroke="#000" stroke-width="3"/>
+    <text x="480" y="443" font-size="23" font-weight="bold" fill="white">Open 386MAX backend</text>
+    <text x="480" y="472" font-size="17" fill="#80ffff">memory • V86 contexts • I/O traps • virtual IRQs</text>
+  </g>
+  <g stroke="#800000" stroke-width="5" fill="none" marker-end="url(#arrow)">
+    <path d="M190 210 V260 H340"/>
+    <path d="M480 210 V260"/>
+    <path d="M770 210 V260 H620"/>
+    <path d="M480 365 V400"/>
+  </g>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#800000"/></marker></defs>
+</svg>

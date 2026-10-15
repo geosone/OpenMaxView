@@ -34,8 +34,9 @@ After installation, add `C:\MAXVIEW` to `PATH` if desired, change to the
 directory and run `MAXVIEW`.
 
 The complete documentation is installed as DOS-readable text files. Start at
-`DOCS.TXT`; short 8.3 names such as `USERGUID.TXT`, `TOOLS.TXT`, `CONFIG.TXT`
-and `TROUBLE.TXT` identify the individual manuals.
+`QUICK.TXT`, then use the index in `DOCS.TXT`; short 8.3 names such as
+`USERGUID.TXT`, `TOOLS.TXT`, `CONFIG.TXT` and `TROUBLE.TXT` identify the
+individual manuals.
 
 ## First start
 
@@ -99,3 +100,7 @@ MAXVAUTO.DAT
 
 Do not replace Open 386MAX with `MAXVMEM`: the similarly named utility is only
 a status display and intentionally avoids the historical `MAXMEM` name.
+
+For task-oriented help, read `HELP.TXT`. BBS operators should use
+`BBSGUIDE.TXT`. Developers making a DOS program cooperative or task-aware
+should start with `PROGDEV.TXT` and keep `API.TXT` beside it.

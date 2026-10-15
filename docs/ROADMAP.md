@@ -22,7 +22,9 @@ Further 0.x work should land in independently testable slices:
 4. Specify, implement and test Open 386MAX VM create/destroy, register state,
    memory maps, virtual interrupts, video and I/O trapping.
 5. Add scheduling, per-task DOS state, task switching and true local windows.
-6. Test representative DESQview-aware and ordinary DOS applications and
+6. Add serial ownership, UART I/O trapping, virtual IRQ delivery and a FOSSIL
+   path; validate sustained background BBS transfers.
+7. Test representative DESQview-aware and ordinary DOS applications and
    publish known deviations.
 
 ## 1.0 acceptance criteria
@@ -36,6 +38,8 @@ The 1.0 label requires all of the following:
 * `.DVP` import or equivalent migration with documented field coverage;
 * local setup and maintenance tools with one consistent 386MAX-style UI;
 * automated API/backend tests plus documented real-application results;
+* reliable background serial operation for the declared BIOS/UART/FOSSIL
+  compatibility set, including conflict and shared-IRQ tests;
 * installation, recovery, user, administrator and developer documentation.
 
 The memory manager itself remains Open 386MAX; duplicating QEMM is not an

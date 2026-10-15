@@ -79,4 +79,5 @@ DESQview-specific script-buffer, idle-poll, text/graphics-page, EMS,
 serial-port and protection fields are decoded for `/LIST`. They are not stored
 in the version-1 catalogue because the foreground launcher cannot enforce
 them. A later versioned process descriptor will retain them when the matching
-1.x scheduler and VM capabilities exist.
+1.x scheduler and VM capabilities exist. The serial fields and safe migration
+rules are specified in [Serial and BBS design guide](SERIAL_BBS.md).

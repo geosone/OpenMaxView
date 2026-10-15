@@ -11,11 +11,11 @@ BUILD  := build
 PACKAGE := $(BUILD)/OpenMaxView
 DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
 	TESTING.TXT API.TXT COMPAT.TXT DEVELOP.TXT ROADMAP.TXT REMOTE2.TXT \
-	TROUBLE.TXT ARCHITEC.TXT
+	TROUBLE.TXT ARCHITEC.TXT HELP.TXT BBSGUIDE.TXT PROGDEV.TXT QUICK.TXT
 
 DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
-.PHONY: all package test test-dos clean
+.PHONY: all package test test-dos books book-html book-pdf clean
 
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
@@ -181,6 +181,26 @@ $(BUILD)/TROUBLE.TXT: docs/TROUBLESHOOTING.md | $(BUILD)
 $(BUILD)/ARCHITEC.TXT: docs/ARCHITECTURE.md | $(BUILD)
 	cp $< $@
 
+$(BUILD)/HELP.TXT: docs/HELP.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/BBSGUIDE.TXT: docs/SERIAL_BBS.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/PROGDEV.TXT: docs/PROGRAMMING.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/QUICK.TXT: docs/QUICKSTART.md | $(BUILD)
+	cp $< $@
+
+books: book-html book-pdf
+
+book-html:
+	python3 tools/build_books.py --format developer-html
+
+book-pdf:
+	python3 tools/build_books.py --format user-pdf
+
 package: all
 	rm -rf $(PACKAGE)
 	mkdir -p $(PACKAGE)
@@ -210,6 +230,7 @@ test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BU
 	$(BUILD)/test_autodetect
 	$(BUILD)/test_dvp
 	python3 -m unittest discover -s tests -p 'test_*.py'
+	python3 tools/build_books.py --check
 
 test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rm -rf $(BUILD)/INSTTEST
@@ -352,6 +373,10 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	test -f $(BUILD)/INSTTEST/REMOTE2.TXT
 	test -f $(BUILD)/INSTTEST/TROUBLE.TXT
 	test -f $(BUILD)/INSTTEST/ARCHITEC.TXT
+	test -f $(BUILD)/INSTTEST/HELP.TXT
+	test -f $(BUILD)/INSTTEST/BBSGUIDE.TXT
+	test -f $(BUILD)/INSTTEST/PROGDEV.TXT
+	test -f $(BUILD)/INSTTEST/QUICK.TXT
 	test -f $(BUILD)/INSTTEST/MAXVIEW.LOG
 	rg -q '^PRESERVED' $(BUILD)/INSTTEST/MAXVIEW.CFG
 	rg -q '^INIKEEP' $(BUILD)/INSTTEST/MAXVSET.INI

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">DOS application compatibility levels</title>
+  <desc id="desc">Four ascending levels lead from an ordinary DOS application to a virtual-task-ready application.</desc>
+  <rect width="960" height="420" fill="#d9d9d9"/>
+  <text x="480" y="48" text-anchor="middle" font-family="sans-serif" font-size="27" font-weight="bold" fill="#800000">Application readiness levels</text>
+  <g font-family="sans-serif" text-anchor="middle">
+    <rect x="45" y="250" width="200" height="110" rx="8" fill="#606060"/>
+    <text x="145" y="290" font-size="20" font-weight="bold" fill="white">DOS-compatible</text>
+    <text x="145" y="321" font-size="15" fill="white">DOS and BIOS services</text>
+    <rect x="270" y="200" width="200" height="160" rx="8" fill="#0055a4"/>
+    <text x="370" y="243" font-size="20" font-weight="bold" fill="white">Cooperative</text>
+    <text x="370" y="277" font-size="15" fill="white">detect • yield</text>
+    <text x="370" y="303" font-size="15" fill="white">short critical regions</text>
+    <rect x="495" y="145" width="200" height="215" rx="8" fill="#007070"/>
+    <text x="595" y="188" font-size="20" font-weight="bold" fill="white">Task-aware</text>
+    <text x="595" y="222" font-size="15" fill="white">memory • video</text>
+    <text x="595" y="248" font-size="15" fill="white">keyboard • objects</text>
+    <rect x="720" y="90" width="200" height="270" rx="8" fill="#003b80"/>
+    <text x="820" y="133" font-size="20" font-weight="bold" fill="white">1.x VM-ready</text>
+    <text x="820" y="167" font-size="15" fill="#ffff80">declared I/O and IRQs</text>
+    <text x="820" y="193" font-size="15" fill="#ffff80">background tested</text>
+    <text x="820" y="219" font-size="15" fill="#ffff80">serial ownership</text>
+  </g>
+  <path d="M70 382 H900" stroke="#800000" stroke-width="6" marker-end="url(#arrow3)"/>
+  <defs><marker id="arrow3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#800000"/></marker></defs>
+</svg>

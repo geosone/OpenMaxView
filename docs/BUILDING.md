@@ -9,6 +9,7 @@
   Open 386MAX tree;
 * a host C89 compiler and Python 3 for host tests;
 * DOSBox for `make test-dos`.
+* Pandoc and LuaLaTeX for `make books` (the runtime build does not need them).
 
 The project intentionally uses the same Open Watcom/JWasm/JWlink toolchain as
 Open 386MAX. NASM is not part of the build.
@@ -20,6 +21,7 @@ make
 make package
 make test
 make test-dos
+make books
 make clean
 ```
 
@@ -36,6 +38,28 @@ JWasm's MASM-compatible mode and JWlink creates COM and DOS EXE images.
 `make package` rebuilds `build/OpenMaxView/` as installation media. It
 contains the installer, runtime programs, default data files, README and GPL
 license. Build objects, maps and test-only probes are not copied there.
+
+## Documentation books
+
+The book builder consumes the Markdown sources and their linked SVG diagrams:
+
+```sh
+make book-html  # build/books/OpenMaxView-Developer.html
+make book-pdf   # build/books/OpenMaxView-User.pdf
+make books      # both products
+```
+
+The developer HTML book is self-contained: its 386MAX-inspired stylesheet and
+images are embedded so it can be copied or opened without the source tree. It
+combines the programming, API, architecture, build, test and development
+material, including the clearly deferred 2.x network design. The user PDF
+applies the same blue, gray, cyan and red visual vocabulary, starts with the
+quick-start guide, and combines daily operation, tools, configuration, BBS
+planning and troubleshooting in A4 book format.
+
+Use `python3 tools/build_books.py --check` for a fast source and local-link
+check without Pandoc. `--output directory` changes the destination and
+`--format developer-html` or `--format user-pdf` builds one product.
 
 ## Reproducible inputs
 
