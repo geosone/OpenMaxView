@@ -44,6 +44,21 @@ static int parse_memory(const char *text, unsigned *value)
     return 1;
 }
 
+static int safe_field(const char *text)
+{
+    return strchr(text, '|') == NULL && strchr(text, '\n') == NULL &&
+           strchr(text, '\r') == NULL;
+}
+
+int odq_program_valid(const odq_program *program)
+{
+    return isprint((unsigned char)program->hotkey) && program->hotkey != '|' &&
+           program->title[0] != '\0' &&
+           program->command[0] != '\0' && safe_field(program->title) &&
+           safe_field(program->command) && safe_field(program->directory) &&
+           (program->max_kb == 0 || program->min_kb <= program->max_kb);
+}
+
 static int parse_line(char *line, odq_program *program)
 {
     char *fields[6];
@@ -116,9 +131,91 @@ int odq_catalog_load(const char *path, odq_catalog *catalog,
             fclose(stream);
             return ODQ_CATALOG_SYNTAX;
         }
+        {
+            unsigned previous;
+            for (previous = 0; previous < catalog->count; ++previous)
+                if (catalog->programs[previous].hotkey ==
+                    catalog->programs[catalog->count].hotkey) {
+                    if (error_line != NULL)
+                        *error_line = line_number;
+                    fclose(stream);
+                    return ODQ_CATALOG_SYNTAX;
+                }
+        }
         ++catalog->count;
     }
     fclose(stream);
+    return ODQ_CATALOG_OK;
+}
+
+int odq_catalog_save(const char *path, const odq_catalog *catalog)
+{
+    FILE *stream;
+    unsigned index, previous;
+    char temporary[260], backup[260];
+    const char *slash, *dot;
+    size_t stem_length;
+    int had_original;
+
+    if (catalog->count > ODQ_MAX_PROGRAMS)
+        return ODQ_CATALOG_FULL;
+    for (index = 0; index < catalog->count; ++index)
+        if (!odq_program_valid(&catalog->programs[index]))
+            return ODQ_CATALOG_SYNTAX;
+    for (index = 0; index < catalog->count; ++index)
+        for (previous = 0; previous < index; ++previous)
+            if (toupper((unsigned char)catalog->programs[index].hotkey) ==
+                toupper((unsigned char)catalog->programs[previous].hotkey))
+                return ODQ_CATALOG_SYNTAX;
+
+    slash = strrchr(path, '\\');
+    if (strrchr(path, '/') != NULL &&
+        (slash == NULL || strrchr(path, '/') > slash))
+        slash = strrchr(path, '/');
+    dot = strrchr(path, '.');
+    if (dot == NULL || (slash != NULL && dot < slash))
+        dot = path + strlen(path);
+    stem_length = (size_t)(dot - path);
+    if (stem_length + 5 > sizeof(temporary))
+        return ODQ_CATALOG_IO;
+    memcpy(temporary, path, stem_length);
+    strcpy(temporary + stem_length, ".NEW");
+    memcpy(backup, path, stem_length);
+    strcpy(backup + stem_length, ".BAK");
+
+    stream = fopen(temporary, "wt");
+    if (stream == NULL)
+        return ODQ_CATALOG_IO;
+    fputs("# Open MaxView program catalogue version 1\n", stream);
+    fputs("# hotkey|title|command|working-directory|min-kb|max-kb\n", stream);
+    for (index = 0; index < catalog->count; ++index) {
+        const odq_program *program = &catalog->programs[index];
+        if (fprintf(stream, "%c|%s|%s|%s|%u|%u\n",
+                    toupper((unsigned char)program->hotkey), program->title,
+                    program->command, program->directory, program->min_kb,
+                    program->max_kb) < 0) {
+            fclose(stream);
+            return ODQ_CATALOG_IO;
+        }
+    }
+    if (fclose(stream) != 0)
+        return ODQ_CATALOG_IO;
+
+    stream = fopen(path, "rb");
+    had_original = stream != NULL;
+    if (stream != NULL)
+        fclose(stream);
+    remove(backup);
+    if (had_original && rename(path, backup) != 0) {
+        remove(temporary);
+        return ODQ_CATALOG_IO;
+    }
+    if (rename(temporary, path) != 0) {
+        if (had_original)
+            rename(backup, path);
+        remove(temporary);
+        return ODQ_CATALOG_IO;
+    }
     return ODQ_CATALOG_OK;
 }
 

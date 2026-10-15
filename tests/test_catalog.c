@@ -35,6 +35,20 @@ int main(void)
     if (catalog.programs[0].min_kb != 128 || catalog.programs[0].max_kb != 640)
         fail("memory limits parsed incorrectly");
 
+    if (odq_catalog_save("build/test-saved.cfg", &catalog) != ODQ_CATALOG_OK)
+        fail("valid catalogue could not be saved");
+    memset(&catalog, 0, sizeof(catalog));
+    if (odq_catalog_load("build/test-saved.cfg", &catalog, &line) !=
+        ODQ_CATALOG_OK || catalog.count != 2 ||
+        strcmp(catalog.programs[1].title, "Example") != 0)
+        fail("saved catalogue did not round-trip");
+    strcpy(catalog.programs[1].title, "Changed");
+    if (odq_catalog_save("build/test-saved.cfg", &catalog) != ODQ_CATALOG_OK)
+        fail("catalogue replacement failed");
+    if (odq_catalog_load("build/test-saved.BAK", &catalog, &line) !=
+        ODQ_CATALOG_OK || strcmp(catalog.programs[1].title, "Example") != 0)
+        fail("catalogue backup was not retained");
+
     stream = fopen("build/test.cfg", "wt");
     if (stream == NULL)
         fail("cannot rewrite fixture");
@@ -43,6 +57,26 @@ int main(void)
     if (odq_catalog_load("build/test.cfg", &catalog, &line) != ODQ_CATALOG_SYNTAX ||
         line != 1)
         fail("invalid memory range accepted");
+
+    memset(&catalog, 0, sizeof(catalog));
+    catalog.count = 1;
+    catalog.programs[0].hotkey = 'X';
+    strcpy(catalog.programs[0].title, "Invalid|Title");
+    strcpy(catalog.programs[0].command, "RUN.EXE");
+    if (odq_catalog_save("build/test-invalid.cfg", &catalog) !=
+        ODQ_CATALOG_SYNTAX)
+        fail("unsafe catalogue field was saved");
+
+    memset(&catalog, 0, sizeof(catalog));
+    catalog.count = 2;
+    catalog.programs[0].hotkey = 'D';
+    strcpy(catalog.programs[0].title, "First");
+    strcpy(catalog.programs[0].command, "ONE.EXE");
+    catalog.programs[1] = catalog.programs[0];
+    strcpy(catalog.programs[1].title, "Second");
+    if (odq_catalog_save("build/test-duplicate.cfg", &catalog) !=
+        ODQ_CATALOG_SYNTAX)
+        fail("duplicate hotkey was saved");
 
     puts("catalog tests passed");
     return 0;

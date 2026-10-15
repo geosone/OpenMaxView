@@ -39,6 +39,8 @@ typedef struct install_file {
 static const install_file files[] = {
     { "MAXVIEW.EXE", "MAXVIEW.EXE", 1, 0 },
     { "MAXVTSR.COM", "MAXVTSR.COM", 1, 0 },
+    { "MAXVAPP.EXE", "MAXVAPP.EXE", 1, 0 },
+    { "MAXVMEM.EXE", "MAXVMEM.EXE", 1, 0 },
     { "MAXVIEW.CFG", "MAXVIEW.CFG", 1, 1 },
     { "DVPROBE.EXE", "DVPROBE.EXE", 0, 0 },
     { "README.TXT",  "README.TXT",  0, 0 },

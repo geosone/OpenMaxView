@@ -33,7 +33,22 @@ odq_max_backend_query_ proc near
         int     2Fh
         mov     ax,es
         or      ax,di
+        jnz     short backend_found
+
+        ; Older QPI clients discover the same entry through INT 67h.
+        ; Open 386MAX keeps this path for QEMM-compatible environments.
+        xor     di,di
+        mov     es,di
+        mov     ax,3F00h
+        mov     cx,5145h              ; 'QE'
+        mov     dx,4D4Dh              ; 'MM'
+        int     67h
+        or      ah,ah
+        jnz     short backend_absent
+        mov     ax,es
+        or      ax,di
         jz      short backend_absent
+backend_found:
         mov     word ptr cs:qpi_entry,di
         mov     ax,es
         mov     word ptr cs:qpi_entry+2,ax

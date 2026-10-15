@@ -22,7 +22,7 @@ on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
 next launch.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
-contains no memory-manager logic.  In 0.1 it launches a child through DOS and
+contains no memory-manager logic.  In 0.3 it launches a child through DOS and
 regains control when that child exits.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
@@ -31,11 +31,22 @@ GPL-licensed INSTALL/QUILIB code, while omitting 386MAX-specific archive,
 registration and CONFIG.SYS handling.  `/S /D:path` provides a testable
 unattended path, and upgrades preserve the user's program catalogue.
 
+`MAXVAPP.EXE` owns interactive program-catalogue maintenance.  It provides the
+independently implemented equivalent of the essential Add/Change/Delete
+Program utilities and writes updates through `.NEW` while retaining `.BAK`.
+`MAXVMEM.EXE` is a read-only status client for DOS, EMS, XMS, the resident API,
+VCPI and the versioned Open 386MAX backend interface.  It reports unavailable
+data explicitly instead of deriving unsupported VM state from legacy APIs.
+
 Its 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,
 red triggers, cyan selection, shadows, double dialog borders and bottom
 buttons.  The renderer stays local so future builds can run without copying or
 installing the full 386MAX user-interface library.
+
+New tools share the small `mvui` renderer so menu bars, blue data panes, gray
+quick-help panes, cyan dialogs, red hotkeys, shadows and bottom buttons remain
+consistent across the suite.
 
 Open 386MAX is the intended 386 VMM.  Its `9x` branch supplies EMS, XMS, VCPI,
 a small QPI I/O-trapping subset, and an Open-MaxView-specific ABI query.  The

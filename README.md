@@ -10,7 +10,7 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.2
+## Current milestone: 0.3
 
 This first runnable milestone provides:
 
@@ -21,12 +21,15 @@ This first runnable milestone provides:
 * Open 386MAX backend ABI discovery/status validation and a diagnostic screen;
 * the Open 386MAX QUILIB look: two-pane layout, palette, shadows, hotkeys and
   bottom command buttons;
+* `MAXVAPP.EXE`, a full-screen Add/Change/Delete Program catalogue editor with
+  atomic `.NEW`/`.BAK` updates;
+* `MAXVMEM.EXE`, a read-only DOS/EMS/XMS/VCPI/MAXVTSR/Open-386MAX status tool;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.2 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.3 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -55,7 +58,8 @@ installation-media directory `build/OpenMaxView/` containing:
 
 ```text
 SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
-DVPROBE.EXE     MAXVIEW.CFG     README.TXT     LICENSE.TXT
+MAXVAPP.EXE     MAXVMEM.EXE     DVPROBE.EXE
+MAXVIEW.CFG     README.TXT      LICENSE.TXT
 ```
 
 Run `MAXVIEW`.  The launcher installs `MAXVTSR.COM` automatically when it is
@@ -83,7 +87,7 @@ DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
-Version 0.2 validates its private ABI and reports the root-context status.  It
+Version 0.3 validates its private ABI and reports the root-context status.  It
 does not claim or request multiple VM services until Open 386MAX advertises
 the corresponding capability.
 
@@ -95,8 +99,26 @@ Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
 hotkey|title|command|working-directory|min-kb|max-kb
 ```
 
-The working directory may be empty.  Memory values are advisory in 0.1 and
+The working directory may be empty.  Memory values are advisory in 0.3 and
 will become enforced limits when the VM backend lands.
+
+`MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
+launcher.  For scripts and diagnostics, `MAXVAPP /CHECK` validates it and
+`MAXVAPP /LIST` writes its canonical records to standard output.  Use
+`/F:file` to operate on another catalogue.
+
+## MaxView tools
+
+`MAXVAPP.EXE` replaces the essential Add/Change/Delete Program workflow.  It
+supports Insert, Enter, Delete, F2 and red-letter keyboard commands and saves
+through a temporary file while retaining the previous catalogue as `.BAK`.
+
+`MAXVMEM.EXE` is the first read-only system tool.  Its normal interface uses
+the same 386MAX-inspired colours, panes, double borders, shadows and command
+buttons as the rest of Open MaxView.  `MAXVMEM /T` emits testable key/value
+status for DOS conventional memory, EMS, XMS, the resident API, VCPI and the
+Open 386MAX backend.  Values which cannot be measured safely are shown as
+`N/A`; the tool does not pretend that ABI 1.0 supplies multiple V86 contexts.
 
 ## Reference-media inventory
 

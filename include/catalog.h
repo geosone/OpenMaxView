@@ -30,6 +30,8 @@ enum odq_catalog_result {
 
 int odq_catalog_load(const char *path, odq_catalog *catalog,
                      unsigned *error_line);
+int odq_catalog_save(const char *path, const odq_catalog *catalog);
+int odq_program_valid(const odq_program *program);
 
 #endif
 
