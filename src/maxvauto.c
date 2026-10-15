@@ -155,7 +155,7 @@ static void draw_desktop(const mva_scan *scan, unsigned selected,
     mvui_fill(0, 0, 0, 79, ' ', MVUI_MENU);
     mvui_write(0, 1, "Auto Setup", MVUI_MENU);
     mvui_put(0, 1, 'A', MVUI_MENU_TRIGGER);
-    mvui_write(0, 60, "Open MaxView 0.5", MVUI_MENU_TRIGGER);
+    mvui_write(0, 60, "Open MaxView 0.6", MVUI_MENU_TRIGGER);
     mvui_fill(2, 1, 21, 57, ' ', MVUI_DATA);
     mvui_shadow(2, 1, 21, 57);
     mvui_fill(2, 61, 21, 77, ' ', MVUI_QUICK);

@@ -10,7 +10,7 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.5
+## Current milestone: 0.6
 
 This first runnable milestone provides:
 
@@ -28,12 +28,14 @@ This first runnable milestone provides:
   by the launcher rather than merely stored;
 * `MAXVAUTO.EXE`, an automatic program detector with preview, selective apply,
   recursive scanning and an extensible free-software rule database;
+* `MAXVFILE.EXE`, a DOS file-services manager for directory navigation, file
+  copying, renaming, directory creation and confirmed deletion;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.5 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.6 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -64,7 +66,7 @@ installation-media directory `build/OpenMaxView/` containing:
 SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
 MAXVAPP.EXE     MAXVMEM.EXE     MAXVSET.EXE
 MAXVAUTO.EXE    MAXVAUTO.DAT    DVPROBE.EXE
-MAXVIEW.CFG     MAXVSET.INI
+MAXVFILE.EXE    MAXVIEW.CFG     MAXVSET.INI
 README.TXT      LICENSE.TXT
 ```
 
@@ -94,7 +96,7 @@ DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
-Version 0.5 validates its private ABI and reports the root-context status.  It
+Version 0.6 validates its private ABI and reports the root-context status.  It
 does not claim or request multiple VM services until Open 386MAX advertises
 the corresponding capability.
 
@@ -106,7 +108,7 @@ Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
 hotkey|title|command|working-directory|min-kb|max-kb
 ```
 
-The working directory may be empty.  Memory values are advisory in 0.5 and
+The working directory may be empty.  Memory values are advisory in 0.6 and
 will become enforced limits when the VM backend lands.
 
 `MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
@@ -154,6 +156,14 @@ filename|title|command|min-kb|max-kb
 
 Filenames follow DOS 8.3 rules.  Detection only checks for a named file; it
 does not execute, inspect or copy third-party programs.
+
+`MAXVFILE.EXE` is the foreground-mode DOS Services replacement.  Its
+386MAX-style browser opens directories with Enter or Backspace and provides
+F5 copy, F6 rename, F7 create-directory and F8 confirmed deletion.  It refuses
+to copy a file onto itself and never deletes without an explicit confirmation.
+For scripts and diagnostics, `/LIST /P:directory` emits a canonical directory
+listing, `/COPY source destination [/Y]` copies without overwriting unless
+requested, and `/DELETE file /Y` requires the explicit `/Y` guard.
 
 ## Reference-media inventory
 

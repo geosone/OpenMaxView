@@ -16,7 +16,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
-	$(BUILD)/DVPROBE.EXE $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
+	$(BUILD)/MAXVFILE.EXE $(BUILD)/DVPROBE.EXE $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT
 
@@ -77,6 +77,12 @@ $(BUILD)/maxvauto.obj: src/maxvauto.c include/autodetect.h include/catalog.h inc
 $(BUILD)/MAXVAUTO.EXE: $(BUILD)/maxvauto.obj $(BUILD)/autodetect.obj $(BUILD)/catalog.obj $(BUILD)/mvui.obj
 	cd $(BUILD) && $(JWLINK) format dos name MAXVAUTO.EXE option quiet option map=MAXVAUTO.MAP option stack=8192 option nofarcalls file maxvauto.obj,autodetect.obj,catalog.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
+$(BUILD)/maxvfile.obj: src/maxvfile.c include/mvui.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
+$(BUILD)/MAXVFILE.EXE: $(BUILD)/maxvfile.obj $(BUILD)/mvui.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVFILE.EXE option quiet option map=MAXVFILE.MAP option stack=8192 option nofarcalls file maxvfile.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+
 $(BUILD)/dvprobe.obj: examples/dvprobe.c include/maxbackend.h include/odqapi.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
@@ -115,7 +121,8 @@ package: all
 	mkdir -p $(PACKAGE)
 	cp $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVTSR.COM \
 		$(BUILD)/MAXVAPP.EXE $(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE \
-		$(BUILD)/MAXVAUTO.EXE $(BUILD)/DVPROBE.EXE $(BUILD)/MAXVIEW.CFG \
+		$(BUILD)/MAXVAUTO.EXE $(BUILD)/MAXVFILE.EXE $(BUILD)/DVPROBE.EXE \
+		$(BUILD)/MAXVIEW.CFG \
 		$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 		$(BUILD)/LICENSE.TXT $(PACKAGE)/
 
@@ -137,9 +144,13 @@ test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect
 test-dos: all $(BUILD)/MAXSTUB.COM
 	rm -rf $(BUILD)/INSTTEST
 	rm -rf $(BUILD)/AUTOTEST
+	rm -rf $(BUILD)/FILETEST
 	rm -f $(BUILD)/AUTOCFG $(BUILD)/AUTOCFG.BAK $(BUILD)/AUTOCFG.NEW
 	mkdir -p $(BUILD)/AUTOTEST
+	mkdir -p $(BUILD)/FILETEST
 	cp $(BUILD)/MAXVTSR.COM $(BUILD)/AUTOTEST/EDIT.COM
+	cp $(BUILD)/MAXVTSR.COM $(BUILD)/FILETEST/INPUT.BIN
+	cp $(BUILD)/MAXVIEW.EXE $(BUILD)/FILETEST/OTHER.BIN
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'MAXVTSR.COM > MVTSR.TXT' -c 'MAXVTSR.COM > MVTSR2.TXT' \
@@ -169,6 +180,13 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 		-c 'MAXVAUTO.EXE /APPLY /F:AUTOCFG /R:C:\BUILD\AUTOTEST > AUTODUP.TXT' \
 		-c 'MAXVAPP.EXE /CHECK /F:AUTOCFG > AUTOCFG.TXT' \
 		-c 'exit' >/dev/null 2>&1
+	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
+		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
+		-c 'MAXVFILE.EXE /LIST /P:C:\BUILD\FILETEST > FILELIST.TXT' \
+		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\COPY.BIN > FILECOPY.TXT' \
+		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\INPUT.BIN /Y > FILESAME.TXT' \
+		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\OTHER.BIN C:\BUILD\FILETEST\COPY.BIN /Y > FILEOVER.TXT' \
+		-c 'exit' >/dev/null 2>&1
 	rg -q 'resident API 0.2 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
@@ -191,12 +209,25 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 	rg -q 'added 1 program' $(BUILD)/AUTOAPLY.TXT
 	rg -q 'added 0 program' $(BUILD)/AUTODUP.TXT
 	rg -q '1 valid program' $(BUILD)/AUTOCFG.TXT
+	rg -q 'F|INPUT.BIN|' $(BUILD)/FILELIST.TXT
+	rg -q 'file copied' $(BUILD)/FILECOPY.TXT
+	rg -q 'copy failed' $(BUILD)/FILESAME.TXT
+	rg -q 'file copied' $(BUILD)/FILEOVER.TXT
+	cmp $(BUILD)/FILETEST/OTHER.BIN $(BUILD)/FILETEST/COPY.BIN
+	test ! -f '$(BUILD)/FILETEST/COPY.$$MV'
+	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
+		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
+		-c 'MAXVFILE.EXE /DELETE C:\BUILD\FILETEST\COPY.BIN /Y > FILEDEL.TXT' \
+		-c 'exit' >/dev/null 2>&1
+	rg -q 'file deleted' $(BUILD)/FILEDEL.TXT
+	test ! -f $(BUILD)/FILETEST/COPY.BIN
 	test -f $(BUILD)/INSTTEST/MAXVIEW.EXE
 	test -f $(BUILD)/INSTTEST/MAXVTSR.COM
 	test -f $(BUILD)/INSTTEST/MAXVAPP.EXE
 	test -f $(BUILD)/INSTTEST/MAXVMEM.EXE
 	test -f $(BUILD)/INSTTEST/MAXVSET.EXE
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.EXE
+	test -f $(BUILD)/INSTTEST/MAXVFILE.EXE
 	test -f $(BUILD)/INSTTEST/MAXVIEW.CFG
 	test -f $(BUILD)/INSTTEST/MAXVSET.INI
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.DAT
@@ -209,5 +240,6 @@ clean:
 	find $(BUILD) -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true
 	rm -rf $(BUILD)/INSTTEST
 	rm -rf $(BUILD)/AUTOTEST
+	rm -rf $(BUILD)/FILETEST
 	rm -rf $(PACKAGE)
 

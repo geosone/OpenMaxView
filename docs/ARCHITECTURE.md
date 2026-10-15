@@ -22,7 +22,7 @@ on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
 next launch.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
-contains no memory-manager logic.  In 0.5 it launches a child through DOS and
+contains no memory-manager logic.  In 0.6 it launches a child through DOS and
 regains control when that child exits.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
@@ -53,6 +53,12 @@ recursive roots, but never opens or executes a detected third-party binary.
 It filters existing catalogue commands, allocates an unused hotkey, and uses
 the catalogue module's atomic save path.  The database remains separate and
 is preserved by upgrades so users and distributors can add local rules.
+
+`MAXVFILE.EXE` provides the subset of DOS Services which is meaningful in the
+current foreground execution model: directory browsing, binary file copy,
+rename, directory creation and guarded deletion.  It uses DOS file APIs only
+and has no dependency on unavailable V86 context services.  Scriptable list,
+copy and delete modes make its file operations testable inside DOSBox.
 
 The shared 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,
