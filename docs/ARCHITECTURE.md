@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.9 resident API tracks foreground task compatibility state and nested
+The 0.10 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -35,7 +35,9 @@ the variable-sized multi-task allocator already exists.
 
 The sole foreground task is represented by a paragraph-aligned resident
 object header. Its public handle is a genuine `segment:0000` pointer, so
-`GETFOREGROUND`, `ISOBJ` and the object-type query share one identity. Dynamic
+`GETFOREGROUND`, `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type
+query share one identity. This exposes honest one-item enumeration and task
+metadata while continuing to label the window foreground-only. Dynamic
 objects are not exposed until the message-call stack ABI is implemented and
 tested.
 
@@ -125,6 +127,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Keyboard `PUSHKEY` | implemented for foreground | BIOS buffer injection; no per-task queue yet |
 | System/common memory | bounded foreground implementation | Resident 256-byte slots with allocation, release and status |
 | Foreground task object | implemented | Pointer-compatible handle, validation and type query |
+| Task enumeration and metadata | foreground implementation | `DOSUSER`, one-item `OBJNEXT`, version-1.00 `WININFO` |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
 | Concurrent V86 tasks | planned | Requires Open 386MAX extension |

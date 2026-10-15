@@ -22,8 +22,11 @@
 ;   INT 15h AX=DE15h/DE16h           set/get error-return policy
 ;   INT 15h AX=DE1Ch                 interrupt-safe critical entry
 ;   INT 15h AX=DE1Eh                 physical screen information
+;   INT 15h AX=DE1Fh                 foreground DOS-owner handle
 ;   INT 15h AX=DE19h/DE1Ah           common-memory allocate/release
 ;   INT 15h AX=DE26h                 foreground task handle
+;   INT 15h AX=DE2Bh                 foreground object-list traversal
+;   INT 15h AX=DE2Ch                 foreground window/task information
 ;   INT 15h AX=DE2Fh                 direct-video activation query
 ;   INT 15h AX=DE30h                 DESQview/X version query
 ;   INT 10h AH=FEh                   alternate text-video buffer
@@ -41,9 +44,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0009h
+MUX_VERSION    equ 000Ah
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 000Fh
+CAPABILITIES2  equ 007Fh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -251,10 +254,22 @@ int15_not_putcommon:
         jne     short int15_not_scrninfo
         jmp     int15_scrninfo
 int15_not_scrninfo:
+        cmp     ax,0DE1Fh             ; DOSUSER
+        jne     short int15_not_dosuser
+        jmp     int15_dosuser
+int15_not_dosuser:
         cmp     ax,0DE26h             ; GETFOREGROUND
         jne     short int15_not_foreground
         jmp     int15_foreground
 int15_not_foreground:
+        cmp     ax,0DE2Bh             ; OBJNEXT
+        jne     short int15_not_objnext
+        jmp     int15_objnext
+int15_not_objnext:
+        cmp     ax,0DE2Ch             ; WININFO
+        jne     short int15_not_wininfo
+        jmp     int15_wininfo
+int15_not_wininfo:
         cmp     ax,0DE2Fh             ; VIDEONOTIFY
         jne     short int15_not_videonotify
         jmp     int15_videonotify
@@ -381,6 +396,63 @@ int15_object_type_invalid:
 
 int15_foreground:
         mov     bx,word ptr cs:task_handle_segment
+        jmp     int15_handled
+
+int15_dosuser:
+        mov     bx,word ptr cs:task_handle_segment
+        jmp     int15_handled
+
+; Traverse the only window/task object in foreground mode.  A null start
+; returns the resident task handle; that handle returns a null end marker.
+int15_objnext:
+        mov     ax,es
+        or      ax,ax
+        jnz     short objnext_existing
+        or      di,di
+        jnz     short objnext_invalid
+        mov     ax,word ptr cs:task_handle_segment
+        mov     es,ax
+        xor     di,di
+        xor     ax,ax
+        jmp     int15_handled
+objnext_existing:
+        or      di,di
+        jnz     short objnext_invalid
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short objnext_invalid
+        xor     ax,ax
+        mov     es,ax
+        xor     di,di
+        jmp     int15_handled
+objnext_invalid:
+        mov     ax,1
+        jmp     int15_handled
+
+; DESQview 2.5-format information for the sole foreground task.  BX may be
+; zero for the default task or the exact resident task-handle segment.
+int15_wininfo:
+        cmp     dx,0100h
+        jne     short wininfo_invalid
+        or      bx,bx
+        jz      short wininfo_valid
+        cmp     bx,word ptr cs:task_handle_segment
+        jne     short wininfo_invalid
+wininfo_valid:
+        push    bx
+        mov     byte ptr es:[di+0],1  ; task rather than child window
+        mov     byte ptr es:[di+1],1  ; owner process number
+        mov     bx,word ptr cs:task_handle_segment
+        mov     word ptr es:[di+2],bx ; owner task handle
+        mov     word ptr es:[di+4],0  ; no separate mapping context yet
+        mov     byte ptr es:[di+6],0  ; waiting/runnable foreground state
+        mov     byte ptr es:[di+7],0
+        mov     word ptr es:[di+8],1  ; belongs to a DESQview process
+        mov     byte ptr es:[di+10],1 ; foreground-only window
+        pop     bx
+        xor     ax,ax
+        jmp     int15_handled
+wininfo_invalid:
+        mov     ax,1
         jmp     int15_handled
 
 int15_getmem:
@@ -622,9 +694,10 @@ task_object    label byte
         dw      0                     ; window/task object type
         dw      0,0                   ; public handle, patched at install
         dw      0,0                   ; canonical address, patched at install
-        dw      0,0,0,0,0,0,0,0      ; bounded public header storage
+        db      1,0                   ; task flag and internal window number
+        dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.9 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.10 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

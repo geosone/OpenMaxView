@@ -33,7 +33,10 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE1Ah ES:DI=block` | `AX=0` on release, `AX=1` for an invalid pointer | `PUTCOMMON` |
 | `INT 15h AX=DE1Ch` | Increments the critical count | Interrupt-safe `ENTERC` |
 | `INT 15h AX=DE1Eh` | `CL=rows`, `CH=columns`, `BL=video mode` | Physical `SCRNINFO` |
+| `INT 15h AX=DE1Fh` | `BX=segment` of the task handle | `DOSUSER`; the foreground task owns the single DOS session |
 | `INT 15h AX=DE26h` | `BX=segment` of the task handle (`BX:0000h`) | `GETFOREGROUND` |
+| `INT 15h AX=DE2Bh ES:DI=object` | `AX=0`, `ES:DI=next object`; `AX=1` for an invalid handle | `OBJNEXT`; one-item foreground task list |
+| `INT 15h AX=DE2Ch DX=0100h BX=task ES:DI=buffer` | `AX=0` and an 11-byte task description | `WININFO`; zero in `BX` selects the foreground task |
 | `INT 15h AX=DE2Fh` | `BX=0000h` | No direct-window switch in foreground mode |
 | `INT 15h AX=DE30h` | `BX=0000h` | Correctly identifies as not DESQview/X |
 | `INT 10h AH=FEh` | `ES:DI` points to the active text buffer | Foreground buffer alias |
@@ -61,10 +64,13 @@ manager; that requires the multi-context Open 386MAX backend.
 
 The foreground task has a paragraph-aligned, pointer-compatible object handle
 with the documented `FEDCh` signature and window/task type. `GETFOREGROUND`,
-`ISOBJ` and the object-type query therefore operate on a real resident object,
-not a placeholder number. Dynamic `NEW`, `FREE` and message-object calls remain
-unimplemented until their stack ABI and ownership rules have conformance
-coverage.
+`DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore
+operate on one real resident identity, not placeholder numbers. Starting
+`OBJNEXT` at `0000:0000` returns that task; traversing from the returned handle
+produces the null end marker. The version-1.00 `WININFO` record identifies task
+1, its owner handle, process status bit and the foreground-only constraint.
+Dynamic `NEW`, `FREE` and message-object calls remain unimplemented until
+their stack ABI and ownership rules have conformance coverage.
 
 ## Open MaxView private diagnostics
 
@@ -73,16 +79,16 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0009h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=000Ah`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=000Fh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=007Fh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 3 advertise
-`ISOBJ`, object-type, foreground-handle and `GETVER` support. The declarations
-are in `include/odqapi.h`.
+C-style linefeed interpretation. For `D704h`, bits 0 through 6 advertise
+`ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT` and
+`WININFO` support. The declarations are in `include/odqapi.h`.
 
 ## Conformance probe
 
@@ -90,6 +96,8 @@ After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
 call, task defaults, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, error policy,
 task/common-memory allocation, bounds and release, the resident
 foreground task handle and its validation/type,
+navigates the one-item object list, validates DOS ownership and the versioned
+window-information record,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
 alternate video-buffer calls and foreground `PUSHKEY`. It also reports whether
 the versioned Open 386MAX backend ABI is available.

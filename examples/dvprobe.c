@@ -86,7 +86,9 @@ int main(void)
     struct SREGS segreg;
     unsigned video_segment = 0;
     unsigned task_segment;
+    unsigned enumerated_segment;
     unsigned i;
+    unsigned char window_info[ODQ_WININFO_SIZE];
     far_block system_blocks[ODQ_SYSTEM_SLOT_COUNT];
     far_block common_block;
     far_block failed_block;
@@ -264,6 +266,91 @@ int main(void)
         return 17;
     }
     puts("Foreground task object APIs passed.");
+
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_DOS_USER;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.bx != task_segment) {
+        puts("DOSUSER did not return the foreground task.");
+        return 28;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_OBJECT_NEXT;
+    inregs.x.di = 0;
+    segreg.es = 0;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    enumerated_segment = segreg.es;
+    if (outregs.x.ax != 0 || enumerated_segment != task_segment ||
+        outregs.x.di != 0) {
+        puts("OBJNEXT did not enumerate the foreground task.");
+        return 29;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_OBJECT_NEXT;
+    inregs.x.di = 0;
+    segreg.es = enumerated_segment;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.ax != 0 || segreg.es != 0 || outregs.x.di != 0) {
+        puts("OBJNEXT did not terminate the foreground object list.");
+        return 30;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_OBJECT_NEXT;
+    inregs.x.di = 1;
+    segreg.es = task_segment;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.ax != 1) {
+        puts("OBJNEXT accepted an invalid object pointer.");
+        return 33;
+    }
+    memset(window_info, 0xff, sizeof(window_info));
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_WINDOW_INFO;
+    inregs.x.bx = task_segment;
+    inregs.x.dx = ODQ_WININFO_VERSION;
+    inregs.x.di = FP_OFF(window_info);
+    segreg.es = FP_SEG(window_info);
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.ax != 0 || window_info[0] != ODQ_WININFO_TASK ||
+        window_info[1] != 1 ||
+        *((unsigned *)(window_info + 2)) != task_segment ||
+        *((unsigned *)(window_info + 4)) != 0 || window_info[6] != 0 ||
+        *((unsigned *)(window_info + 8)) != ODQ_WININFO_PROCESS ||
+        window_info[10] != ODQ_WININFO_FOREGROUND_ONLY) {
+        puts("WININFO foreground descriptor failed.");
+        return 31;
+    }
+    memset(window_info, 0xff, sizeof(window_info));
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_WINDOW_INFO;
+    inregs.x.bx = 0;
+    inregs.x.dx = ODQ_WININFO_VERSION;
+    inregs.x.di = FP_OFF(window_info);
+    segreg.es = FP_SEG(window_info);
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.ax != 0 ||
+        *((unsigned *)(window_info + 2)) != task_segment) {
+        puts("WININFO default-task selection failed.");
+        return 34;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_WINDOW_INFO;
+    inregs.x.bx = task_segment;
+    inregs.x.dx = 0;
+    inregs.x.di = FP_OFF(window_info);
+    segreg.es = FP_SEG(window_info);
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (outregs.x.ax != 1) {
+        puts("WININFO accepted an unsupported format version.");
+        return 32;
+    }
+    puts("Foreground DOSUSER, OBJNEXT and WININFO APIs passed.");
 
     if (!query_state(0, &video_segment)) {
         puts("Private capability query failed.");
