@@ -49,6 +49,9 @@ Use the cursor keys to select a catalogue entry and Enter to launch it. If
 directly. The launcher returns after the DOS child exits. Esc requests exit;
 `CONFIRM_EXIT` controls whether confirmation is required.
 
+Press F2 to inspect the selected program's launch fields and retained DVP
+process profile. Press `D` for resident API, VCPI and Open 386MAX diagnostics.
+
 ## Add programs
 
 Run `MAXVAPP` to add, change or delete catalogue records manually. A record

@@ -306,12 +306,65 @@ static void show_diagnostics(void)
     getch();
 }
 
+static void show_program_info(const odq_program *program)
+{
+    char line[70];
+    const odq_process_profile *profile;
+
+    frame(2, 5, 22, 74, "Program Information");
+    if (program == NULL) {
+        write_at(11, 18, "No program is selected.", ATTR_ACTIVE);
+        write_at(20, 18, "Press any key to return.", ATTR_ACTIVE);
+        getch();
+        return;
+    }
+    write_at(4, 9, "Title:", ATTR_DATA_HIGH);
+    write_wrapped(4, 17, 53, 1, program->title, ATTR_ACTIVE);
+    write_at(6, 9, "Command:", ATTR_DATA_HIGH);
+    write_wrapped(6, 18, 52, 2, program->command, ATTR_ACTIVE);
+    write_at(9, 9, "Directory:", ATTR_DATA_HIGH);
+    write_wrapped(9, 20, 50, 1,
+                  program->directory[0] ? program->directory : "(current)",
+                  ATTR_ACTIVE);
+    sprintf(line, "Conventional memory: %u KB minimum, %u KB maximum",
+            program->min_kb, program->max_kb);
+    write_at(11, 9, line, ATTR_ACTIVE);
+
+    profile = &program->profile;
+    if (profile->version == 0) {
+        write_at(13, 9, "Process profile: none (six-field catalogue entry)",
+                 ATTR_ACTIVE);
+    } else {
+        sprintf(line, "Profile %u, DVP source %u, system %u KB, script %u B",
+                profile->version, profile->source_version,
+                profile->system_kb, profile->script_bytes);
+        write_at(13, 9, line, ATTR_ACTIVE);
+        sprintf(line, "Idle polls %u, EMS max %u KB, extra system %u",
+                profile->idle_polls, profile->max_ems_kb,
+                profile->extra_system);
+        write_at(14, 9, line, ATTR_ACTIVE);
+        sprintf(line, "Video %ux%u, text/graphics pages %u/%u",
+                profile->columns, profile->rows, profile->text_pages,
+                profile->graphics_pages);
+        write_at(15, 9, line, ATTR_ACTIVE);
+        sprintf(line, "Serial mask %02X, protection %02X, flags %02X/%02X/%02X/%02X",
+                profile->serial_ports, profile->protection, profile->flags1,
+                profile->flags2, profile->flags3, profile->flags4);
+        write_at(16, 9, line, ATTR_ACTIVE);
+        write_at(18, 9, "Profile retained; backend enforcement is pending.",
+                 ATTR_DATA_HIGH);
+    }
+    write_at(20, 9, "Press any key to return.", ATTR_ACTIVE);
+    getch();
+}
+
 static void show_help(void)
 {
     frame(4, 12, 18, 67, "Open MaxView Help");
     write_at(7, 16, "Up/Down       Select a program", ATTR_ACTIVE);
     write_at(9, 16, "Enter/hotkey  Start a program", ATTR_ACTIVE);
-    write_at(11, 16, "F2 or D       Show diagnostics", ATTR_ACTIVE);
+    write_at(11, 16, "F2            Program information", ATTR_ACTIVE);
+    write_at(12, 16, "D             System diagnostics", ATTR_ACTIVE);
     write_at(13, 16, "Esc or Q      Exit Open MaxView", ATTR_ACTIVE);
     write_at(16, 16, "Press any key to return.", ATTR_ACTIVE);
     getch();
@@ -422,7 +475,8 @@ int main(void)
             if (key == 59)
                 show_help();
             else if (key == 60)
-                show_diagnostics();
+                show_program_info(catalog.count != 0 ?
+                                  &catalog.programs[selected] : NULL);
             else if (key == 72 && selected > 0)
                 --selected;
             else if (key == 80 && selected + 1 < catalog.count)

@@ -17,7 +17,9 @@ preserved during upgrades.
 Full-screen program catalogue and launcher. It reads `MAXVIEW.CFG` and
 `MAXVSET.INI` in the current directory, optionally loads the two resident
 services, changes to the selected working directory, and starts the command
-through DOS. Milestone 0.8 waits for that command to finish.
+through DOS. F2 displays the selected launch record and retained DVP process
+profile; `D` displays system diagnostics. Milestone 0.8 waits for the command
+to finish.
 
 ## MAXVTSR.COM
 

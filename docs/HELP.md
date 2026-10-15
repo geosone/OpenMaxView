@@ -86,6 +86,7 @@ per-task video virtualisation exists.
 | Enter | Open, edit or confirm |
 | Esc | Cancel or leave the current screen |
 | F2 | Save in editors |
+| F2 in MAXVIEW | Show launch fields and the retained DVP process profile |
 | F5 | Refresh, scan or copy according to the screen |
 | Insert | Add a catalogue entry |
 | Delete | Request removal of the selected entry |
