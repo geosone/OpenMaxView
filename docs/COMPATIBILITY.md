@@ -10,7 +10,7 @@
 | Task-state calls | Foreground implementation | `APPNUM`, `APILEVEL`, modes, error policy and critical-state calls. |
 | Alternate text-video buffer | Foreground implementation | Aliases B000h/B800h and accepts change notification. |
 | Physical screen queries | Foreground implementation | Reports BIOS rows, columns and mode; no direct-window switch or DV/X identity. |
-| DESQview `PUSHKEY` | Foreground implementation | Adds scan/character pair to the BIOS keyboard buffer. |
+| DESQview keyboard injection | Foreground implementation | `PUSHKEY` and handle-validated `PUTKEY` add scan/character pairs to the BIOS buffer. |
 | System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each. |
 | Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |

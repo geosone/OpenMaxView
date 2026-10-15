@@ -130,7 +130,8 @@ Developer diagnostic for the resident DESQview-compatible calls and the
 Open 386MAX backend query. It exercises pause, critical nesting and alternate
 video-buffer behaviour, exhausts and releases the bounded task-memory pool,
 checks common-memory accounting, validates the foreground task object and
-its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, and prints a pass/fail report.
+its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
+keyboard injection, and prints a pass/fail report.
 
 ## qipinfo.py
 

@@ -21,6 +21,7 @@
 ;   INT 15h AX=DE14h                 object type query
 ;   INT 15h AX=DE15h/DE16h           set/get error-return policy
 ;   INT 15h AX=DE1Ch                 interrupt-safe critical entry
+;   INT 15h AX=DE1Dh                 targeted foreground PUTKEY
 ;   INT 15h AX=DE1Eh                 physical screen information
 ;   INT 15h AX=DE1Fh                 foreground DOS-owner handle
 ;   INT 15h AX=DE19h/DE1Ah           common-memory allocate/release
@@ -44,9 +45,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 000Ah
+MUX_VERSION    equ 000Bh
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 007Fh
+CAPABILITIES2  equ 00FFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -250,6 +251,10 @@ int15_not_getcommon:
         jne     short int15_not_putcommon
         jmp     int15_putcommon
 int15_not_putcommon:
+        cmp     ax,0DE1Dh             ; PUTKEY
+        jne     short int15_not_putkey
+        jmp     int15_putkey
+int15_not_putkey:
         cmp     ax,0DE1Eh             ; SCRNINFO
         jne     short int15_not_scrninfo
         jmp     int15_scrninfo
@@ -300,26 +305,7 @@ int15_apilevel:
         jmp     int15_handled
 int15_pushkey:
         push    ax
-        push    dx
-        push    di
-        push    es
-        mov     ax,40h                ; BIOS data area
-        mov     es,ax
-        mov     di,word ptr es:[1Ch]  ; keyboard-buffer tail
-        mov     ax,di
-        add     ax,2
-        cmp     ax,3Eh
-        jb      short pushkey_nowrap
-        mov     ax,1Eh
-pushkey_nowrap:
-        cmp     ax,word ptr es:[1Ah]  ; full when next tail is head
-        je      short pushkey_done
-        mov     word ptr es:[di],bx   ; BH scan code, BL character
-        mov     word ptr es:[1Ch],ax
-pushkey_done:
-        pop     es
-        pop     di
-        pop     dx
+        call    enqueue_bios_key
         pop     ax
         jmp     int15_handled
 int15_justify:
@@ -401,6 +387,44 @@ int15_foreground:
 int15_dosuser:
         mov     bx,word ptr cs:task_handle_segment
         jmp     int15_handled
+
+int15_putkey:
+        cmp     dx,word ptr cs:task_handle_segment
+        jne     short putkey_invalid
+        call    enqueue_bios_key
+        jmp     int15_handled
+putkey_invalid:
+        mov     ax,1
+        jmp     int15_handled
+
+; Queue BX (BH scan code, BL character) in the BIOS foreground buffer.
+; AX=0 succeeds and AX=1 reports the standard full-buffer condition.
+enqueue_bios_key:
+        push    dx
+        push    di
+        push    es
+        mov     ax,40h                ; BIOS data area
+        mov     es,ax
+        mov     di,word ptr es:[1Ch]  ; keyboard-buffer tail
+        mov     dx,di
+        add     dx,2
+        cmp     dx,3Eh
+        jb      short enqueue_nowrap
+        mov     dx,1Eh
+enqueue_nowrap:
+        cmp     dx,word ptr es:[1Ah]  ; full when next tail is head
+        je      short enqueue_full
+        mov     word ptr es:[di],bx
+        mov     word ptr es:[1Ch],dx
+        xor     ax,ax
+        jmp     short enqueue_done
+enqueue_full:
+        mov     ax,1
+enqueue_done:
+        pop     es
+        pop     di
+        pop     dx
+        ret
 
 ; Traverse the only window/task object in foreground mode.  A null start
 ; returns the resident task handle; that handle returns a null end marker.
@@ -697,7 +721,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.10 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.11 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

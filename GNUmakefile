@@ -296,7 +296,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\INPUT.BIN /Y > FILESAME.TXT' \
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\OTHER.BIN C:\BUILD\FILETEST\COPY.BIN /Y > FILEOVER.TXT' \
 		-c 'exit' >/dev/null 2>&1
-	rg -q 'resident API 0.10 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'resident API 0.11 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'TopView-compatible GETVER identity passed' $(BUILD)/MVPROBE.TXT
@@ -312,6 +312,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'SCRNINFO and video identity APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Alternate video-buffer API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Foreground PUSHKEY API passed' $(BUILD)/MVPROBE.TXT
+	rg -q 'Foreground targeted PUTKEY API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend not detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend ABI 1.0, 2/4 contexts' $(BUILD)/MVPROBE2.TXT
 	rg -q 'ANSI console 1.0 installed' $(BUILD)/ANSI1.TXT
@@ -320,7 +321,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	rg -q 'valid program' $(BUILD)/CFGCHK.TXT
 	rg -q 'MAXVAPP.EXE' $(BUILD)/CFGLIST.TXT
-	rg -q 'MV_API=0.10' $(BUILD)/MEMSTAT.TXT
+	rg -q 'MV_API=0.11' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_TOTAL_BYTES=1024' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_AVAILABLE_BYTES=1024' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_LARGEST_BYTES=256' $(BUILD)/MEMSTAT.TXT

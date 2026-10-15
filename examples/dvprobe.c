@@ -427,6 +427,35 @@ int main(void)
     }
     puts("Foreground PUSHKEY API passed.");
 
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_PUT_KEY;
+    inregs.h.bh = 0x15;
+    inregs.h.bl = 'y';
+    inregs.x.dx = task_segment;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.ax != 0) {
+        puts("Foreground PUTKEY rejected the task handle.");
+        return 35;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.h.ah = 0x00;
+    int86(0x16, &inregs, &outregs);
+    if (outregs.h.ah != 0x15 || outregs.h.al != 'y') {
+        puts("Foreground PUTKEY queue result failed.");
+        return 36;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_PUT_KEY;
+    inregs.h.bh = 0x16;
+    inregs.h.bl = 'u';
+    inregs.x.dx = task_segment + 1;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.ax == 0) {
+        puts("PUTKEY accepted an invalid task handle.");
+        return 37;
+    }
+    puts("Foreground targeted PUTKEY API passed.");
+
     inregs.x.ax = ODQ_MUX_RESET;
     int86(0x2f, &inregs, &outregs);
 

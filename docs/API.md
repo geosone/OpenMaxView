@@ -32,6 +32,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE19h BX=bytes` | `AX=0`, `ES:DI=block`; null pointer and `AX=1` on failure | `GETCOMMON` |
 | `INT 15h AX=DE1Ah ES:DI=block` | `AX=0` on release, `AX=1` for an invalid pointer | `PUTCOMMON` |
 | `INT 15h AX=DE1Ch` | Increments the critical count | Interrupt-safe `ENTERC` |
+| `INT 15h AX=DE1Dh DX=task BH=scan BL=character` | `AX=0` when queued, nonzero if invalid or full | Targeted foreground `PUTKEY` |
 | `INT 15h AX=DE1Eh` | `CL=rows`, `CH=columns`, `BL=video mode` | Physical `SCRNINFO` |
 | `INT 15h AX=DE1Fh` | `BX=segment` of the task handle | `DOSUSER`; the foreground task owns the single DOS session |
 | `INT 15h AX=DE26h` | `BX=segment` of the task handle (`BX:0000h`) | `GETFOREGROUND` |
@@ -72,6 +73,12 @@ produces the null end marker. The version-1.00 `WININFO` record identifies task
 Dynamic `NEW`, `FREE` and message-object calls remain unimplemented until
 their stack ABI and ownership rules have conformance coverage.
 
+Both keyboard injection calls use the real BIOS-format foreground queue.
+`PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
+requires the exact foreground task-handle segment and reports a full buffer.
+Per-task queues will replace this shared foreground backing only when multiple
+Open 386MAX contexts exist.
+
 ## Open MaxView private diagnostics
 
 Private calls use `INT 2Fh` and are for Open MaxView tools and tests, not for
@@ -79,16 +86,17 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=000Ah`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=000Bh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=007Fh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=00FFh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 6 advertise
+C-style linefeed interpretation. For `D704h`, bits 0 through 7 advertise
 `ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT` and
-`WININFO` support. The declarations are in `include/odqapi.h`.
+`WININFO`, and targeted `PUTKEY` support. The declarations are in
+`include/odqapi.h`.
 
 ## Conformance probe
 
@@ -99,5 +107,6 @@ foreground task handle and its validation/type,
 navigates the one-item object list, validates DOS ownership and the versioned
 window-information record,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
-alternate video-buffer calls and foreground `PUSHKEY`. It also reports whether
-the versioned Open 386MAX backend ABI is available.
+alternate video-buffer calls, foreground `PUSHKEY` and targeted `PUTKEY`,
+including invalid-handle rejection. It also reports whether the versioned
+Open 386MAX backend ABI is available.
