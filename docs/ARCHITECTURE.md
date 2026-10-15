@@ -184,6 +184,17 @@ existing QPI calls:
 7. account for foreground/background priority;
 8. return to the Open MaxView scheduler without exposing 386MAX internals.
 
+### Windows startup invariant
+
+When MaxView private-address-space mode `08h` is active, the scheduler must
+restore the Open 386MAX standard/root context before launching Windows. The
+386MAX Windows support records the page table for the first 4 MiB during
+Windows startup; allowing it to start in a private MaxView context would make
+the wrong mapping its baseline. The launcher must verify the context switch
+and fail the Windows launch if the standard context cannot be established.
+This transition requires a backend conformance test before multi-context
+Windows support can be declared compatible.
+
 The extension belongs behind a new function range and must not identify as a
 legacy QEMM service until its observable behaviour has conformance tests.
 
