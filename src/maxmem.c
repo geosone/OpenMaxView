@@ -226,7 +226,7 @@ static void print_text(const memory_status *status)
         if (status->backend.qpi_version != 0) {
             printf("MAX_QPI=%u.%u\n", status->backend.qpi_version >> 8,
                    status->backend.qpi_version & 0xff);
-            printf("MAX_QPI_CONTEXT=%04X\n",
+            printf("MAX_QPI_CONTEXT=%08lX\n",
                    status->backend.qpi_context);
         }
     }
@@ -304,7 +304,7 @@ static void draw(const memory_status *status)
         strcpy(line, "Open 386MAX MaxView backend: not detected");
     mvui_write(18, 9, line, MVUI_ACTIVE);
     if (status->backend_present && status->backend.qpi_version != 0)
-        sprintf(line, "QPI %u.%u active page table %04X",
+        sprintf(line, "QPI %u.%u active page table %08lX",
                 status->backend.qpi_version >> 8,
                 status->backend.qpi_version & 0xff,
                 status->backend.qpi_context);

@@ -1,8 +1,8 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Test-only Open 386MAX MaxView backend stub.  Not part of the package.
 
-        .8086
         .model  tiny
+        .386
         .code
         org     100h
 
@@ -40,6 +40,12 @@ qpi_entry:
         je      short qpi_version
         cmp     ax,0700h
         je      short qpi_context
+        cmp     ax,0400h
+        je      short qpi_alloc
+        cmp     ax,0500h
+        je      short qpi_free
+        cmp     ax,0600h
+        je      short qpi_clone
         cmp     ax,4D00h
         je      short qpi_query
         cmp     ax,4D01h
@@ -67,10 +73,36 @@ qpi_version:
         clc
         retf
 qpi_context:
-        mov     dx,1234h
+        mov     edx,00001234h
         clc
+        retf
+qpi_alloc:
+        cmp     byte ptr cs:qpi_allocated,0
+        jne     short qpi_error
+        mov     byte ptr cs:qpi_allocated,1
+        mov     edx,00005678h
+        clc
+        retf
+qpi_clone:
+        cmp     byte ptr cs:qpi_allocated,1
+        jne     short qpi_error
+        cmp     edx,00005678h
+        jne     short qpi_error
+        clc
+        retf
+qpi_free:
+        cmp     byte ptr cs:qpi_allocated,1
+        jne     short qpi_error
+        cmp     edx,00005678h
+        jne     short qpi_error
+        mov     byte ptr cs:qpi_allocated,0
+        clc
+        retf
+qpi_error:
+        stc
         retf
 
 old2f           dd 0
+qpi_allocated   db 0
 resident_end:
         end     start

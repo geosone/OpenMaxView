@@ -297,7 +297,7 @@ static void show_diagnostics(void)
                 backend.active_contexts, backend.context_limit);
         write_at(14, 12, line, ATTR_ACTIVE);
         if (backend.qpi_version != 0) {
-            sprintf(line, "QPI %u.%u, active page table %04X",
+            sprintf(line, "QPI %u.%u, active page table %08lX",
                     backend.qpi_version >> 8,
                     backend.qpi_version & 0xff,
                     backend.qpi_context);

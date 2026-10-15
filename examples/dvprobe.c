@@ -99,6 +99,8 @@ int main(void)
     unsigned saved_status_0;
     unsigned saved_status_1;
     odq_max_backend_info backend;
+    odq_max_qpi_context qpi_context;
+    odq_max_qpi_context qpi_second;
 
     inregs.x.ax = ODQ_MUX_RESET;
     int86(0x2f, &inregs, &outregs);
@@ -646,15 +648,48 @@ int main(void)
     inregs.x.ax = ODQ_MUX_RESET;
     int86(0x2f, &inregs, &outregs);
 
-    if (odq_max_backend_query(&backend))
+    if (odq_max_backend_query(&backend)) {
         printf("Open 386MAX backend ABI %u.%u, %u/%u contexts, "
-               "QPI %u.%u, table %04X.\n",
+               "QPI %u.%u, table %08lX.\n",
                backend.abi_version >> 8, backend.abi_version & 0xff,
                backend.active_contexts, backend.context_limit,
                backend.qpi_version >> 8, backend.qpi_version & 0xff,
                backend.qpi_context);
-    else
+        if (backend.qpi_version != 0) {
+            qpi_context.page_table = backend.qpi_context;
+            if (odq_max_context_release(&qpi_context)) {
+                puts("QPI accepted the active context as an owned clone.");
+                return 38;
+            }
+            puts("QPI active context release rejected.");
+            qpi_context.page_table = 0;
+            if (odq_max_context_release(&qpi_context)) {
+                puts("QPI accepted an empty context token.");
+                return 39;
+            }
+            puts("QPI empty context token rejected.");
+            if (!odq_max_context_clone(&qpi_context)) {
+                puts("QPI context clone failed.");
+                return 40;
+            }
+            printf("QPI cloned page table %08lX without activating it.\n",
+                   qpi_context.page_table);
+            qpi_second.page_table = 0;
+            if (odq_max_context_clone(&qpi_second)) {
+                puts("QPI accepted a second owned context clone.");
+                return 41;
+            }
+            puts("QPI second owned context clone rejected.");
+            if (!odq_max_context_release(&qpi_context) ||
+                qpi_context.page_table != 0) {
+                puts("QPI context release failed.");
+                return 42;
+            }
+            puts("Open 386MAX QPI context lifecycle passed.");
+        }
+    } else {
         puts("Open 386MAX backend not detected (foreground mode).");
+    }
     return 0;
 }
 

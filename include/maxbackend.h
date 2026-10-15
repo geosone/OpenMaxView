@@ -13,10 +13,18 @@ typedef struct odq_max_backend_info {
     unsigned active_contexts;
     unsigned context_limit;
     unsigned qpi_version;
-    unsigned qpi_context;
+    unsigned long qpi_context;
 } odq_max_backend_info;
+
+typedef struct odq_max_qpi_context {
+    unsigned long page_table;
+} odq_max_qpi_context;
 
 /* Returns nonzero only after discovery, signature and status validation. */
 int odq_max_backend_query(odq_max_backend_info *information);
+
+/* Require a successful query. One owned clone is allowed and never activated. */
+int odq_max_context_clone(odq_max_qpi_context *context);
+int odq_max_context_release(odq_max_qpi_context *context);
 
 #endif

@@ -320,7 +320,12 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'Foreground PUSHKEY API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Foreground targeted PUTKEY API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend not detected' $(BUILD)/MVPROBE.TXT
-	rg -q 'Open 386MAX backend ABI 1.0, 2/4 contexts, QPI 7.3, table 1234' $(BUILD)/MVPROBE2.TXT
+	rg -q 'Open 386MAX backend ABI 1.0, 2/4 contexts, QPI 7.3, table 00001234' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI active context release rejected' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI empty context token rejected' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI cloned page table 00005678 without activating it' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI second owned context clone rejected' $(BUILD)/MVPROBE2.TXT
+	rg -q 'Open 386MAX QPI context lifecycle passed' $(BUILD)/MVPROBE2.TXT
 	rg -q 'ANSI console 1.0 installed' $(BUILD)/ANSI1.TXT
 	rg -q 'already installed' $(BUILD)/ANSI2.TXT
 	rg -q 'MAXVANSI probe passed' $(BUILD)/ANSIPRB.TXT
@@ -338,7 +343,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'MAX_BACKEND=1' $(BUILD)/MEMMAX.TXT
 	rg -q 'MAX_ABI=1.0' $(BUILD)/MEMMAX.TXT
 	rg -q 'MAX_QPI=7.3' $(BUILD)/MEMMAX.TXT
-	rg -q 'MAX_QPI_CONTEXT=1234' $(BUILD)/MEMMAX.TXT
+	rg -q 'MAX_QPI_CONTEXT=00001234' $(BUILD)/MEMMAX.TXT
 	rg -q 'settings valid' $(BUILD)/SETCHK.TXT
 	rg -q 'AUTO_TSR=YES' $(BUILD)/SETLIST.TXT
 	rg -q 'AUTO_ANSI=YES' $(BUILD)/SETLIST.TXT

@@ -140,6 +140,23 @@ C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
 plus conventional-memory, expanded-memory, `DBGPOKE` status-line output and
 keyboard-mouse mode. The declarations are in `include/odqapi.h`.
 
+## Open 386MAX QPI wrapper
+
+`include/maxbackend.h` separates the private Open-MaxView identity/status ABI
+from standard QPI operations. `odq_max_backend_query` must succeed before any
+context call. Its `qpi_context` member and the context token are 32-bit
+physical page-frame numbers, matching QPI's `EDX` contract.
+
+`odq_max_context_clone` uses QPI `04h` to allocate one page and `06h` to clone
+the active 0-4 MB page table into it. It never invokes `08h`, so the clone is
+not made active. This first wrapper owns at most one clone. If `06h` fails it
+immediately attempts to roll the `04h` allocation back through `05h`.
+
+`odq_max_context_release` accepts only that owned, non-active clone and clears
+the caller's token after QPI `05h` succeeds. Empty, foreign and duplicate
+tokens fail closed. These calls establish safe resource lifetime only; they
+are not a scheduler or permission to free the root/active context.
+
 ## Conformance probe
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
@@ -158,4 +175,7 @@ nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
 alternate video-buffer calls, foreground `PUSHKEY` and targeted `PUTKEY`,
 including invalid-handle rejection. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
-and active page-table frame.
+and active page-table frame. Against a context-capable provider it also checks
+active/root and empty-token rejection, rejection of a second outstanding
+clone, and one allocate/clone/release cycle without switching away from the
+root context.

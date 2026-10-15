@@ -1,11 +1,13 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Open 386MAX Open-MaxView backend discovery wrapper for 16-bit C callers.
 
-        .8086
         .model  small
+        .386
         .code
 
         public  odq_max_backend_query_
+        public  odq_max_context_clone_
+        public  odq_max_context_release_
 
 MV_QUERY        equ 04D00h
 MV_STATUS       equ 04D01h
@@ -14,6 +16,9 @@ MV_SIGNATURE_1  equ 04D56h
 MV_SIGNATURE_2  equ 04D58h
 MV_CAP_STATUS   equ 00001h
 QPI_VERSION     equ 00300h
+QPI_ALLOC_PAGE  equ 00400h
+QPI_FREE_PAGE   equ 00500h
+QPI_CLONE_TABLE equ 00600h
 QPI_GET_CONTEXT equ 00700h
 
 odq_max_backend_query_ proc near
@@ -27,6 +32,7 @@ odq_max_backend_query_ proc near
         ; near pointer in AX.  Keep it in a preserved register while AX is
         ; used for QPI discovery and calls.
         mov     si,ax
+        mov     word ptr cs:qpi_context_ready,0
 
         xor     di,di
         mov     es,di
@@ -69,13 +75,21 @@ query_returned:
         ; interface but its word is not consumed by the callee.
         add     sp,2
         cmp     ax,MV_ABI_1_0
-        jb      short backend_absent
+        jae     short abi_version_ok
+        jmp     backend_absent
+abi_version_ok:
         cmp     bx,MV_SIGNATURE_1
-        jne     short backend_absent
+        je      short signature_1_ok
+        jmp     backend_absent
+signature_1_ok:
         cmp     cx,MV_SIGNATURE_2
-        jne     short backend_absent
+        je      short signature_2_ok
+        jmp     backend_absent
+signature_2_ok:
         test    dx,MV_CAP_STATUS
-        jz      short backend_absent
+        jnz     short status_capability_ok
+        jmp     backend_absent
+status_capability_ok:
 
         mov     word ptr [si],ax
         mov     word ptr [si+2],dx
@@ -99,7 +113,7 @@ status_returned:
         ; context used by the future scheduler.  They are optional here so
         ; older ABI 1.0 builds remain detectable.
         mov     word ptr [si+10],0
-        mov     word ptr [si+12],0
+        mov     dword ptr [si+12],0
         mov     ax,QPI_VERSION
         pushf
         call    dword ptr cs:qpi_entry
@@ -122,7 +136,8 @@ qpi_version_returned:
         jmp     short backend_present
 qpi_context_returned:
         add     sp,2
-        mov     word ptr [si+12],dx
+        mov     dword ptr [si+12],edx
+        mov     word ptr cs:qpi_context_ready,1
 backend_present:
         mov     ax,1
         jmp     short backend_done
@@ -136,7 +151,88 @@ backend_done:
         pop     bp
         ret
 
-qpi_entry       dd 0
-
 odq_max_backend_query_ endp
+
+; Allocate one physical page and clone the active 0-4 MB page table into it.
+; The clone is not activated. If cloning fails, release the allocated page.
+odq_max_context_clone_ proc near
+        push    si
+        mov     si,ax
+        or      si,si
+        jz      short context_clone_failed
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short context_clone_failed
+        cmp     dword ptr cs:qpi_owned_context,0
+        jne     short context_clone_failed
+
+        mov     ax,QPI_ALLOC_PAGE
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short context_page_allocated
+        add     sp,2
+        jmp     short context_clone_failed
+context_page_allocated:
+        add     sp,2
+        push    edx
+        mov     ax,QPI_CLONE_TABLE
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short context_table_cloned
+        add     sp,2
+        pop     edx
+        mov     ax,QPI_FREE_PAGE
+        pushf
+        call    dword ptr cs:qpi_entry
+        add     sp,2
+        jmp     short context_clone_failed
+context_table_cloned:
+        add     sp,2
+        pop     edx
+        mov     dword ptr [si],edx
+        mov     dword ptr cs:qpi_owned_context,edx
+        mov     ax,1
+        pop     si
+        ret
+context_clone_failed:
+        xor     ax,ax
+        pop     si
+        ret
+odq_max_context_clone_ endp
+
+; Release a non-active clone and clear the caller's token on success.
+odq_max_context_release_ proc near
+        push    si
+        mov     si,ax
+        or      si,si
+        jz      short context_release_failed
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short context_release_failed
+        mov     edx,dword ptr [si]
+        test    edx,edx
+        jz      short context_release_failed
+        cmp     edx,dword ptr cs:qpi_owned_context
+        jne     short context_release_failed
+        mov     ax,QPI_FREE_PAGE
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short context_released
+        add     sp,2
+        jmp     short context_release_failed
+context_released:
+        add     sp,2
+        mov     dword ptr [si],0
+        mov     dword ptr cs:qpi_owned_context,0
+        mov     ax,1
+        pop     si
+        ret
+context_release_failed:
+        xor     ax,ax
+        pop     si
+        ret
+odq_max_context_release_ endp
+
+qpi_entry         dd 0
+qpi_context_ready dw 0
+qpi_owned_context dd 0
+
         end

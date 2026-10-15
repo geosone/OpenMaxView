@@ -208,6 +208,13 @@ of the contract covered by documented, conformance-tested QPI functions:
 | 5. trap video and I/O ports | `1A06h`-`1A0Ah` port traps with a V86 callback, `1A00h`-`1A05h` I/O past the traps, `0Dh`/`0Eh` CRTC/DAC trapping with cursor callbacks, `1301h` dirty video pages, `1308h` all video ports, `130Ah` DAC buffer |
 | 6. virtual interrupts and timer ticks | `1C01h`/`1C03h` IRQ calldowns (IRQ0 for the scheduler), `1C04h` inject an interrupt, `15h` record a task's PIT divisor |
 
+The first MaxView lifecycle wrapper now implements a deliberately bounded
+part of point 2: one owned page-table frame is allocated with `04h`, cloned
+with `06h` and released with `05h`. A failed clone immediately attempts to
+release its allocation; empty or foreign release tokens are rejected. It does
+not call `08h`, so no
+address-space switch occurs and the launcher remains foreground-only.
+
 Points 1, 4, 7 and 8 stay with Open MaxView (the scheduler runs in V86, as
 DESQview's does on QEMM: it saves and restores a task's registers itself)
 or need the Open-MaxView ABI.  Not available: the graphics virtualization
@@ -245,8 +252,9 @@ of the current backend contract.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal
    process descriptor as scheduler and VM capabilities become available.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.
-4. Wrap and conformance-test the available QPI context, interrupt, timer and
-   video primitives without weakening the private-ABI identity check.
+4. Extend the initial tested QPI allocate/clone/release wrapper with guarded
+   switching, then wrap interrupt, timer and video primitives without
+   weakening the private-ABI identity check.
 5. Add preemptive scheduling, private DOS state, video virtualisation and
    foreground switching.
 6. Test real applications and document deviations from DESQview 2.8.

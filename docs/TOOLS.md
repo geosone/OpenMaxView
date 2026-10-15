@@ -142,7 +142,9 @@ accounting, validates physical `DBGPOKE` output, the foreground task object and
 its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
 keyboard injection, verifies the resident installation path, and prints a
 pass/fail report. Its backend line includes the negotiated QPI version and
-active page-table frame without allocating or switching contexts.
+active page-table frame. It rejects an empty token, allocates and clones one
+context, rejects root release and a second outstanding clone, and releases
+the owned clone again without ever activating it.
 
 ## qipinfo.py
 

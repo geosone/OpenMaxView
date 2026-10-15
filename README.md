@@ -163,7 +163,8 @@ status for DOS conventional memory, EMS, XMS, the resident API, VCPI and the
 Open 386MAX backend.  Values which cannot be measured safely are shown as
 `N/A`. With a current Open 386MAX it also reports the QPI version and active
 page-table frame; those facts do not by themselves mean that a scheduler is
-running.
+running. The developer probe additionally allocates one page-table frame,
+clones the active 0-4 MB mapping into it and releases it without activation.
 
 `MAXVSET.EXE` edits launcher-local preferences in `MAXVSET.INI`.  The distinct
 basename prevents its `.NEW` and `.BAK` files from colliding with catalogue

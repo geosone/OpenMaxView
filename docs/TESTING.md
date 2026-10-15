@@ -34,7 +34,9 @@ checks:
   `PROCESSMEM`, foreground `PUSHKEY` and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
-  active page-table frame;
+  active page-table frame, empty-token rejection and a non-activating
+  allocate/clone/release context cycle, including root-release and
+  second-clone guards;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;
 * duplicate-free automatic application;
