@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 
@@ -154,10 +155,44 @@ def build_user_pdf(output_dir):
     return destination
 
 
+def build_user_epub(output_dir):
+    source = output_dir / "OpenMaxView-User.md"
+    destination = output_dir / "OpenMaxView-User.epub"
+    combine(USER_CHAPTERS, source, "Open MaxView User Handbook")
+    run((
+        "pandoc", source, "--from=gfm", "--standalone", "--toc",
+        "--toc-depth=2", "--number-sections", "--split-level=1",
+        "--resource-path={}:{}".format(ROOT, DOCS),
+        "--css={}".format(DOCS / "epub.css"),
+        "--metadata=identifier:org.openmaxview.user-handbook",
+        "--output", destination,
+    ))
+    with zipfile.ZipFile(destination) as archive:
+        names = set(archive.namelist())
+        required = {
+            "mimetype", "META-INF/container.xml", "EPUB/content.opf",
+            "EPUB/nav.xhtml", "EPUB/styles/stylesheet1.css",
+        }
+        missing = required.difference(names)
+        if missing:
+            raise ValueError(
+                "EPUB is missing required entries: {}".format(
+                    ", ".join(sorted(missing))))
+        if archive.getinfo("mimetype").compress_type != zipfile.ZIP_STORED:
+            raise ValueError("EPUB mimetype entry must be stored uncompressed")
+        if archive.read("mimetype") != b"application/epub+zip":
+            raise ValueError("EPUB has an invalid mimetype entry")
+        if not any(name.startswith("EPUB/media/") for name in names):
+            raise ValueError("EPUB contains no packaged diagrams")
+    print("EPUB structure: valid")
+    return destination
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--format", choices=("all", "developer-html", "user-pdf"),
+        "--format",
+        choices=("all", "developer-html", "user-pdf", "user-epub"),
         default="all", help="output to build (default: all)")
     parser.add_argument(
         "--output", type=Path, default=ROOT / "build" / "books",
@@ -170,7 +205,7 @@ def main():
     selected = []
     if args.format in ("all", "developer-html"):
         selected.append(DEVELOPER_CHAPTERS)
-    if args.format in ("all", "user-pdf"):
+    if args.format in ("all", "user-pdf", "user-epub"):
         selected.append(USER_CHAPTERS)
     if not validate(selected):
         return 1
@@ -191,6 +226,8 @@ def main():
         products.append(build_developer_html(output_dir))
     if args.format in ("all", "user-pdf"):
         products.append(build_user_pdf(output_dir))
+    if args.format in ("all", "user-epub"):
+        products.append(build_user_epub(output_dir))
     for product in products:
         print("built {}".format(product.relative_to(ROOT)))
     return 0

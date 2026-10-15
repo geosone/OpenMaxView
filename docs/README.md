@@ -26,6 +26,8 @@ apply to milestone 0.8.
 
 * `make book-html` builds the self-contained, illustrated developer handbook
   at `build/books/OpenMaxView-Developer.html`.
+* `make book-epub` builds the reflowable user handbook at
+  `build/books/OpenMaxView-User.epub`.
 * [Building](BUILDING.md) - Open Watcom/JWasm/JWlink build and packaging.
 * [Testing](TESTING.md) - host and DOSBox test suites.
 * [Resident API](API.md) - implemented DESQview-compatible and private calls.

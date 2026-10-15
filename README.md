@@ -58,8 +58,9 @@ ideas are documented separately so future plans are never mistaken for
 implemented features.
 
 For generated manuals, `make book-html` creates the self-contained developer
-handbook and `make book-pdf` creates the user handbook. The short
-[`quick-start guide`](docs/QUICKSTART.md) is also installed as `QUICK.TXT`.
+handbook, while `make book-pdf` and `make book-epub` create fixed-page and
+reflowable user handbooks. The short [`quick-start guide`](docs/QUICKSTART.md)
+is also installed as `QUICK.TXT`.
 
 The proposed secure remote-view architecture is recorded as a **2.x-only**
 design note in [`docs/REMOTE_VIEW_2X.md`](docs/REMOTE_VIEW_2X.md), including

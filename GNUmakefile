@@ -15,7 +15,7 @@ DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
 
 DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
-.PHONY: all package test test-dos books book-html book-pdf clean
+.PHONY: all package test test-dos books book-html book-pdf book-epub clean
 
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
@@ -193,13 +193,16 @@ $(BUILD)/PROGDEV.TXT: docs/PROGRAMMING.md | $(BUILD)
 $(BUILD)/QUICK.TXT: docs/QUICKSTART.md | $(BUILD)
 	cp $< $@
 
-books: book-html book-pdf
+books: book-html book-pdf book-epub
 
 book-html:
 	python3 tools/build_books.py --format developer-html
 
 book-pdf:
 	python3 tools/build_books.py --format user-pdf
+
+book-epub:
+	python3 tools/build_books.py --format user-epub
 
 package: all
 	rm -rf $(PACKAGE)
