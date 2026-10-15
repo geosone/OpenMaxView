@@ -18,47 +18,61 @@ NDIS 2 stack and while a Novell NetWare DOS client is active through ODI/IPX.
 The difficult target is both client families and Remote View operating on the
 same physical adapter without breaking file-server sessions.
 
-The implementation therefore needs a transport-provider boundary rather than
-hard-wiring mTCP directly to a card driver:
+The implementation therefore needs a TCP-provider boundary. It should reuse
+the TCP stack belonging to an installed Microsoft or Novell DOS client. mTCP
+is needed only when the machine exposes a Packet Driver (possibly through a
+multiplexer) and has no usable client TCP service:
 
 ```text
 MAXVNET session, TLS and framing
              |
-       transport provider
-        /        |       \
- packet-driver  NDIS 2    ODI
-        \        |       /
-        shared physical adapter
+       TCP stream provider
+        /          |          \
+ Microsoft DOS  Novell DOS    mTCP
+  client TCP     client TCP     |
+      NDIS          ODI       Packet Driver/multiplexer
+        \            |          /
+             physical adapter
 ```
 
-Candidate providers are a normal Packet Driver API, a packet-driver shim that
-binds as an additional NDIS 2 protocol, and an ODI/LSL-compatible binding or
-shim. Native NDIS/ODI providers remain an option if a shim is unstable or has
-unacceptable memory use. Selection is deferred until public interface
-documentation and redistributable implementations have been tested.
+The Microsoft and Novell providers adapt their installed TCP service to the
+small stream interface required by TLS: connect, send, receive, poll and close.
+Their exact public application APIs and supported client versions must be
+verified in the feasibility spike. Detecting an NDIS or ODI link driver alone
+does not prove that its TCP component or an application-facing stream API is
+available.
 
-Where Microsoft and Novell clients must coexist, the preferred topology has
-one hardware-facing driver and sharing above it, not an NDIS MAC and ODI MLID
-both programming the same card. Two historically plausible directions are an
-ODI lower stack with an ODI-to-NDIS support layer, or an NDIS lower stack with
-additional protocol/packet-driver bindings. The feasibility spike must select
-one documented load order per supported adapter and keep the alternative as a
-separate configuration; arbitrary mixing is not a safe default.
+Where Microsoft and Novell clients coexist, MaxView selects one of their
+already active TCP services and does not start another TCP stack. File-service
+and IPX traffic continues through the configuration already installed by the
+user. The preferred topology has one hardware-facing driver and sharing above
+it, not an NDIS MAC and ODI MLID both programming the same card. Historical
+ODI/NDIS support layers are configuration possibilities, but MaxView does not
+silently invent or rewrite that load order.
 
-The installer must detect rather than overwrite `PROTOCOL.INI`, `NET.CFG`,
-`CONFIG.SYS` or `AUTOEXEC.BAT`. It should generate a proposed configuration
-and backup, explain driver order, interrupt and memory requirements, and leave
-activation to an explicit user action. No provider may hook the NIC interrupt
-or hardware directly behind an already loaded NDIS/ODI driver.
+The installer checks resident interfaces as well as `PROTOCOL.INI`, `NET.CFG`,
+`CONFIG.SYS` and `AUTOEXEC.BAT`. A configuration file is only a hint; a runtime
+probe decides whether a provider is usable. If exactly one usable TCP provider
+is found, it is proposed. If Microsoft and Novell TCP services are both usable,
+the user chooses one and the selection is saved. If neither is present but a
+Packet Driver is active, mTCP is proposed. Otherwise Setup names the missing
+TCP component and where it belongs in the selected DOS network-client setup.
+It does not redistribute proprietary client files.
+
+Setup must not overwrite network configuration. It may generate a proposed
+configuration and backup, explain driver order, interrupt and memory
+requirements, and leave activation to an explicit user action. No provider may
+hook the NIC interrupt or hardware directly behind an already loaded NDIS/ODI
+driver.
 
 The coexistence test matrix is a 2.x release gate:
 
 | DOS setup | Must remain working while Remote View transfers data |
 |---|---|
-| Packet Driver TCP/IP | Existing packet clients and Remote View. |
-| Microsoft NDIS 2 client | Login, SMB drive access and reconnect. |
-| Novell ODI client | IPX login, mapped drive access and reconnect. |
-| NDIS and ODI sharing one adapter | Both file clients plus Remote View, where the adapter/driver stack supports such binding. |
+| Packet Driver plus mTCP | Existing packet clients and Remote View. |
+| Microsoft DOS client TCP | Login, SMB drive access and reconnect while its TCP provider carries Remote View. |
+| Novell DOS client TCP | IPX/login and mapped-drive access while its TCP provider carries Remote View. |
+| Microsoft and Novell clients sharing one adapter | Both file clients plus Remote View through the explicitly selected existing TCP provider. |
 
 Tests include sustained traffic, viewer reconnect, server reconnect, unload in
 every supported order, packet loss, receive bursts, timer rollover, low-memory
@@ -97,15 +111,18 @@ credential.
 
 ## Candidate DOS TCP/TLS stack
 
-The first research spike should combine an mTCP-based TCP provider with a
-small TLS 1.2 client port based on BearSSL. This is provisional, not a
-dependency decision. mTCP alone solves neither NDIS/ODI coexistence nor TLS;
-it is only one candidate above the selected packet interface.
+The first research spike should put a small TLS 1.2 client port based on
+BearSSL above one uniform stream API, then implement three providers: Microsoft
+DOS-client TCP, Novell DOS-client TCP and mTCP. This is provisional, not a
+dependency decision. mTCP is restricted to the Packet Driver fallback and
+does not replace a working Microsoft or Novell TCP stack.
 
 Before adoption the combination must demonstrate:
 
 * a reproducible 16-bit Open Watcom build with no NASM dependency;
-* Microsoft NDIS 2 and Novell ODI coexistence through supported providers;
+* detection and explicit selection of Microsoft TCP, Novell TCP and mTCP;
+* Microsoft NDIS 2 and Novell ODI file-client coexistence while the selected
+  existing TCP provider carries Remote View;
 * acceptable conventional-memory use with both file clients resident;
 * certificate/public-key pin validation and strong random nonces;
 * bounded records, timeouts and clean failure on malformed traffic;

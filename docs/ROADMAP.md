@@ -56,6 +56,8 @@ The future 2.x line may add per-task remote viewing/control from a Qt 6 client
 on Linux, Windows and macOS. It must be optional, version-negotiated and secure
 by default. On DOS it must coexist on one physical adapter with Microsoft
 Network Client (NDIS) and Novell NetWare client configurations (ODI/IPX); it
-must not take exclusive ownership of the NIC. No 2.x feature is implemented or
-promised by milestone 0.8. The preliminary design and open feasibility
-questions are in [Remote view design note](REMOTE_VIEW_2X.md).
+must not take exclusive ownership of the NIC. It reuses the detected Microsoft
+or Novell TCP stack; only the Packet Driver/multiplexer case supplies mTCP.
+No 2.x feature is implemented or promised by milestone 0.8. The preliminary
+design and open feasibility questions are in
+[Remote view design note](REMOTE_VIEW_2X.md).
