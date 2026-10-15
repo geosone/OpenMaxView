@@ -27,9 +27,10 @@ Install-once resident compatibility service. It exposes API version 2.80 and
 the implemented pause, foreground task-state, nested critical-section,
 foreground keyboard `PUSHKEY` and alternate-video-buffer calls. Running it
 again is harmless and reports that it is installed. `API.TXT` documents the
-register interface. Resident API 0.18 also implements the `HANDLE` message's
-caller-stack ABI for the sole foreground window; it does not yet create
-mailboxes, timers or panels.
+register interface. Resident API 0.19 implements the `HANDLE` caller-stack ABI
+for the foreground window and live timers, plus a bounded four-timer
+`NEW`/`FREE` lifecycle. Timer countdown messages, mailboxes and panels are not
+yet implemented.
 
 ## MAXVANSI.COM
 

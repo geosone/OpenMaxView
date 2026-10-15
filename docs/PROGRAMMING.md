@@ -166,11 +166,42 @@ there. The low word is the offset and the high word is the segment:
         pop     es                    ; result segment
 ```
 
-Check for `0000:0000`, and keep the pushes and pops balanced. Selectors for
+Check for `0000:0000`, and keep the pushes and pops balanced. Selector `00h`
+accepts both the foreground task and live timer handles. Selectors for
 mailboxes, keyboards and OBJECTQs currently return null because those objects
-do not exist. `NEW`, `FREE`, timers, panels and the blocking message calls are
-still unavailable. Do not substitute private handles or assume that an
-integer is a valid object pointer.
+do not exist. Do not substitute private handles or assume that an integer is
+a valid object pointer.
+
+The bounded timer lifecycle uses the same stack layout. `NEW` class `0Bh`
+returns one of four timer handles:
+
+```asm
+        xor     ax,ax
+        push    ax                    ; reserved result segment
+        push    ax                    ; reserved result offset
+        mov     ax,1200h
+        mov     bx,010Bh              ; BH=NEW, BL=TIMER
+        int     15h
+        pop     di
+        pop     es                    ; ES:DI is timer or null
+```
+
+Release a live timer with `FREE` class `00h`, again placing the segment above
+the offset on the stack:
+
+```asm
+        push    es                    ; timer segment
+        push    di                    ; timer offset (currently zero)
+        mov     ax,1200h
+        mov     bx,0200h              ; BH=FREE, BL=object
+        int     15h
+        add     sp,4
+```
+
+`IS_OBJECT`, `OBJECT_TYPE`, `HANDLE` selector `00h` and `OBJNEXT` recognize a
+timer only while allocated. Current timer objects provide lifetime and
+identity, not countdown, read, write or wait operations. Programs must treat
+pool exhaustion as normal and must free every timer they own.
 
 ## Text video
 

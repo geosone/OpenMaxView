@@ -56,15 +56,17 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0012h
+MUX_VERSION    equ 0013h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 0001h             ; HANDLE message subset
+CAPABILITIES3  equ 0003h             ; HANDLE and timer NEW/FREE
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
 COMMON_SLOT_COUNT  equ 4
 COMMON_TOTAL       equ COMMON_SLOT_COUNT * MEM_SLOT_SIZE
+TIMER_SLOT_COUNT   equ 4
+TIMER_OBJECT_SIZE  equ 32
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -99,6 +101,7 @@ install:
         mov     word ptr task_handle_segment,ax
         mov     word ptr task_object+0Ah,ax
         mov     word ptr task_object+0Eh,ax
+        call    initialize_timer_objects
 
         mov     ah,0Fh
         int     10h
@@ -188,9 +191,19 @@ int15_handler:
         pushf
         cmp     ah,12h                ; TopView/DESQview SEND MESSAGE
         jne     short int15_not_message
-        or      bh,bh                 ; HANDLE is message 00h
-        jne     short int15_unknown_message
+        cmp     bh,0                  ; HANDLE
+        je      short int15_dispatch_handle
+        cmp     bh,1                  ; NEW
+        je      short int15_dispatch_new
+        cmp     bh,2                  ; FREE
+        je      short int15_dispatch_free
+        jmp     short int15_unknown_message
+int15_dispatch_handle:
         jmp     int15_message_handle
+int15_dispatch_new:
+        jmp     int15_message_new
+int15_dispatch_free:
+        jmp     int15_message_free
 int15_unknown_message:
         jmp     int15_chain
 int15_not_message:
@@ -494,40 +507,60 @@ keyboard_mouse_disable:
         jmp     int15_handled
 
 int15_isobj:
+        push    ax
+        push    si
         xor     bx,bx
         or      di,di
-        jnz     int15_handled
-        mov     bx,es
-        cmp     bx,word ptr cs:task_handle_segment
-        jne     short int15_isobj_invalid
+        jnz     short int15_isobj_invalid
+        mov     ax,es
+        cmp     ax,word ptr cs:task_handle_segment
+        je      short int15_isobj_valid
+        call    timer_validate
+        jc      short int15_isobj_invalid
+int15_isobj_valid:
         mov     bx,0FFFFh
-        jmp     int15_handled
+        jmp     short int15_isobj_done
 int15_isobj_invalid:
         xor     bx,bx
+int15_isobj_done:
+        pop     si
+        pop     ax
         jmp     int15_handled
 
 int15_object_type:
+        push    ax
+        push    si
         xor     bx,bx
         or      di,di
-        jnz     int15_handled
-        mov     bx,es
-        cmp     bx,word ptr cs:task_handle_segment
-        jne     short int15_object_type_invalid
+        jnz     short int15_object_type_invalid
+        mov     ax,es
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short int15_object_type_timer
         mov     bl,08h                ; window/task object
-        jmp     int15_handled
+        jmp     short int15_object_type_done
+int15_object_type_timer:
+        call    timer_validate
+        jc      short int15_object_type_invalid
+        mov     bl,0Bh                ; timer object
+        jmp     short int15_object_type_done
 int15_object_type_invalid:
         xor     bx,bx
+int15_object_type_done:
+        pop     si
+        pop     ax
         jmp     int15_handled
 
 ; HANDLE uses the TopView message ABI: the caller reserves a DWORD on its
 ; stack before INT 15h, and the service replaces it with an object pointer.
 ; At this entry the handler's PUSHF plus the interrupt frame place that DWORD
-; ten bytes above BP after saving BP. Only the resident task/window exists;
-; mailbox, keyboard and OBJECTQ selectors therefore return a null handle.
+; ten bytes above BP after saving BP. Selector zero validates either the
+; resident task/window or a currently allocated timer. Other unavailable
+; mailbox, keyboard and OBJECTQ selectors return a null handle.
 int15_message_handle:
         push    bp
         mov     bp,sp
         push    ax
+        push    si
         cmp     bl,0                  ; validate/return stacked handle
         je      short message_handle_stacked
         cmp     bl,1                  ; current task's window
@@ -538,7 +571,9 @@ message_handle_stacked:
         jne     short message_handle_null
         mov     ax,word ptr ss:[bp+12]
         cmp     ax,word ptr cs:task_handle_segment
-        jne     short message_handle_null
+        je      short message_handle_done
+        call    timer_validate
+        jc      short message_handle_null
         jmp     short message_handle_done
 message_handle_current:
         mov     word ptr ss:[bp+10],0
@@ -549,6 +584,60 @@ message_handle_null:
         mov     word ptr ss:[bp+10],0
         mov     word ptr ss:[bp+12],0
 message_handle_done:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+
+; NEW allocates one of four resident timer objects. The caller reserves the
+; same DWORD used by HANDLE; unsupported object classes and pool exhaustion
+; return a null pointer. Timer read/write semantics belong to a later slice.
+int15_message_new:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    cx
+        push    si
+        mov     word ptr ss:[bp+10],0
+        mov     word ptr ss:[bp+12],0
+        cmp     bl,0Bh                ; TIMER object class
+        jne     short message_new_done
+        xor     si,si
+        mov     cx,TIMER_SLOT_COUNT
+message_new_scan:
+        cmp     word ptr cs:timer_used[si],0
+        je      short message_new_found
+        add     si,2
+        loop    message_new_scan
+        jmp     short message_new_done
+message_new_found:
+        mov     word ptr cs:timer_used[si],1
+        mov     ax,word ptr cs:timer_handle_segments[si]
+        mov     word ptr ss:[bp+12],ax
+message_new_done:
+        pop     si
+        pop     cx
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+
+; FREE message class 00h consumes a timer pointer from the caller's reserved
+; DWORD. Invalid, stale and non-timer handles are harmless no-ops.
+int15_message_free:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     bl,0
+        jne     short message_free_done
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_free_done
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+        jc      short message_free_done
+        mov     word ptr cs:timer_used[si],0
+message_free_done:
+        pop     si
         pop     ax
         pop     bp
         jmp     int15_handled
@@ -758,9 +847,13 @@ enqueue_done:
         pop     dx
         ret
 
-; Traverse the only window/task object in foreground mode.  A null start
-; returns the resident task handle; that handle returns a null end marker.
+; Traverse the resident foreground task followed by allocated timer objects.
+; Timer slots appear in stable allocation-pool order; a stale handle is
+; rejected instead of silently restarting enumeration.
 int15_objnext:
+        push    bx
+        push    cx
+        push    si
         mov     ax,es
         or      ax,ax
         jnz     short objnext_existing
@@ -770,18 +863,42 @@ int15_objnext:
         mov     es,ax
         xor     di,di
         xor     ax,ax
-        jmp     int15_handled
+        jmp     short objnext_done
 objnext_existing:
         or      di,di
         jnz     short objnext_invalid
         cmp     ax,word ptr cs:task_handle_segment
-        jne     short objnext_invalid
+        jne     short objnext_timer
+        xor     si,si
+        jmp     short objnext_scan
+objnext_timer:
+        call    timer_validate
+        jc      short objnext_invalid
+        add     si,2
+objnext_scan:
+        cmp     si,TIMER_SLOT_COUNT * 2
+        jae     short objnext_end
+        cmp     word ptr cs:timer_used[si],0
+        jne     short objnext_found
+        add     si,2
+        jmp     short objnext_scan
+objnext_found:
+        mov     ax,word ptr cs:timer_handle_segments[si]
+        mov     es,ax
+        xor     di,di
+        xor     ax,ax
+        jmp     short objnext_done
+objnext_end:
         xor     ax,ax
         mov     es,ax
         xor     di,di
-        jmp     int15_handled
+        jmp     short objnext_done
 objnext_invalid:
         mov     ax,1
+objnext_done:
+        pop     si
+        pop     cx
+        pop     bx
         jmp     int15_handled
 
 ; DESQview 2.5-format information for the sole foreground task.  BX may be
@@ -1081,6 +1198,67 @@ int15_chain:
         popf
         jmp     dword ptr cs:old15
 
+; Validate an allocated timer segment. AX is the candidate segment. On
+; success CF is clear and SI is the word index in the timer tables. BX and CX
+; are preserved; callers preserve SI when the public ABI requires it.
+timer_validate:
+        push    bx
+        push    cx
+        xor     si,si
+        mov     cx,TIMER_SLOT_COUNT
+timer_validate_scan:
+        cmp     ax,word ptr cs:timer_handle_segments[si]
+        jne     short timer_validate_next
+        cmp     word ptr cs:timer_used[si],1
+        jne     short timer_validate_invalid
+        clc
+        jmp     short timer_validate_done
+timer_validate_next:
+        add     si,2
+        loop    timer_validate_scan
+timer_validate_invalid:
+        stc
+timer_validate_done:
+        pop     cx
+        pop     bx
+        ret
+
+; Build four paragraph-addressable public timer headers. Every slot is 32
+; bytes, so its segment:0000 handle remains stable for the resident lifetime.
+initialize_timer_objects:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        mov     bx,offset timer_objects
+        xor     si,si
+        mov     cx,TIMER_SLOT_COUNT
+initialize_timer_loop:
+        push    cx
+        mov     ax,bx
+        mov     cl,4
+        shr     ax,cl
+        pop     cx
+        mov     dx,cs
+        add     ax,dx
+        mov     word ptr timer_handle_segments[si],ax
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],0Bh
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        add     bx,TIMER_OBJECT_SIZE
+        add     si,2
+        loop    initialize_timer_loop
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; Capture the COM program's fully-qualified environment tail before becoming
 ; resident, then strip MAXVTSR.COM. DOS 3+ places the executable pathname
 ; after the environment's double NUL and following count word.
@@ -1167,7 +1345,7 @@ int2f_handler:
         je      short int2f_caps2
         cmp     ax,MUX_CAPS3
         je      short int2f_caps3
-        jmp     short int2f_chain
+        jmp     int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
         mov     cx,MUX_VERSION        ; resident API version
@@ -1198,6 +1376,9 @@ int2f_reset:
         mov     cx,SYSTEM_SLOT_COUNT
         cld
         rep     stosb
+        mov     di,offset timer_used
+        mov     cx,TIMER_SLOT_COUNT
+        rep     stosw
         pop     es
         pop     di
         pop     cx
@@ -1241,6 +1422,8 @@ task_handle_segment dw 0
 install_path   db 67 dup(0)
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 common_used    db COMMON_SLOT_COUNT dup(0)
+timer_used     dw TIMER_SLOT_COUNT dup(0)
+timer_handle_segments dw TIMER_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
@@ -1257,7 +1440,13 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.18 installed.',13,10,'$'
+; NEW/FREE timers use separate paragraph-aligned 32-byte headers. They expose
+; pointer-compatible identities now; countdown messages are not implemented.
+TIMER_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      TIMER_OBJECT_PAD dup (0)
+timer_objects  db (TIMER_SLOT_COUNT * TIMER_OBJECT_SIZE) dup(0)
+
+installed_msg  db 'Open MaxView resident API 0.19 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

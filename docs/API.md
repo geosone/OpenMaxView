@@ -20,7 +20,9 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
 | `INT 15h AX=1024h BX=window` | `ES:DI=buffer`, `CX=bytes`, `DL=0` | `GETBUF`; foreground text buffer |
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
-| `INT 15h AH=12h BH=00h BL=selector`, reserved DWORD on caller stack | Replaces the DWORD with an object handle | `HANDLE`; selectors 00h and 01h for the sole foreground window |
+| `INT 15h AH=12h BH=00h BL=selector`, object DWORD on caller stack | Replaces or validates the DWORD | `HANDLE`; selector 00h validates task/timer handles, selector 01h returns the foreground window |
+| `INT 15h AH=12h BH=01h BL=0Bh`, reserved DWORD on caller stack | Replaces the DWORD with a timer handle or null | `NEW`; bounded four-object timer pool |
+| `INT 15h AH=12h BH=02h BL=00h`, timer DWORD on caller stack | Releases a live timer; invalid handles are ignored | `FREE`; timer lifecycle only |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
@@ -33,7 +35,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE11h BL=mode` | Zero disables, nonzero enables cursor-follow mode | `JUSTIFY` state |
 | `INT 15h AX=DE12h BX=mode` | Zero selects normal, nonzero C-style linefeeds | `CSTYLE` state |
 | `INT 15h AX=DE13h` | `BX=critical nesting count` | `GETCRIT` |
-| `INT 15h AX=DE14h ES:DI=handle` | `BL=08h` for the foreground task, otherwise zero | Object type |
+| `INT 15h AX=DE14h ES:DI=handle` | `BL=08h` for the task, `0Bh` for a live timer, otherwise zero | Object type |
 | `INT 15h AX=DE15h BL=mode` | Selects error-return policy 0, 1 or 2 | `SET ERROR HANDLING` state |
 | `INT 15h AX=DE16h` | `BL=error-return policy` | `GET ERROR HANDLING` |
 | `INT 15h AX=DE19h BX=bytes` | `AX=0`, `ES:DI=block`; null pointer and `AX=1` on failure | `GETCOMMON` |
@@ -45,7 +47,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE22h DX=task` | `DX=process paragraphs`, `BX=used system paragraphs`, `CX=largest free system block`, `AX=flags` | Foreground `PROCESSMEM` |
 | `INT 15h AX=DE25h ES:DI=67-byte buffer` | Installation directory as a terminated DOS path | `GETDVPATH` |
 | `INT 15h AX=DE26h` | `BX=segment` of the task handle (`BX:0000h`) | `GETFOREGROUND` |
-| `INT 15h AX=DE2Bh ES:DI=object` | `AX=0`, `ES:DI=next object`; `AX=1` for an invalid handle | `OBJNEXT`; one-item foreground task list |
+| `INT 15h AX=DE2Bh ES:DI=object` | `AX=0`, `ES:DI=next object`; `AX=1` for an invalid handle | `OBJNEXT`; task followed by live timers |
 | `INT 15h AX=DE2Ch DX=0100h BX=task ES:DI=buffer` | `AX=0` and an 11-byte task description | `WININFO`; zero in `BX` selects the foreground task |
 | `INT 15h AX=DE2Fh` | `BX=0000h` | No direct-window switch in foreground mode |
 | `INT 15h AX=DE30h` | `BX=0000h` | Correctly identifies as not DESQview/X |
@@ -85,20 +87,23 @@ bottom row of the active physical text page, and wraps at the BIOS column
 count. Existing attributes are preserved. Calls in graphics or unknown video
 modes are harmless no-ops.
 
-The foreground task has a paragraph-aligned, pointer-compatible object handle
-with the documented `FEDCh` signature and window/task type. `GETFOREGROUND`,
+The foreground task and four timer slots have paragraph-aligned,
+pointer-compatible object handles with the documented `FEDCh` signature. The
+task reports type `08h`; allocated timers report type `0Bh`. `GETFOREGROUND`,
 `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore
-operate on one real resident identity, not placeholder numbers. Starting
-`OBJNEXT` at `0000:0000` returns that task; traversing from the returned handle
-produces the null end marker. The version-1.00 `WININFO` record identifies task
+operate on real resident identities, not placeholder numbers. Starting
+`OBJNEXT` at `0000:0000` returns the task, followed by allocated timers in
+stable pool order and then the null end marker. The version-1.00 `WININFO` record identifies task
 1, its owner handle, process status bit and the foreground-only constraint.
 The `HANDLE` message implements the original caller-stack ABI. Selector `00h`
-validates and returns the object pointer already in the reserved DWORD;
+validates and returns a live task or timer pointer already in the DWORD;
 selector `01h` returns the current task's window. Selectors `02h` through
 `07h` return `0000:0000` because mailbox, keyboard and OBJECTQ objects do not
-exist yet. Dynamic `NEW`, `FREE` and all other message operations remain
-unimplemented until their ownership and blocking rules have conformance
-coverage.
+exist yet. `NEW` class `0Bh` allocates one of four timers and `FREE` class
+`00h` releases it. A fifth allocation returns null, released handles stop
+passing `ISOBJ`, and task reset reclaims every timer. These objects currently
+provide identity and lifetime only: countdown/read/write/wait messages remain
+unimplemented until their timing and blocking rules have conformance coverage.
 
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
@@ -133,12 +138,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0012h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0013h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
-| `D702h` | Reset critical depth, API level and task modes to defaults |
+| `D702h` | Reset critical depth, API level and task modes; release task memory and timers |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=0001h` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=0003h` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -146,9 +151,9 @@ C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
 `WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
 plus conventional-memory, expanded-memory, `DBGPOKE` status-line output and
 keyboard-mouse mode. The declarations are in `include/odqapi.h`.
-For `D705h`, bit 0 advertises the bounded `HANDLE` message subset. Later
-message classes receive separate bits rather than being inferred from API
-version 2.80.
+For `D705h`, bit 0 advertises the bounded `HANDLE` message subset and bit 1
+advertises timer `NEW`/`FREE`. Later message classes receive separate bits
+rather than being inferred from API version 2.80.
 
 ## Open 386MAX QPI wrapper
 
@@ -232,12 +237,15 @@ physical status-line debug output,
 foreground task handle and its validation/type,
 navigates physical coordinates and validates the foreground text buffer,
 navigates current-process and bounded system-memory accounting,
-navigates the one-item object list, validates DOS ownership and the versioned
+navigates the resident object list, validates DOS ownership and the versioned
 window-information record,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
 alternate video-buffer calls, foreground `PUSHKEY`, targeted `PUTKEY` and the
 `HANDLE` caller-stack ABI, including valid, foreign and unavailable object
-selectors. It also reports whether the versioned
+selectors. The separate `OBJPROBE.COM` exhausts the four-timer pool, checks
+unique pointer-compatible handles, validates object identity/type and
+enumeration, frees and reuses a slot, verifies reset reclamation, and cleans
+up its final timer. `DVPROBE` also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding

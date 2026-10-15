@@ -32,7 +32,8 @@ checks:
   `DBGPOKE` output,
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `LOCATE`/`GETBUF`,
   `PROCESSMEM`, the `HANDLE` message stack ABI with valid/foreign/unavailable
-  selectors, foreground `PUSHKEY` and
+  selectors, four-slot timer `NEW`/`FREE` exhaustion, identity, type,
+  enumeration and reuse, foreground `PUSHKEY` and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone

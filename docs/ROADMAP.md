@@ -13,8 +13,8 @@ Open 386MAX ABI boundary.
 
 Further 0.x work should land in independently testable slices:
 
-1. Extend the resident API from the implemented foreground `HANDLE` message
-   with object lifetime, timers, keyboard queues, mailboxes and panel calls.
+1. Extend the implemented `HANDLE` and bounded timer-lifetime messages with
+   timer operations, keyboard queues, mailboxes and panel calls.
 2. Connect the versioned process profile now retained by `.DVP` import to
    scheduler, video, serial and protection enforcement as backend capabilities
    land.

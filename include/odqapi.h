@@ -52,7 +52,7 @@
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0012
+#define ODQ_MUX_VERSION         0x0013
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -91,7 +91,13 @@
 #define ODQ_CAPABILITIES2       0xffff
 
 #define ODQ_CAP3_MESSAGE_HANDLE 0x0001
-#define ODQ_CAPABILITIES3       ODQ_CAP3_MESSAGE_HANDLE
+#define ODQ_CAP3_MESSAGE_NEW_FREE 0x0002
+#define ODQ_CAPABILITIES3       (ODQ_CAP3_MESSAGE_HANDLE | \
+                                 ODQ_CAP3_MESSAGE_NEW_FREE)
+
+#define ODQ_DVC_MESSAGE_HANDLE  0x1200
+#define ODQ_DVC_MESSAGE_NEW     0x1201
+#define ODQ_DVC_MESSAGE_FREE    0x1202
 
 #define ODQ_HANDLE_STACK        0x00
 #define ODQ_HANDLE_WINDOW       0x01
@@ -105,6 +111,8 @@
 #define ODQ_DV_PATH_SIZE        67
 
 #define ODQ_OBJECT_WINDOW_TASK  0x08
+#define ODQ_OBJECT_TIMER        0x0b
+#define ODQ_TIMER_SLOT_COUNT    4
 #define ODQ_WININFO_VERSION     0x0100
 #define ODQ_WININFO_SIZE        11
 #define ODQ_WININFO_TASK        0x01
