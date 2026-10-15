@@ -29,6 +29,10 @@ typedef struct memory_status {
     unsigned common_total_bytes;
     unsigned common_available_bytes;
     unsigned common_largest_bytes;
+    unsigned process_valid;
+    unsigned process_total_paragraphs;
+    unsigned process_system_paragraphs;
+    unsigned process_largest_system_paragraphs;
     unsigned dv_present;
     unsigned dv_version;
     unsigned vcpi_present;
@@ -130,6 +134,22 @@ static void collect(memory_status *status)
             status->common_largest_bytes = outregs.x.cx;
             status->common_total_bytes = outregs.x.dx;
         }
+        memset(&inregs, 0, sizeof(inregs));
+        inregs.x.ax = ODQ_DVC_GET_FOREGROUND;
+        int86(0x15, &inregs, &outregs);
+        if (outregs.x.bx != 0) {
+            unsigned task_segment = outregs.x.bx;
+            memset(&inregs, 0, sizeof(inregs));
+            inregs.x.ax = ODQ_DVC_PROCESS_MEMORY;
+            inregs.x.dx = task_segment;
+            int86(0x15, &inregs, &outregs);
+            if (outregs.x.ax == 0) {
+                status->process_valid = 1;
+                status->process_system_paragraphs = outregs.x.bx;
+                status->process_largest_system_paragraphs = outregs.x.cx;
+                status->process_total_paragraphs = outregs.x.dx;
+            }
+        }
     }
 
     memset(&inregs, 0, sizeof(inregs));
@@ -181,6 +201,14 @@ static void print_text(const memory_status *status)
                status->common_available_bytes);
         printf("MV_COMMON_LARGEST_BYTES=%u\n",
                status->common_largest_bytes);
+    }
+    if (status->process_valid) {
+        printf("MV_PROCESS_TOTAL_PARAS=%u\n",
+               status->process_total_paragraphs);
+        printf("MV_PROCESS_SYSTEM_PARAS=%u\n",
+               status->process_system_paragraphs);
+        printf("MV_PROCESS_LARGEST_SYSTEM_PARAS=%u\n",
+               status->process_largest_system_paragraphs);
     }
     printf("DV_API=%s", status->dv_present ? "present" : "absent");
     if (status->dv_present)
@@ -243,6 +271,14 @@ static void draw(const memory_status *status)
     else
         strcpy(line, "MaxView common pool: unavailable");
     mvui_write(12, 9, line, MVUI_ACTIVE);
+
+    if (status->process_valid)
+        sprintf(line, "Current task: %u DOS, %u system paragraphs",
+                status->process_total_paragraphs,
+                status->process_system_paragraphs);
+    else
+        strcpy(line, "Current task memory: unavailable");
+    mvui_write(13, 9, line, MVUI_ACTIVE);
 
     sprintf(line, "MAXVTSR: %s   caps %04X",
             status->resident_present ? "present" : "absent",

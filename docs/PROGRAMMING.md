@@ -125,6 +125,13 @@ Release the exact returned pointer with `ODQ_DVC_PUT_MEMORY`; interior,
 duplicate and foreign pointers are invalid. The fixed slot size is a current
 implementation limit, not a promise for the later variable-size allocator.
 
+`ODQ_DVC_PROCESS_MEMORY` accepts the exact task-handle segment in `DX` and
+returns the current DOS allocation in paragraphs in `DX`, allocated task-system
+paragraphs in `BX`, the largest available task-system block in `CX`, and memory
+flags in `AX`. Call it only from normal process context. Foreground mode does
+not report swapping or shared memory, and its system allocator remains the
+documented fixed-slot foundation rather than the future VM allocator.
+
 ## Foreground task object
 
 `GET_FOREGROUND` returns the segment of a `segment:0000` task handle. Validate

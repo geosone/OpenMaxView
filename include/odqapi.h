@@ -31,6 +31,7 @@
 #define ODQ_DVC_PUT_KEY         0xde1d
 #define ODQ_DVC_SCREEN_INFO     0xde1e
 #define ODQ_DVC_DOS_USER        0xde1f
+#define ODQ_DVC_PROCESS_MEMORY  0xde22
 #define ODQ_DVC_GET_PATH        0xde25
 #define ODQ_DVC_GET_FOREGROUND  0xde26
 #define ODQ_DVC_OBJECT_NEXT     0xde2b
@@ -45,7 +46,7 @@
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x000d
+#define ODQ_MUX_VERSION         0x000e
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -76,7 +77,8 @@
 #define ODQ_CAP2_GET_PATH       0x0100
 #define ODQ_CAP2_LOCATE         0x0200
 #define ODQ_CAP2_GET_BUFFER     0x0400
-#define ODQ_CAPABILITIES2       0x07ff
+#define ODQ_CAP2_PROCESS_MEMORY 0x0800
+#define ODQ_CAPABILITIES2       0x0fff
 
 #define ODQ_DV_PATH_SIZE        67
 

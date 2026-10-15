@@ -101,7 +101,8 @@ MAXVMEM [/T]
 `/T` emits stable key/value output for automated diagnostics. The tool does
 not allocate memory or change the Open 386MAX configuration. When resident
 API 0.7 or later is loaded, it also reports the total, available and largest
-Open MaxView common-memory block in bytes.
+Open MaxView common-memory block in bytes. API 0.14 additionally reports the
+current DOS-process allocation and bounded task-system pool in paragraphs.
 
 ## MAXVDVP.EXE
 
@@ -133,7 +134,7 @@ claim that they are active today.
 Developer diagnostic for the resident DESQview-compatible calls and the
 Open 386MAX backend query. It exercises pause, critical nesting and alternate
 video-buffer behaviour, exhausts and releases the bounded task-memory pool,
-checks common-memory accounting, validates the foreground task object and
+checks common-memory and `PROCESSMEM` accounting, validates the foreground task object and
 its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
 keyboard injection, verifies the resident installation path, and prints a
 pass/fail report.

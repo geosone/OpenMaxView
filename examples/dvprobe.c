@@ -351,6 +351,35 @@ int main(void)
     }
     puts("Foreground LOCATE and GETBUF APIs passed.");
 
+    if (!allocate_block(ODQ_DVC_GET_MEMORY, 64, &system_blocks[0])) {
+        puts("PROCESSMEM setup allocation failed.");
+        return 45;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_PROCESS_MEMORY;
+    inregs.x.dx = task_segment;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.ax != 0 ||
+        outregs.x.bx != ODQ_MEMORY_SLOT_SIZE / 16 ||
+        outregs.x.cx != ODQ_MEMORY_SLOT_SIZE / 16 || outregs.x.dx == 0) {
+        puts("PROCESSMEM foreground accounting failed.");
+        return 46;
+    }
+    if (!release_block(ODQ_DVC_PUT_MEMORY, &system_blocks[0])) {
+        puts("PROCESSMEM setup release failed.");
+        return 47;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_PROCESS_MEMORY;
+    inregs.x.dx = task_segment + 1;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.ax != 0xffff || outregs.x.bx != 0 ||
+        outregs.x.cx != 0 || outregs.x.dx != 0) {
+        puts("PROCESSMEM accepted an invalid task handle.");
+        return 48;
+    }
+    puts("Foreground PROCESSMEM API passed.");
+
     memset(&inregs, 0, sizeof(inregs));
     inregs.x.ax = ODQ_DVC_DOS_USER;
     int86(0x15, &inregs, &outregs);

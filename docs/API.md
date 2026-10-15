@@ -37,6 +37,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE1Dh DX=task BH=scan BL=character` | `AX=0` when queued, nonzero if invalid or full | Targeted foreground `PUTKEY` |
 | `INT 15h AX=DE1Eh` | `CL=rows`, `CH=columns`, `BL=video mode` | Physical `SCRNINFO` |
 | `INT 15h AX=DE1Fh` | `BX=segment` of the task handle | `DOSUSER`; the foreground task owns the single DOS session |
+| `INT 15h AX=DE22h DX=task` | `DX=process paragraphs`, `BX=used system paragraphs`, `CX=largest free system block`, `AX=flags` | Foreground `PROCESSMEM` |
 | `INT 15h AX=DE25h ES:DI=67-byte buffer` | Installation directory as a terminated DOS path | `GETDVPATH` |
 | `INT 15h AX=DE26h` | `BX=segment` of the task handle (`BX:0000h`) | `GETFOREGROUND` |
 | `INT 15h AX=DE2Bh ES:DI=object` | `AX=0`, `ES:DI=next object`; `AX=1` for an invalid handle | `OBJNEXT`; one-item foreground task list |
@@ -89,6 +90,14 @@ returns zero. `GETBUF` accepts either zero for the default window or the exact
 foreground handle and returns the active B000h/B800h text buffer and its
 BIOS-reported size. An invalid handle returns a null, empty buffer.
 
+`PROCESSMEM` accepts the exact foreground task handle. It reports the current
+DOS process allocation from its owning memory-control block and accounts for
+the resident task-system slots in paragraphs. No shared or swapped-memory flag
+is set in foreground mode. Because current-PSP discovery is a DOS call, invoke
+this service from normal process context, not a hardware interrupt handler.
+An invalid handle returns `AX=FFFFh` and zero counts as an Open MaxView error
+extension.
+
 `GETDVPATH` captures the directory containing `MAXVTSR.COM` before the loader
 becomes resident. It always clears the unused part of the caller's 67-byte
 buffer and includes a terminating NUL. A root installation is returned in
@@ -101,17 +110,17 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=000Dh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=000Eh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=07FFh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=0FFFh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 10 advertise
+C-style linefeed interpretation. For `D704h`, bits 0 through 11 advertise
 `ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT`,
-`WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE` and `GETBUF` support. The
-declarations are in `include/odqapi.h`.
+`WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
+support. The declarations are in `include/odqapi.h`.
 
 ## Conformance probe
 
@@ -121,6 +130,7 @@ call, resident installation path, task defaults, `APPNUM`, `APILEVEL`,
 task/common-memory allocation, bounds and release, the resident
 foreground task handle and its validation/type,
 navigates physical coordinates and validates the foreground text buffer,
+navigates current-process and bounded system-memory accounting,
 navigates the one-item object list, validates DOS ownership and the versioned
 window-information record,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,

@@ -26,6 +26,7 @@
 ;   INT 15h AX=DE1Dh                 targeted foreground PUTKEY
 ;   INT 15h AX=DE1Eh                 physical screen information
 ;   INT 15h AX=DE1Fh                 foreground DOS-owner handle
+;   INT 15h AX=DE22h                 foreground process-memory status
 ;   INT 15h AX=DE19h/DE1Ah           common-memory allocate/release
 ;   INT 15h AX=DE25h                 resident installation directory
 ;   INT 15h AX=DE26h                 foreground task handle
@@ -48,9 +49,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 000Dh
+MUX_VERSION    equ 000Eh
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 07FFh
+CAPABILITIES2  equ 0FFFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -276,6 +277,10 @@ int15_not_scrninfo:
         jne     short int15_not_dosuser
         jmp     int15_dosuser
 int15_not_dosuser:
+        cmp     ax,0DE22h             ; PROCESSMEM
+        jne     short int15_not_processmem
+        jmp     int15_processmem
+int15_not_processmem:
         cmp     ax,0DE25h             ; GETDVPATH
         jne     short int15_not_getpath
         jmp     int15_getpath
@@ -475,6 +480,66 @@ int15_foreground:
 
 int15_dosuser:
         mov     bx,word ptr cs:task_handle_segment
+        jmp     int15_handled
+
+; Report the current foreground DOS allocation and bounded task-system pool.
+; The call is process-context only because querying the current PSP chains to
+; DOS.  DX must identify the resident foreground task handle.
+int15_processmem:
+        cmp     dx,word ptr cs:task_handle_segment
+        jne     short processmem_invalid
+        push    es
+        push    si
+        push    di
+        xor     bx,bx                 ; allocated system-memory paragraphs
+        xor     cx,cx                 ; largest available system block
+        mov     si,offset system_used
+        mov     di,SYSTEM_SLOT_COUNT
+processmem_slots:
+        cmp     byte ptr cs:[si],0
+        je      short processmem_free
+        add     bx,MEM_SLOT_SIZE / 16
+        jmp     short processmem_next
+processmem_free:
+        mov     cx,MEM_SLOT_SIZE / 16
+processmem_next:
+        inc     si
+        dec     di
+        jnz     short processmem_slots
+
+        push    bx
+        push    cx
+        mov     ah,51h                ; DOS 2+ current PSP
+        int     21h
+        mov     si,bx
+        pop     cx
+        pop     bx
+        xor     dx,dx
+        or      si,si
+        jz      short processmem_done
+        mov     ax,si
+        dec     ax
+        mov     es,ax                 ; owning MCB immediately before PSP
+        mov     al,byte ptr es:[0]
+        cmp     al,'M'
+        je      short processmem_mcb_type
+        cmp     al,'Z'
+        jne     short processmem_done
+processmem_mcb_type:
+        cmp     word ptr es:[1],si
+        jne     short processmem_done
+        mov     dx,word ptr es:[3]    ; allocation size excluding MCB
+processmem_done:
+        pop     di
+        pop     si
+        pop     es
+        xor     ax,ax                 ; no swapped/shared flags
+        jmp     int15_handled
+processmem_invalid:
+        mov     ax,0FFFFh             ; Open MaxView invalid-handle status
+        xor     bx,bx
+        xor     cx,cx
+        xor     dx,dx
         jmp     int15_handled
 
 int15_getpath:
@@ -910,7 +975,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.13 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.14 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
