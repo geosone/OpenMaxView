@@ -14,14 +14,17 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.3 resident API tracks nested critical sections and implements the
-documented `INT 10h/AH=FEh` alternate-buffer query.  In foreground-only mode
+The 0.4 resident API tracks foreground task compatibility state and nested
+critical sections, and implements the documented `INT 10h/AH=FEh`
+alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
 change notifications are accepted.  MAXVIEW resets per-child critical state
 on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
-next launch. The documented `PUSHKEY` call adds a BIOS-format scan/character
-pair to the foreground keyboard buffer; task-private queues remain a 1.x
-multi-context requirement.
+next launch. It implements `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE` and
+`GETCRIT`; mode changes are retained even though their visible windowing
+effects need the future virtual console. The documented `PUSHKEY` call adds a
+BIOS-format scan/character pair to the foreground keyboard buffer;
+task-private queues remain a 1.x multi-context requirement.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.8 it launches a child through DOS and
@@ -102,6 +105,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Presence query | implemented | `INT 21h AX=2B01h CX=4445h DX=5351h` |
 | Cooperative pause | implemented | `INT 15h AX=1000h` returns safely |
 | Critical markers | implemented | Saturating nested depth; reset around each child |
+| Foreground task metadata | implemented | `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, `GETCRIT` |
 | Alternate video buffer | implemented for foreground | B000h/B800h alias plus change notification |
 | Keyboard `PUSHKEY` | implemented for foreground | BIOS buffer injection; no per-task queue yet |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
@@ -133,7 +137,7 @@ The detailed release criteria are maintained in [`ROADMAP.md`](ROADMAP.md).
 Remote viewing is deliberately deferred to the 2.x design note and is not part
 of the current backend contract.
 
-1. Expand the resident API from the 0.2 pause/critical/video baseline with
+1. Expand the resident API from the foreground task-state baseline with
    object handles, timers, keyboard queues and mailboxes; provide tiny
    conformance programs for every call.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal

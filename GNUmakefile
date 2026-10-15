@@ -10,7 +10,7 @@ CC     ?= cc
 BUILD  := build
 PACKAGE := $(BUILD)/OpenMaxView
 DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
-	TESTING.TXT COMPAT.TXT DEVELOP.TXT ROADMAP.TXT REMOTE2.TXT \
+	TESTING.TXT API.TXT COMPAT.TXT DEVELOP.TXT ROADMAP.TXT REMOTE2.TXT \
 	TROUBLE.TXT ARCHITEC.TXT
 
 DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
@@ -160,6 +160,9 @@ $(BUILD)/BUILDING.TXT: docs/BUILDING.md | $(BUILD)
 $(BUILD)/TESTING.TXT: docs/TESTING.md | $(BUILD)
 	cp $< $@
 
+$(BUILD)/API.TXT: docs/API.md | $(BUILD)
+	cp $< $@
+
 $(BUILD)/COMPAT.TXT: docs/COMPATIBILITY.md | $(BUILD)
 	cp $< $@
 
@@ -269,10 +272,12 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\INPUT.BIN /Y > FILESAME.TXT' \
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\OTHER.BIN C:\BUILD\FILETEST\COPY.BIN /Y > FILEOVER.TXT' \
 		-c 'exit' >/dev/null 2>&1
-	rg -q 'resident API 0.3 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'resident API 0.4 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'PAUSE call returned successfully' $(BUILD)/MVPROBE.TXT
+	rg -q 'Foreground APPNUM and task defaults passed' $(BUILD)/MVPROBE.TXT
+	rg -q 'APILEVEL, JUSTIFY and CSTYLE APIs passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Nested critical-section state passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Alternate video-buffer API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Foreground PUSHKEY API passed' $(BUILD)/MVPROBE.TXT
@@ -284,7 +289,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	rg -q 'valid program' $(BUILD)/CFGCHK.TXT
 	rg -q 'MAXVAPP.EXE' $(BUILD)/CFGLIST.TXT
-	rg -q 'MV_API=0.3' $(BUILD)/MEMSTAT.TXT
+	rg -q 'MV_API=0.4' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MAX_BACKEND=0' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MAX_BACKEND=1' $(BUILD)/MEMMAX.TXT
 	rg -q 'MAX_ABI=1.0' $(BUILD)/MEMMAX.TXT
@@ -331,6 +336,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	test -f $(BUILD)/INSTTEST/CONFIG.TXT
 	test -f $(BUILD)/INSTTEST/BUILDING.TXT
 	test -f $(BUILD)/INSTTEST/TESTING.TXT
+	test -f $(BUILD)/INSTTEST/API.TXT
 	test -f $(BUILD)/INSTTEST/COMPAT.TXT
 	test -f $(BUILD)/INSTTEST/DEVELOP.TXT
 	test -f $(BUILD)/INSTTEST/ROADMAP.TXT

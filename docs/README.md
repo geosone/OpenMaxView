@@ -19,6 +19,7 @@ apply to milestone 0.8.
 
 * [Building](BUILDING.md) - Open Watcom/JWasm/JWlink build and packaging.
 * [Testing](TESTING.md) - host and DOSBox test suites.
+* [Resident API](API.md) - implemented DESQview-compatible and private calls.
 * [Architecture](ARCHITECTURE.md) - components and the Open 386MAX boundary.
 * [Development guide](DEVELOPMENT.md) - clean-room rules, source layout and
   contribution workflow.
@@ -34,7 +35,7 @@ manual text.
 ## Installed DOS filenames
 
 `SETUP` installs this set as 8.3 text files: `DOCS.TXT`, `USERGUID.TXT`,
-`TOOLS.TXT`, `CONFIG.TXT`, `BUILDING.TXT`, `TESTING.TXT`, `COMPAT.TXT`,
-`DEVELOP.TXT`, `ROADMAP.TXT`, `REMOTE2.TXT`, `TROUBLE.TXT` and
+`TOOLS.TXT`, `CONFIG.TXT`, `BUILDING.TXT`, `TESTING.TXT`, `API.TXT`,
+`COMPAT.TXT`, `DEVELOP.TXT`, `ROADMAP.TXT`, `REMOTE2.TXT`, `TROUBLE.TXT` and
 `ARCHITEC.TXT`. Start with `DOCS.TXT`; Markdown punctuation remains readable
 with `TYPE`, an editor or another DOS text viewer.

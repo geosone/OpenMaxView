@@ -7,20 +7,30 @@
 ;   INT 21h AX=2B01h CX='DE' DX='SQ'  presence/version query
 ;   INT 15h AX=1000h                 cooperative PAUSE
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
+;   INT 15h AX=DE07h                 foreground program number
+;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
 ;   INT 15h AX=DE10h, BX=scan/char   foreground keyboard PUSHKEY
+;   INT 15h AX=DE11h, BL=mode        viewport justification mode
+;   INT 15h AX=DE12h, BX=mode        C-style linefeed mode
+;   INT 15h AX=DE13h                 critical nesting query
 ;   INT 10h AH=FEh                   alternate text-video buffer
 ;   INT 10h AH=FFh                   video-buffer change notification
 ;   INT 2Fh AX=D700h                 Open MaxView-private status query
 ;   INT 2Fh AX=D701h                 private capabilities/state query
 ;   INT 2Fh AX=D702h                 reset per-foreground-task state
+;   INT 2Fh AX=D703h                 query per-foreground-task state
 
 DV_VERSION     equ 0280h
 MUX_STATUS     equ 0D700h
 MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
+MUX_TASK_INFO  equ 0D703h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0003h
-CAPABILITIES   equ 001Fh
+MUX_VERSION    equ 0004h
+CAPABILITIES   equ 00FFh
+
+TASK_JUSTIFY   equ 0001h
+TASK_CSTYLE    equ 0002h
 
         .8086
         .model  tiny
@@ -134,18 +144,38 @@ int15_handler:
         je      short int15_begin
         cmp     ax,101Ch              ; ENDC
         je      short int15_end
+        cmp     ax,0DE07h             ; APPNUM
+        je      short int15_appnum
+        cmp     ax,0DE0Bh             ; APILEVEL
+        je      short int15_apilevel
         cmp     ax,0DE10h             ; PUSHKEY
         je      short int15_pushkey
-        jmp     short int15_chain
+        cmp     ax,0DE11h             ; JUSTIFY
+        je      short int15_justify
+        cmp     ax,0DE12h             ; CSTYLE
+        je      short int15_cstyle
+        cmp     ax,0DE13h             ; GETCRIT
+        jne     short int15_chain_jump
+        jmp     int15_getcrit
+int15_chain_jump:
+        jmp     int15_chain
 int15_begin:
         cmp     word ptr cs:critical_depth,0FFFFh
-        je      short int15_handled
+        je      short int15_begin_done
         inc     word ptr cs:critical_depth
-        jmp     short int15_handled
+int15_begin_done:
+        jmp     int15_handled
 int15_end:
         cmp     word ptr cs:critical_depth,0
         je      short int15_handled
         dec     word ptr cs:critical_depth
+        jmp     short int15_handled
+int15_appnum:
+        mov     ax,1                   ; sole foreground program
+        jmp     short int15_handled
+int15_apilevel:
+        mov     word ptr cs:api_level,bx
+        mov     ax,DV_VERSION          ; maximum supported API level
         jmp     short int15_handled
 int15_pushkey:
         push    ax
@@ -170,6 +200,21 @@ pushkey_done:
         pop     di
         pop     dx
         pop     ax
+        jmp     short int15_handled
+int15_justify:
+        and     word ptr cs:task_flags,not TASK_JUSTIFY
+        or      bl,bl
+        jz      short int15_handled
+        or      word ptr cs:task_flags,TASK_JUSTIFY
+        jmp     short int15_handled
+int15_cstyle:
+        and     word ptr cs:task_flags,not TASK_CSTYLE
+        or      bx,bx
+        jz      short int15_handled
+        or      word ptr cs:task_flags,TASK_CSTYLE
+        jmp     short int15_handled
+int15_getcrit:
+        mov     bx,word ptr cs:critical_depth
 int15_handled:
         popf
         iret
@@ -185,6 +230,8 @@ int2f_handler:
         je      short int2f_info
         cmp     ax,MUX_RESET
         je      short int2f_reset
+        cmp     ax,MUX_TASK_INFO
+        je      short int2f_task_info
         jmp     short int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
@@ -200,6 +247,14 @@ int2f_info:
         iret
 int2f_reset:
         mov     word ptr cs:critical_depth,0
+        mov     word ptr cs:api_level,0100h
+        mov     word ptr cs:task_flags,TASK_JUSTIFY
+        popf
+        iret
+int2f_task_info:
+        mov     bx,word ptr cs:api_level
+        mov     cx,1                   ; sole foreground program
+        mov     dx,word ptr cs:task_flags
         popf
         iret
 int2f_chain:
@@ -211,9 +266,11 @@ old15          dd 0
 old21          dd 0
 old2f          dd 0
 critical_depth dw 0
+api_level      dw 0100h
+task_flags     dw TASK_JUSTIFY
 video_segment  dw 0B800h
 
-installed_msg  db 'Open MaxView resident API 0.3 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.4 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

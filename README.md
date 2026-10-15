@@ -17,7 +17,8 @@ This first runnable milestone provides:
 * `MAXVIEW.EXE`, an 80x25 DOS program launcher with a DESQview-style menu;
 * `MAXVTSR.COM`, a resident compatibility service which implements the
   documented DESQview presence query, cooperative `PAUSE`, nested critical
-  sections, foreground `PUSHKEY` and the alternate text-video-buffer calls;
+  sections, foreground task-state calls, `PUSHKEY` and the alternate
+  text-video-buffer calls;
 * Open 386MAX backend ABI discovery/status validation and a diagnostic screen;
 * the Open 386MAX QUILIB look: two-pane layout, palette, shadows, hotkeys and
   bottom command buttons;
@@ -87,7 +88,8 @@ MAXVANSI.COM    MAXVDVP.EXE
 README.TXT      LICENSE.TXT     DOCS.TXT
 USERGUID.TXT    TOOLS.TXT       CONFIG.TXT
 BUILDING.TXT    TESTING.TXT     COMPAT.TXT
-DEVELOP.TXT     ROADMAP.TXT     REMOTE2.TXT
+API.TXT         DEVELOP.TXT     ROADMAP.TXT
+REMOTE2.TXT
 TROUBLE.TXT     ARCHITEC.TXT
 ```
 
