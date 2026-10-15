@@ -20,6 +20,13 @@ typedef struct odq_max_qpi_context {
     unsigned long page_table;
 } odq_max_qpi_context;
 
+typedef struct odq_max_qpi_mapping {
+    unsigned linear_page;
+    unsigned original_frame;
+    unsigned mapped_frame;
+    unsigned installed;
+} odq_max_qpi_mapping;
+
 /* Returns nonzero only after discovery, signature and status validation. */
 int odq_max_backend_query(odq_max_backend_info *information);
 
@@ -28,5 +35,10 @@ int odq_max_context_clone(odq_max_qpi_context *context);
 int odq_max_context_release(odq_max_qpi_context *context);
 int odq_max_context_activate(const odq_max_qpi_context *context);
 int odq_max_context_restore(void);
+
+/* Mapping calls operate only in the active clone owned by this wrapper. */
+int odq_max_mapping_query(odq_max_qpi_mapping *mapping);
+int odq_max_mapping_install(odq_max_qpi_mapping *mapping);
+int odq_max_mapping_restore(odq_max_qpi_mapping *mapping);
 
 #endif

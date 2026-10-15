@@ -327,6 +327,9 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rg -q 'QPI second owned context clone rejected' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI owned context activation verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI active owned context release rejected' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI owned-clone mapping installed and verified' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI root restore blocked by outstanding mapping' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI owned-clone mapping restored and verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI root context restoration verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'Open 386MAX QPI context lifecycle passed' $(BUILD)/MVPROBE2.TXT
 	rg -q 'ANSI console 1.0 installed' $(BUILD)/ANSI1.TXT

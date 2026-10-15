@@ -101,6 +101,7 @@ int main(void)
     odq_max_backend_info backend;
     odq_max_qpi_context qpi_context;
     odq_max_qpi_context qpi_second;
+    odq_max_qpi_mapping qpi_mapping;
 
     inregs.x.ax = ODQ_MUX_RESET;
     int86(0x2f, &inregs, &outregs);
@@ -690,6 +691,29 @@ int main(void)
                 return 43;
             }
             puts("QPI active owned context release rejected.");
+            memset(&qpi_mapping, 0, sizeof(qpi_mapping));
+            qpi_mapping.linear_page = 0x20;
+            if (!odq_max_mapping_query(&qpi_mapping)) {
+                puts("QPI mapping query failed.");
+                return 55;
+            }
+            if (!odq_max_mapping_install(&qpi_mapping) ||
+                !qpi_mapping.installed) {
+                puts("QPI mapping installation failed.");
+                return 56;
+            }
+            puts("QPI owned-clone mapping installed and verified.");
+            if (odq_max_context_restore()) {
+                puts("QPI restored root with an outstanding mapping.");
+                return 57;
+            }
+            puts("QPI root restore blocked by outstanding mapping.");
+            if (!odq_max_mapping_restore(&qpi_mapping) ||
+                qpi_mapping.installed) {
+                puts("QPI mapping restoration failed.");
+                return 58;
+            }
+            puts("QPI owned-clone mapping restored and verified.");
             if (!odq_max_context_restore()) {
                 puts("QPI root context restoration failed.");
                 return 44;

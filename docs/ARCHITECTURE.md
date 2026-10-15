@@ -218,6 +218,14 @@ exercises this lifecycle, but the launcher remains foreground-only. Lifecycle
 calls are enabled only when private ABI status identifies root context ID 1,
 so a foreign startup context is never adopted as the baseline.
 
+The next bounded layer implements one outstanding page replacement for point
+3. It reads the original frame with `09h`, installs a requested frame with
+`0Ah`, verifies it with `09h`, and applies the same write/read-back discipline
+when restoring the original. It runs only in the owned active clone. A live or
+unverifiable replacement prevents root restoration and clone release, keeping
+the Windows root-context invariant fail-closed. This is mapping bookkeeping,
+not yet private DOS memory or a runnable second task.
+
 Points 1, 4, 7 and 8 stay with Open MaxView (the scheduler runs in V86, as
 DESQview's does on QEMM: it saves and restores a task's registers itself)
 or need the Open-MaxView ABI.  Not available: the graphics virtualization
@@ -236,10 +244,12 @@ and fail the Windows launch if the standard context cannot be established.
 Open 386MAX enforces the invariant as well: its `INT 2Fh AX=1605h` handler
 refuses the Windows start (`CX` non-zero) while a QPI context other than the
 root one is active.
-The backend conformance probe now verifies clone activation, root restoration
-and refusal to free the active clone. Multi-context Windows support still
-requires the future launcher path to call the same fail-closed restoration
-before `EXEC` and to handle restoration failure as fatal.
+The backend conformance probe now verifies clone activation, mapping
+installation/restoration, refusal to leave a clone with an outstanding
+mapping, root restoration and refusal to free the active clone. Multi-context
+Windows support still requires the future launcher path to call the same
+fail-closed restoration before `EXEC` and to handle restoration failure as
+fatal.
 
 Services beyond QPI belong behind the Open-MaxView function range (`4Dxxh`).
 Open 386MAX identifies as QEMM only for the functions whose observable
@@ -258,8 +268,8 @@ of the current backend contract.
    process descriptor as scheduler and VM capabilities become available.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.
 4. Build scheduler state on the tested QPI allocate/clone/guarded-switch/
-   restore/release wrapper, then wrap interrupt, timer and video primitives
-   without weakening the private-ABI identity check.
+   single-page-map/restore/release wrapper, then wrap interrupt, timer and
+   video primitives without weakening the private-ABI identity check.
 5. Add preemptive scheduling, private DOS state, video virtualisation and
    foreground switching.
 6. Test real applications and document deviations from DESQview 2.8.

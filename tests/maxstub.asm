@@ -43,12 +43,24 @@ qpi_entry:
         cmp     ax,0400h
         je      short qpi_alloc
         cmp     ax,0500h
-        je      short qpi_free
+        je      short qpi_is_free
         cmp     ax,0600h
         je      short qpi_clone
         cmp     ax,0800h
-        jne     short qpi_not_switch
+        je      short qpi_is_switch
+        cmp     ax,0900h
+        je      short qpi_is_map_query
+        cmp     ax,0A00h
+        je      short qpi_is_map_set
+        jmp     short qpi_not_switch
+qpi_is_switch:
         jmp     qpi_switch
+qpi_is_free:
+        jmp     qpi_free
+qpi_is_map_query:
+        jmp     qpi_map_query
+qpi_is_map_set:
+        jmp     qpi_map_set
 qpi_not_switch:
         cmp     ax,4D00h
         je      short qpi_query
@@ -82,26 +94,43 @@ qpi_context:
         retf
 qpi_alloc:
         cmp     byte ptr cs:qpi_allocated,0
-        jne     short qpi_error
+        je      short qpi_alloc_available
+        stc
+        retf
+qpi_alloc_available:
         mov     byte ptr cs:qpi_allocated,1
+        mov     word ptr cs:qpi_mapping_page,0FFFFh
         mov     edx,00005678h
         clc
         retf
 qpi_clone:
         cmp     byte ptr cs:qpi_allocated,1
-        jne     short qpi_error
+        je      short qpi_clone_allocated
+        stc
+        retf
+qpi_clone_allocated:
         cmp     edx,00005678h
-        jne     short qpi_error
+        je      short qpi_clone_valid
+        stc
+        retf
+qpi_clone_valid:
         clc
         retf
 qpi_free:
         cmp     byte ptr cs:qpi_allocated,1
-        jne     short qpi_error
+        je      short qpi_free_allocated
+        stc
+        retf
+qpi_free_allocated:
         cmp     edx,00005678h
-        jne     short qpi_error
+        je      short qpi_free_owned
+        stc
+        retf
+qpi_free_owned:
         cmp     dword ptr cs:qpi_active_context,00005678h
         je      short qpi_error
         mov     byte ptr cs:qpi_allocated,0
+        mov     word ptr cs:qpi_mapping_page,0FFFFh
         clc
         retf
 qpi_switch:
@@ -115,6 +144,29 @@ qpi_switch_valid:
         mov     dword ptr cs:qpi_active_context,edx
         clc
         retf
+qpi_map_query:
+        cmp     dword ptr cs:qpi_active_context,00005678h
+        jne     short qpi_error
+        cmp     cx,03FFh
+        ja      short qpi_error
+        cmp     cx,word ptr cs:qpi_mapping_page
+        jne     short qpi_map_identity
+        mov     dx,word ptr cs:qpi_mapping_frame
+        clc
+        retf
+qpi_map_identity:
+        mov     dx,cx
+        clc
+        retf
+qpi_map_set:
+        cmp     dword ptr cs:qpi_active_context,00005678h
+        jne     short qpi_error
+        cmp     cx,03FFh
+        ja      short qpi_error
+        mov     word ptr cs:qpi_mapping_page,cx
+        mov     word ptr cs:qpi_mapping_frame,dx
+        clc
+        retf
 qpi_error:
         stc
         retf
@@ -122,5 +174,7 @@ qpi_error:
 old2f           dd 0
 qpi_allocated   db 0
 qpi_active_context dd 00001234h
+qpi_mapping_page dw 0FFFFh
+qpi_mapping_frame dw 0
 resident_end:
         end     start

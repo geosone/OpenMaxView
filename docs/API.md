@@ -168,6 +168,23 @@ are not a scheduler or permission to free the root/active context. Release is
 explicitly rejected until a verified root restoration has cleared the active
 state.
 
+`odq_max_mapping_query`, `odq_max_mapping_install` and
+`odq_max_mapping_restore` provide the first bounded part of the task-memory
+map. They accept a 4 KiB linear-page number from `0000h` through `03FFh` and
+use QPI `09h`/`0Ah` only while this wrapper's owned clone is active. The
+mapping record contains the linear page, the saved original 16-bit physical
+frame, the requested frame and an installed flag. At most one replacement may
+be outstanding. Installation reads the old frame and verifies the new frame;
+restoration writes the saved frame and reads it back before clearing ownership.
+
+An outstanding or unverifiable mapping blocks both root restoration and clone
+release. The mapping record and the backend code, data and active stack must
+remain reachable while `odq_max_mapping_install` returns; callers therefore
+must not use this low-level operation to replace a page containing any of
+them. The wrapper currently tracks frame identity, not raw PTE flag bits. Use
+of QPI `1F00h`/`1F01h` will be required before mappings with special cache or
+device attributes are supported.
+
 ## Conformance probe
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
@@ -188,4 +205,6 @@ including invalid-handle rejection. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
-clone, one verified clone/root switch pair and release only after restoration.
+clone, one verified clone/root switch pair, a saved/set/read-back/restored
+single-page mapping, refusal to leave the clone while that mapping is active,
+and release only after restoration.
