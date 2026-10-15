@@ -133,7 +133,8 @@ Open 386MAX backend query. It exercises pause, critical nesting and alternate
 video-buffer behaviour, exhausts and releases the bounded task-memory pool,
 checks common-memory accounting, validates the foreground task object and
 its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
-keyboard injection, and prints a pass/fail report.
+keyboard injection, verifies the resident installation path, and prints a
+pass/fail report.
 
 ## qipinfo.py
 

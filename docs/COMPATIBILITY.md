@@ -13,6 +13,7 @@
 | DESQview keyboard injection | Foreground implementation | `PUSHKEY` and handle-validated `PUTKEY` add scan/character pairs to the BIOS buffer. |
 | System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each. |
 | Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
+| Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
 | Add/change/delete programs | Implemented | Open text catalogue, atomic update and backup. |
 | Automatic setup | Implemented | Filename-rule scan; no binary inspection. |

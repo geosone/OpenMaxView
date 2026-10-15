@@ -35,6 +35,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE1Dh DX=task BH=scan BL=character` | `AX=0` when queued, nonzero if invalid or full | Targeted foreground `PUTKEY` |
 | `INT 15h AX=DE1Eh` | `CL=rows`, `CH=columns`, `BL=video mode` | Physical `SCRNINFO` |
 | `INT 15h AX=DE1Fh` | `BX=segment` of the task handle | `DOSUSER`; the foreground task owns the single DOS session |
+| `INT 15h AX=DE25h ES:DI=67-byte buffer` | Installation directory as a terminated DOS path | `GETDVPATH` |
 | `INT 15h AX=DE26h` | `BX=segment` of the task handle (`BX:0000h`) | `GETFOREGROUND` |
 | `INT 15h AX=DE2Bh ES:DI=object` | `AX=0`, `ES:DI=next object`; `AX=1` for an invalid handle | `OBJNEXT`; one-item foreground task list |
 | `INT 15h AX=DE2Ch DX=0100h BX=task ES:DI=buffer` | `AX=0` and an 11-byte task description | `WININFO`; zero in `BX` selects the foreground task |
@@ -79,6 +80,11 @@ requires the exact foreground task-handle segment and reports a full buffer.
 Per-task queues will replace this shared foreground backing only when multiple
 Open 386MAX contexts exist.
 
+`GETDVPATH` captures the directory containing `MAXVTSR.COM` before the loader
+becomes resident. It always clears the unused part of the caller's 67-byte
+buffer and includes a terminating NUL. A root installation is returned in
+drive-root form such as `C:\`.
+
 ## Open MaxView private diagnostics
 
 Private calls use `INT 2Fh` and are for Open MaxView tools and tests, not for
@@ -86,22 +92,23 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=000Bh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=000Ch`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=00FFh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=01FFh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 7 advertise
+C-style linefeed interpretation. For `D704h`, bits 0 through 8 advertise
 `ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT` and
-`WININFO`, and targeted `PUTKEY` support. The declarations are in
-`include/odqapi.h`.
+`WININFO`, targeted `PUTKEY`, and `GETDVPATH` support. The declarations are
+in `include/odqapi.h`.
 
 ## Conformance probe
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
-call, task defaults, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, error policy,
+call, resident installation path, task defaults, `APPNUM`, `APILEVEL`,
+`JUSTIFY`, `CSTYLE`, error policy,
 task/common-memory allocation, bounds and release, the resident
 foreground task handle and its validation/type,
 navigates the one-item object list, validates DOS ownership and the versioned

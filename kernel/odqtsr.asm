@@ -25,6 +25,7 @@
 ;   INT 15h AX=DE1Eh                 physical screen information
 ;   INT 15h AX=DE1Fh                 foreground DOS-owner handle
 ;   INT 15h AX=DE19h/DE1Ah           common-memory allocate/release
+;   INT 15h AX=DE25h                 resident installation directory
 ;   INT 15h AX=DE26h                 foreground task handle
 ;   INT 15h AX=DE2Bh                 foreground object-list traversal
 ;   INT 15h AX=DE2Ch                 foreground window/task information
@@ -45,9 +46,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 000Bh
+MUX_VERSION    equ 000Ch
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 00FFh
+CAPABILITIES2  equ 01FFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -65,6 +66,8 @@ TASK_CSTYLE    equ 0002h
 start:
         push    cs
         pop     ds
+
+        call    capture_install_path
 
         mov     ax,MUX_STATUS
         int     2Fh
@@ -263,6 +266,10 @@ int15_not_scrninfo:
         jne     short int15_not_dosuser
         jmp     int15_dosuser
 int15_not_dosuser:
+        cmp     ax,0DE25h             ; GETDVPATH
+        jne     short int15_not_getpath
+        jmp     int15_getpath
+int15_not_getpath:
         cmp     ax,0DE26h             ; GETFOREGROUND
         jne     short int15_not_foreground
         jmp     int15_foreground
@@ -386,6 +393,33 @@ int15_foreground:
 
 int15_dosuser:
         mov     bx,word ptr cs:task_handle_segment
+        jmp     int15_handled
+
+int15_getpath:
+        push    ax
+        push    cx
+        push    si
+        push    di
+        mov     si,offset install_path
+        mov     cx,67
+        cld
+getpath_copy:
+        mov     al,byte ptr cs:[si]
+        inc     si
+        stosb
+        or      al,al
+        jz      short getpath_clear
+        loop    getpath_copy
+        jmp     short getpath_done
+getpath_clear:
+        dec     cx
+        xor     al,al
+        rep     stosb
+getpath_done:
+        pop     di
+        pop     si
+        pop     cx
+        pop     ax
         jmp     int15_handled
 
 int15_putkey:
@@ -632,6 +666,78 @@ int15_chain:
         popf
         jmp     dword ptr cs:old15
 
+; Capture the COM program's fully-qualified environment tail before becoming
+; resident, then strip MAXVTSR.COM. DOS 3+ places the executable pathname
+; after the environment's double NUL and following count word.
+capture_install_path:
+        pushf
+        push    ax
+        push    bx
+        push    cx
+        push    si
+        push    di
+        push    es
+        mov     ax,word ptr cs:[2Ch]  ; environment segment in the PSP
+        or      ax,ax
+        jz      short capture_fallback
+        mov     es,ax
+        xor     di,di
+        mov     cx,0FFFEh             ; reject a malformed unterminated block
+capture_find_end:
+        cmp     byte ptr es:[di],0
+        je      short capture_zero
+        inc     di
+        loop    capture_find_end
+        jmp     short capture_fallback
+capture_zero:
+        inc     di
+        dec     cx
+        jz      short capture_fallback
+        cmp     byte ptr es:[di],0
+        jne     short capture_find_end
+        inc     di                    ; skip the second NUL
+        add     di,2                  ; skip additional-string count
+        mov     si,offset install_path
+        mov     bx,0FFFFh             ; destination of last backslash
+        mov     cx,66
+        cld
+capture_copy:
+        mov     al,byte ptr es:[di]
+        inc     di
+        or      al,al
+        jz      short capture_copied
+        mov     byte ptr cs:[si],al
+        cmp     al,'\\'
+        jne     short capture_not_slash
+        mov     bx,si
+capture_not_slash:
+        inc     si
+        loop    capture_copy
+capture_copied:
+        mov     byte ptr cs:[si],0
+        cmp     bx,0FFFFh
+        je      short capture_fallback
+        mov     byte ptr cs:[bx],0    ; remove separator and executable name
+        cmp     bx,offset install_path+2
+        jne     short capture_done
+        cmp     byte ptr cs:install_path+1,':'
+        jne     short capture_done
+        mov     byte ptr cs:[bx],'\\' ; retain root form such as C:\
+        mov     byte ptr cs:[bx+1],0
+        jmp     short capture_done
+capture_fallback:
+        mov     byte ptr cs:install_path,'.'
+        mov     byte ptr cs:install_path+1,0
+capture_done:
+        pop     es
+        pop     di
+        pop     si
+        pop     cx
+        pop     bx
+        pop     ax
+        popf
+        ret
+
 int2f_handler:
         pushf
         cmp     ax,MUX_STATUS
@@ -705,6 +811,7 @@ task_flags     dw TASK_JUSTIFY
 error_mode     db 0
 video_segment  dw 0B800h
 task_handle_segment dw 0
+install_path   db 67 dup(0)
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 common_used    db COMMON_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
@@ -721,7 +828,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.11 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.12 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

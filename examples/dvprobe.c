@@ -89,6 +89,7 @@ int main(void)
     unsigned enumerated_segment;
     unsigned i;
     unsigned char window_info[ODQ_WININFO_SIZE];
+    char install_path[ODQ_DV_PATH_SIZE];
     far_block system_blocks[ODQ_SYSTEM_SLOT_COUNT];
     far_block common_block;
     far_block failed_block;
@@ -108,6 +109,20 @@ int main(void)
     }
     printf("DESQview-compatible API version %u.%02X detected.\n",
            outregs.x.bx >> 8, outregs.x.bx & 0xff);
+
+    memset(install_path, 0xff, sizeof(install_path));
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_GET_PATH;
+    inregs.x.di = FP_OFF(install_path);
+    segreg.es = FP_SEG(install_path);
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (install_path[ODQ_DV_PATH_SIZE - 1] != '\0' ||
+        stricmp(install_path, "C:\\BUILD") != 0) {
+        printf("GETDVPATH failed: %s\n", install_path);
+        return 38;
+    }
+    puts("Resident installation-path API passed.");
 
     memset(&inregs, 0, sizeof(inregs));
     inregs.x.ax = ODQ_DVC_GET_VERSION;

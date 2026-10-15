@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.11 resident API tracks foreground task compatibility state and nested
+The 0.12 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -27,6 +27,10 @@ BIOS-format scan/character pair to the foreground keyboard buffer. `PUTKEY`
 does the same only for the exact resident task handle and returns a full-buffer
 or invalid-handle status; task-private queues remain a 1.x multi-context
 requirement.
+
+Before installation, the resident captures the directory component of its
+DOS executable path. `GETDVPATH` can therefore answer from resident storage
+without invoking DOS from an interrupt handler.
 
 The resident also owns a deliberately bounded allocation foundation: eight
 256-byte task slots and four 256-byte common slots. Task slots are reclaimed
