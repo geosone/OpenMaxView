@@ -9,6 +9,9 @@ JWLINK := $(MAXROOT)/linux/bin/jwlink
 CC     ?= cc
 BUILD  := build
 PACKAGE := $(BUILD)/OpenMaxView
+DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
+	TESTING.TXT COMPAT.TXT DEVELOP.TXT ROADMAP.TXT REMOTE2.TXT \
+	TROUBLE.TXT ARCHITEC.TXT
 
 DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
@@ -19,7 +22,7 @@ all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
 	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
-	$(BUILD)/LICENSE.TXT
+	$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES))
 
 $(BUILD):
 	mkdir -p $@
@@ -129,6 +132,42 @@ $(BUILD)/README.TXT: README.md | $(BUILD)
 $(BUILD)/LICENSE.TXT: LICENSE | $(BUILD)
 	cp $< $@
 
+$(BUILD)/DOCS.TXT: docs/README.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/USERGUID.TXT: docs/USER_GUIDE.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/TOOLS.TXT: docs/TOOLS.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/CONFIG.TXT: docs/CONFIGURATION.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/BUILDING.TXT: docs/BUILDING.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/TESTING.TXT: docs/TESTING.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/COMPAT.TXT: docs/COMPATIBILITY.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/DEVELOP.TXT: docs/DEVELOPMENT.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/ROADMAP.TXT: docs/ROADMAP.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/REMOTE2.TXT: docs/REMOTE_VIEW_2X.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/TROUBLE.TXT: docs/TROUBLESHOOTING.md | $(BUILD)
+	cp $< $@
+
+$(BUILD)/ARCHITEC.TXT: docs/ARCHITECTURE.md | $(BUILD)
+	cp $< $@
+
 package: all
 	rm -rf $(PACKAGE)
 	mkdir -p $(PACKAGE)
@@ -137,7 +176,7 @@ package: all
 		$(BUILD)/MAXVAUTO.EXE $(BUILD)/MAXVFILE.EXE $(BUILD)/DVPROBE.EXE \
 		$(BUILD)/MAXVANSI.COM $(BUILD)/MAXVIEW.CFG \
 		$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
-		$(BUILD)/LICENSE.TXT $(PACKAGE)/
+		$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES)) $(PACKAGE)/
 
 $(BUILD)/test_catalog: tests/test_catalog.c src/catalog.c include/catalog.h | $(BUILD)
 	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_catalog.c src/catalog.c
@@ -253,6 +292,18 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
 	test -f $(BUILD)/INSTTEST/MAXVIEW.CFG
 	test -f $(BUILD)/INSTTEST/MAXVSET.INI
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.DAT
+	test -f $(BUILD)/INSTTEST/DOCS.TXT
+	test -f $(BUILD)/INSTTEST/USERGUID.TXT
+	test -f $(BUILD)/INSTTEST/TOOLS.TXT
+	test -f $(BUILD)/INSTTEST/CONFIG.TXT
+	test -f $(BUILD)/INSTTEST/BUILDING.TXT
+	test -f $(BUILD)/INSTTEST/TESTING.TXT
+	test -f $(BUILD)/INSTTEST/COMPAT.TXT
+	test -f $(BUILD)/INSTTEST/DEVELOP.TXT
+	test -f $(BUILD)/INSTTEST/ROADMAP.TXT
+	test -f $(BUILD)/INSTTEST/REMOTE2.TXT
+	test -f $(BUILD)/INSTTEST/TROUBLE.TXT
+	test -f $(BUILD)/INSTTEST/ARCHITEC.TXT
 	test -f $(BUILD)/INSTTEST/MAXVIEW.LOG
 	rg -q '^PRESERVED' $(BUILD)/INSTTEST/MAXVIEW.CFG
 	rg -q '^INIKEEP' $(BUILD)/INSTTEST/MAXVSET.INI

@@ -82,6 +82,11 @@ a small QPI I/O-trapping subset, and an Open-MaxView-specific ABI query.  The
 launcher validates that query and reports its root-context status.  The
 current capability mask intentionally exposes no multi-context service.
 
+Open 386MAX remains the memory manager/VM foundation. Even for the optional
+2.x Remote View design, NDIS, ODI, Packet Driver, TCP, TLS and application
+protocol code belongs exclusively to Open MaxView. No network stack or
+network-specific ABI is to be added to Open 386MAX.
+
 ## Compatibility levels
 
 | Level | State | Meaning |
@@ -114,6 +119,10 @@ The extension belongs behind a new function range and must not identify as a
 legacy QEMM service until its observable behaviour has conformance tests.
 
 ## Roadmap
+
+The detailed release criteria are maintained in [`ROADMAP.md`](ROADMAP.md).
+Remote viewing is deliberately deferred to the 2.x design note and is not part
+of the current backend contract.
 
 1. Expand the resident API from the 0.2 pause/critical/video baseline with
    object handles, timers, keyboard queues and mailboxes; provide tiny

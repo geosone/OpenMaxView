@@ -47,6 +47,20 @@ The UI deliberately follows the GPL-licensed Open 386MAX DOS tools so the two
 projects look and behave like one suite.  Open MaxView keeps its small renderer
 independent, avoiding a link-time dependency on the much larger QUILIB.
 
+## Documentation
+
+The [documentation index](docs/README.md) links the complete user, tool,
+configuration, build, test, compatibility, troubleshooting and development
+guides. Released 0.8 behaviour, the 1.x DESQview-compatible target, and 2.x
+ideas are documented separately so future plans are never mistaken for
+implemented features.
+
+The proposed secure remote-view architecture is recorded as a **2.x-only**
+design note in [`docs/REMOTE_VIEW_2X.md`](docs/REMOTE_VIEW_2X.md), including
+the requirement to coexist with Microsoft NDIS and Novell ODI clients on the
+same network adapter. It does not change the current priority: finish the
+local DESQview 2.8 reimplementation.
+
 ## Build
 
 Requirements are GNU make, Open Watcom installed in `/opt/watcom`, and the
@@ -69,7 +83,11 @@ MAXVAPP.EXE     MAXVMEM.EXE     MAXVSET.EXE
 MAXVAUTO.EXE    MAXVAUTO.DAT    DVPROBE.EXE
 MAXVFILE.EXE    MAXVIEW.CFG     MAXVSET.INI
 MAXVANSI.COM
-README.TXT      LICENSE.TXT
+README.TXT      LICENSE.TXT     DOCS.TXT
+USERGUID.TXT    TOOLS.TXT       CONFIG.TXT
+BUILDING.TXT    TESTING.TXT     COMPAT.TXT
+DEVELOP.TXT     ROADMAP.TXT     REMOTE2.TXT
+TROUBLE.TXT     ARCHITEC.TXT
 ```
 
 Run `MAXVIEW`.  The launcher installs `MAXVTSR.COM` automatically when it is

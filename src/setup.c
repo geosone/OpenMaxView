@@ -50,7 +50,19 @@ static const install_file files[] = {
     { "MAXVAUTO.DAT", "MAXVAUTO.DAT", 1, 1 },
     { "DVPROBE.EXE", "DVPROBE.EXE", 0, 0 },
     { "README.TXT",  "README.TXT",  0, 0 },
-    { "LICENSE.TXT", "LICENSE.TXT", 0, 0 }
+    { "LICENSE.TXT", "LICENSE.TXT", 0, 0 },
+    { "DOCS.TXT",    "DOCS.TXT",    1, 0 },
+    { "USERGUID.TXT", "USERGUID.TXT", 1, 0 },
+    { "TOOLS.TXT",   "TOOLS.TXT",   1, 0 },
+    { "CONFIG.TXT",  "CONFIG.TXT",  1, 0 },
+    { "BUILDING.TXT", "BUILDING.TXT", 1, 0 },
+    { "TESTING.TXT", "TESTING.TXT", 1, 0 },
+    { "COMPAT.TXT",  "COMPAT.TXT",  1, 0 },
+    { "DEVELOP.TXT", "DEVELOP.TXT", 1, 0 },
+    { "ROADMAP.TXT", "ROADMAP.TXT", 1, 0 },
+    { "REMOTE2.TXT", "REMOTE2.TXT", 1, 0 },
+    { "TROUBLE.TXT", "TROUBLE.TXT", 1, 0 },
+    { "ARCHITEC.TXT", "ARCHITEC.TXT", 1, 0 }
 };
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
