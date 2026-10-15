@@ -8,8 +8,10 @@
 ;   INT 15h AX=1000h                 cooperative PAUSE
 ;   INT 15h AX=1001h/1002h           system-memory allocate/release aliases
 ;   INT 15h AX=1016h                 object-handle validation
+;   INT 15h AX=1018h                 foreground window location
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
+;   INT 15h AX=1024h                 foreground virtual-screen buffer
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE07h                 foreground program number
 ;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
@@ -46,9 +48,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 000Ch
+MUX_VERSION    equ 000Dh
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 01FFh
+CAPABILITIES2  equ 07FFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -189,6 +191,10 @@ int15_not_putmem_alias:
         jne     short int15_not_isobj
         jmp     int15_isobj
 int15_not_isobj:
+        cmp     ax,1018h              ; LOCATE
+        jne     short int15_not_locate
+        jmp     int15_locate
+int15_not_locate:
         cmp     ax,101Bh              ; BEGINC
         je      int15_begin
         cmp     ax,101Ch              ; ENDC
@@ -200,6 +206,10 @@ int15_not_isobj:
         mov     bx,0A01h              ; DESQview 2.x-compatible identity
         jmp     int15_handled
 int15_not_getver:
+        cmp     ax,1024h              ; GETBUF
+        jne     short int15_not_getbuf
+        jmp     int15_getbuf
+int15_not_getbuf:
         cmp     ax,0DE04h             ; GET AVAILABLE COMMON MEMORY
         jne     short int15_not_common_status
         jmp     int15_common_status
@@ -385,6 +395,78 @@ int15_object_type:
         jmp     int15_handled
 int15_object_type_invalid:
         xor     bx,bx
+        jmp     int15_handled
+
+; Locate the sole full-screen foreground window.  A search below that window
+; or a coordinate outside the physical text screen returns a null handle.
+int15_locate:
+        push    ax
+        push    bx
+        mov     ax,es
+        or      ax,ax
+        jnz     short locate_none
+        mov     ax,40h
+        mov     es,ax
+        cmp     bh,byte ptr es:[4Ah]  ; zero-based column versus BIOS width
+        jae     short locate_none
+        mov     al,byte ptr es:[84h]  ; zero-based last row on EGA/VGA
+        or      al,al
+        jnz     short locate_rows
+        mov     al,24                 ; conservative 25-row fallback
+locate_rows:
+        cmp     bl,al
+        ja      short locate_none
+        mov     ax,word ptr cs:task_handle_segment
+        mov     es,ax
+        jmp     short locate_done
+locate_none:
+        xor     ax,ax
+        mov     es,ax
+locate_done:
+        pop     bx
+        pop     ax
+        jmp     int15_handled
+
+; Return the foreground physical text buffer as the current task's virtual
+; screen.  Zero selects the default window; a nonzero BX must be the exact
+; resident task handle.  Invalid handles return a null, empty buffer.
+int15_getbuf:
+        push    ax
+        or      bx,bx
+        jz      short getbuf_valid
+        cmp     bx,word ptr cs:task_handle_segment
+        jne     short getbuf_invalid
+getbuf_valid:
+        mov     ax,40h
+        mov     es,ax
+        mov     cx,word ptr es:[4Ah]  ; text columns
+        or      cx,cx
+        jnz     short getbuf_columns
+        mov     cx,80
+getbuf_columns:
+        xor     ax,ax
+        mov     al,byte ptr es:[84h]  ; rows minus one
+        or      al,al
+        jnz     short getbuf_rows
+        mov     al,24
+getbuf_rows:
+        inc     ax
+        mul     cx
+        shl     ax,1                  ; character plus attribute per cell
+        mov     cx,ax
+        mov     ax,word ptr cs:video_segment
+        mov     es,ax
+        xor     di,di
+        xor     dl,dl                 ; text screen
+        pop     ax
+        jmp     int15_handled
+getbuf_invalid:
+        xor     ax,ax
+        mov     es,ax
+        xor     di,di
+        xor     cx,cx
+        xor     dl,dl
+        pop     ax
         jmp     int15_handled
 
 int15_foreground:
@@ -828,7 +910,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.12 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.13 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

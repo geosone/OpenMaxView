@@ -87,6 +87,7 @@ int main(void)
     unsigned video_segment = 0;
     unsigned task_segment;
     unsigned enumerated_segment;
+    unsigned buffer_segment;
     unsigned i;
     unsigned char window_info[ODQ_WININFO_SIZE];
     char install_path[ODQ_DV_PATH_SIZE];
@@ -281,6 +282,74 @@ int main(void)
         return 17;
     }
     puts("Foreground task object APIs passed.");
+
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_LOCATE;
+    inregs.h.bh = 0;
+    inregs.h.bl = 0;
+    segreg.es = 0;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (segreg.es != task_segment) {
+        puts("LOCATE did not find the foreground window.");
+        return 39;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_LOCATE;
+    inregs.h.bh = 80;
+    inregs.h.bl = 0;
+    segreg.es = 0;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (segreg.es != 0) {
+        puts("LOCATE accepted an off-screen coordinate.");
+        return 40;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_LOCATE;
+    inregs.x.bx = 0;
+    segreg.es = task_segment;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (segreg.es != 0) {
+        puts("LOCATE did not terminate below the foreground window.");
+        return 41;
+    }
+
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_GET_BUFFER;
+    inregs.x.bx = task_segment;
+    segreg.es = 0;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    buffer_segment = segreg.es;
+    if (buffer_segment == 0 || outregs.x.di != 0 ||
+        outregs.x.cx != 80U * 25U * 2U || outregs.h.dl != 0) {
+        puts("GETBUF foreground text-buffer query failed.");
+        return 42;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_GET_BUFFER;
+    inregs.x.bx = 0;
+    segreg.es = 0;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (segreg.es != buffer_segment || outregs.x.di != 0 ||
+        outregs.x.cx != 80U * 25U * 2U || outregs.h.dl != 0) {
+        puts("GETBUF default-window selection failed.");
+        return 43;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    segread(&segreg);
+    inregs.x.ax = ODQ_DVC_GET_BUFFER;
+    inregs.x.bx = task_segment + 1;
+    segreg.es = 0xffff;
+    int86x(0x15, &inregs, &outregs, &segreg);
+    if (segreg.es != 0 || outregs.x.di != 0 || outregs.x.cx != 0) {
+        puts("GETBUF accepted an invalid task handle.");
+        return 44;
+    }
+    puts("Foreground LOCATE and GETBUF APIs passed.");
 
     memset(&inregs, 0, sizeof(inregs));
     inregs.x.ax = ODQ_DVC_DOS_USER;

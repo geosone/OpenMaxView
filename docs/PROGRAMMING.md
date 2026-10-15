@@ -146,6 +146,14 @@ For 1.x readiness, prefer DOS/BIOS output or this logical-buffer query over a
 hard-coded B800h pointer. Do not assume 80 columns, 25 rows or colour mode;
 `ODQ_DVC_SCREEN_INFO` reports the physical parameters.
 
+TopView-compatible `LOCATE` (`INT 15h AX=1018h`) resolves a physical row and
+column to a visible window handle. In the current foreground implementation,
+coordinates inside the BIOS text geometry resolve to the sole task window.
+`GETBUF` (`AX=1024h`) accepts that handle, or zero for the default window, and
+returns `ES:DI`, its byte size in `CX`, and text-screen type zero in `DL`.
+Always honor the returned size and reject a null pointer; later 1.x builds will
+return task-private buffers rather than a physical-page alias.
+
 ## Keyboard input
 
 Use BIOS or DOS keyboard calls for ordinary input. `ODQ_DVC_PUSH_KEY` inserts

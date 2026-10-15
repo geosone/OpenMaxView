@@ -8,9 +8,11 @@
 #define ODQ_DVC_GET_MEMORY_TV   0x1001
 #define ODQ_DVC_PUT_MEMORY_TV   0x1002
 #define ODQ_DVC_IS_OBJECT       0x1016
+#define ODQ_DVC_LOCATE          0x1018
 #define ODQ_DVC_BEGIN_CRITICAL  0x101b
 #define ODQ_DVC_END_CRITICAL    0x101c
 #define ODQ_DVC_GET_VERSION     0x1022
+#define ODQ_DVC_GET_BUFFER      0x1024
 #define ODQ_DVC_COMMON_STATUS   0xde04
 #define ODQ_DVC_APP_NUMBER      0xde07
 #define ODQ_DVC_API_LEVEL       0xde0b
@@ -43,7 +45,7 @@
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x000c
+#define ODQ_MUX_VERSION         0x000d
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -72,7 +74,9 @@
 #define ODQ_CAP2_WINDOW_INFO    0x0040
 #define ODQ_CAP2_PUT_KEY        0x0080
 #define ODQ_CAP2_GET_PATH       0x0100
-#define ODQ_CAPABILITIES2       0x01ff
+#define ODQ_CAP2_LOCATE         0x0200
+#define ODQ_CAP2_GET_BUFFER     0x0400
+#define ODQ_CAPABILITIES2       0x07ff
 
 #define ODQ_DV_PATH_SIZE        67
 
