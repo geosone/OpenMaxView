@@ -15,8 +15,9 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 .PHONY: all package test test-dos clean
 
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
-	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/DVPROBE.EXE \
-	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG $(BUILD)/MAXVSET.INI $(BUILD)/README.TXT \
+	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
+	$(BUILD)/DVPROBE.EXE $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
+	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT
 
 $(BUILD):
@@ -67,6 +68,15 @@ $(BUILD)/maxvset.obj: src/maxvset.c include/mvui.h include/settings.h | $(BUILD)
 $(BUILD)/MAXVSET.EXE: $(BUILD)/maxvset.obj $(BUILD)/settings.obj $(BUILD)/mvui.obj
 	cd $(BUILD) && $(JWLINK) format dos name MAXVSET.EXE option quiet option map=MAXVSET.MAP option stack=4096 option nofarcalls file maxvset.obj,settings.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
+$(BUILD)/autodetect.obj: src/autodetect.c include/autodetect.h include/catalog.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
+$(BUILD)/maxvauto.obj: src/maxvauto.c include/autodetect.h include/catalog.h include/mvui.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
+$(BUILD)/MAXVAUTO.EXE: $(BUILD)/maxvauto.obj $(BUILD)/autodetect.obj $(BUILD)/catalog.obj $(BUILD)/mvui.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVAUTO.EXE option quiet option map=MAXVAUTO.MAP option stack=8192 option nofarcalls file maxvauto.obj,autodetect.obj,catalog.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+
 $(BUILD)/dvprobe.obj: examples/dvprobe.c include/maxbackend.h include/odqapi.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
@@ -91,6 +101,9 @@ $(BUILD)/MAXVIEW.CFG: MAXVIEW.CFG | $(BUILD)
 $(BUILD)/MAXVSET.INI: MAXVSET.INI | $(BUILD)
 	cp $< $@
 
+$(BUILD)/MAXVAUTO.DAT: MAXVAUTO.DAT | $(BUILD)
+	cp $< $@
+
 $(BUILD)/README.TXT: README.md | $(BUILD)
 	cp $< $@
 
@@ -102,7 +115,8 @@ package: all
 	mkdir -p $(PACKAGE)
 	cp $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVTSR.COM \
 		$(BUILD)/MAXVAPP.EXE $(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE \
-		$(BUILD)/DVPROBE.EXE $(BUILD)/MAXVIEW.CFG $(BUILD)/MAXVSET.INI $(BUILD)/README.TXT \
+		$(BUILD)/MAXVAUTO.EXE $(BUILD)/DVPROBE.EXE $(BUILD)/MAXVIEW.CFG \
+		$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 		$(BUILD)/LICENSE.TXT $(PACKAGE)/
 
 $(BUILD)/test_catalog: tests/test_catalog.c src/catalog.c include/catalog.h | $(BUILD)
@@ -111,13 +125,21 @@ $(BUILD)/test_catalog: tests/test_catalog.c src/catalog.c include/catalog.h | $(
 $(BUILD)/test_settings: tests/test_settings.c src/settings.c include/settings.h | $(BUILD)
 	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_settings.c src/settings.c
 
-test: $(BUILD)/test_catalog $(BUILD)/test_settings
+$(BUILD)/test_autodetect: tests/test_autodetect.c src/autodetect.c src/catalog.c include/autodetect.h include/catalog.h | $(BUILD)
+	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_autodetect.c src/autodetect.c src/catalog.c
+
+test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect
 	$(BUILD)/test_catalog
 	$(BUILD)/test_settings
+	$(BUILD)/test_autodetect
 	python3 -m unittest discover -s tests -p 'test_*.py'
 
 test-dos: all $(BUILD)/MAXSTUB.COM
 	rm -rf $(BUILD)/INSTTEST
+	rm -rf $(BUILD)/AUTOTEST
+	rm -f $(BUILD)/AUTOCFG $(BUILD)/AUTOCFG.BAK $(BUILD)/AUTOCFG.NEW
+	mkdir -p $(BUILD)/AUTOTEST
+	cp $(BUILD)/MAXVTSR.COM $(BUILD)/AUTOTEST/EDIT.COM
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'MAXVTSR.COM > MVTSR.TXT' -c 'MAXVTSR.COM > MVTSR2.TXT' \
@@ -128,6 +150,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 		-c 'SETUP.EXE /S /D:C:\BUILD\INSTTEST > INSTALL.TXT' \
 		-c 'echo PRESERVED> C:\BUILD\INSTTEST\MAXVIEW.CFG' \
 		-c 'echo INIKEEP> C:\BUILD\INSTTEST\MAXVSET.INI' \
+		-c 'echo DATKEEP> C:\BUILD\INSTTEST\MAXVAUTO.DAT' \
 		-c 'SETUP.EXE /S /D:C:\BUILD\INSTTEST > INSTALL2.TXT' \
 		-c 'exit' >/dev/null 2>&1
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
@@ -139,7 +162,13 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'MAXVSET.EXE /CHECK > SETCHK.TXT' \
-		-c 'MAXVSET.EXE /LIST > SETLIST.TXT' -c 'exit' >/dev/null 2>&1
+		-c 'MAXVSET.EXE /LIST > SETLIST.TXT' \
+		-c 'MAXVAUTO.EXE /CHECK > AUTOCHECK.TXT' \
+		-c 'MAXVAUTO.EXE /SCAN /R:C:\BUILD\AUTOTEST > AUTOSCAN.TXT' \
+		-c 'MAXVAUTO.EXE /APPLY /F:AUTOCFG /R:C:\BUILD\AUTOTEST > AUTOAPLY.TXT' \
+		-c 'MAXVAUTO.EXE /APPLY /F:AUTOCFG /R:C:\BUILD\AUTOTEST > AUTODUP.TXT' \
+		-c 'MAXVAPP.EXE /CHECK /F:AUTOCFG > AUTOCFG.TXT' \
+		-c 'exit' >/dev/null 2>&1
 	rg -q 'resident API 0.2 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
@@ -157,19 +186,28 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 	rg -q 'MAX_ABI=1.0' $(BUILD)/MEMMAX.TXT
 	rg -q 'settings valid' $(BUILD)/SETCHK.TXT
 	rg -q 'AUTO_TSR=YES' $(BUILD)/SETLIST.TXT
+	rg -q 'valid detection rule' $(BUILD)/AUTOCHEC.TXT
+	rg -q 'EDIT.COM|DOS text editor|C:\\BUILD\\AUTOTEST' $(BUILD)/AUTOSCAN.TXT
+	rg -q 'added 1 program' $(BUILD)/AUTOAPLY.TXT
+	rg -q 'added 0 program' $(BUILD)/AUTODUP.TXT
+	rg -q '1 valid program' $(BUILD)/AUTOCFG.TXT
 	test -f $(BUILD)/INSTTEST/MAXVIEW.EXE
 	test -f $(BUILD)/INSTTEST/MAXVTSR.COM
 	test -f $(BUILD)/INSTTEST/MAXVAPP.EXE
 	test -f $(BUILD)/INSTTEST/MAXVMEM.EXE
 	test -f $(BUILD)/INSTTEST/MAXVSET.EXE
+	test -f $(BUILD)/INSTTEST/MAXVAUTO.EXE
 	test -f $(BUILD)/INSTTEST/MAXVIEW.CFG
 	test -f $(BUILD)/INSTTEST/MAXVSET.INI
+	test -f $(BUILD)/INSTTEST/MAXVAUTO.DAT
 	test -f $(BUILD)/INSTTEST/MAXVIEW.LOG
 	rg -q '^PRESERVED' $(BUILD)/INSTTEST/MAXVIEW.CFG
 	rg -q '^INIKEEP' $(BUILD)/INSTTEST/MAXVSET.INI
+	rg -q '^DATKEEP' $(BUILD)/INSTTEST/MAXVAUTO.DAT
 
 clean:
 	find $(BUILD) -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true
 	rm -rf $(BUILD)/INSTTEST
+	rm -rf $(BUILD)/AUTOTEST
 	rm -rf $(PACKAGE)
 

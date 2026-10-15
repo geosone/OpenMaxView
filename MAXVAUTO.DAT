@@ -1,0 +1,17 @@
+# Open MaxView automatic program detection database version 1
+# filename|title|command|min-kb|max-kb
+EDIT.COM|DOS text editor|EDIT.COM|192|640
+QBASIC.EXE|BASIC environment|QBASIC.EXE|256|640
+DOSSHELL.EXE|DOS file manager|DOSSHELL.EXE|256|640
+FDISK.EXE|Disk partition utility|FDISK.EXE|128|640
+MEM.EXE|DOS memory report|MEM.EXE|96|640
+DEBUG.EXE|DOS debugger|DEBUG.EXE|128|640
+XCOPY.EXE|Extended file copy|XCOPY.EXE|128|640
+DEFRAG.EXE|Disk defragmenter|DEFRAG.EXE|192|640
+SCANDISK.EXE|Disk checking utility|SCANDISK.EXE|192|640
+HELP.COM|DOS Help|HELP.COM|160|640
+EDIT.EXE|FreeDOS text editor|EDIT.EXE|192|640
+VOLKOV.EXE|Volkov Commander|VOLKOV.EXE|256|640
+NC.EXE|File commander|NC.EXE|256|640
+WP.EXE|Word processor|WP.EXE|256|640
+123.EXE|Spreadsheet|123.EXE|256|640

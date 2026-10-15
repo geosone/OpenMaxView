@@ -22,7 +22,7 @@ on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
 next launch.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
-contains no memory-manager logic.  In 0.4 it launches a child through DOS and
+contains no memory-manager logic.  In 0.5 it launches a child through DOS and
 regains control when that child exits.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
@@ -46,7 +46,15 @@ launching and Quick Help visibility.  VM scheduling, swapping, private memory,
 video/I/O and interrupt options remain absent while backend ABI 1.0 exposes
 only its read-only status capability.
 
-Its 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
+`MAXVAUTO.EXE` provides clean-room automatic program setup.  Its declarative
+`MAXVAUTO.DAT` database maps DOS 8.3 filenames to catalogue records.  The
+scanner checks the current directory and `PATH`, with explicitly requested
+recursive roots, but never opens or executes a detected third-party binary.
+It filters existing catalogue commands, allocates an unused hotkey, and uses
+the catalogue module's atomic save path.  The database remains separate and
+is preserved by upgrades so users and distributors can add local rules.
+
+The shared 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,
 red triggers, cyan selection, shadows, double dialog borders and bottom
 buttons.  The renderer stays local so future builds can run without copying or

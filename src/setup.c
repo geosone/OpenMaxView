@@ -42,8 +42,10 @@ static const install_file files[] = {
     { "MAXVAPP.EXE", "MAXVAPP.EXE", 1, 0 },
     { "MAXVMEM.EXE", "MAXVMEM.EXE", 1, 0 },
     { "MAXVSET.EXE", "MAXVSET.EXE", 1, 0 },
+    { "MAXVAUTO.EXE", "MAXVAUTO.EXE", 1, 0 },
     { "MAXVIEW.CFG", "MAXVIEW.CFG", 1, 1 },
     { "MAXVSET.INI", "MAXVSET.INI", 1, 1 },
+    { "MAXVAUTO.DAT", "MAXVAUTO.DAT", 1, 1 },
     { "DVPROBE.EXE", "DVPROBE.EXE", 0, 0 },
     { "README.TXT",  "README.TXT",  0, 0 },
     { "LICENSE.TXT", "LICENSE.TXT", 0, 0 }
@@ -329,7 +331,7 @@ static int install(const char *destination, char *failed_name, int quiet)
     log = fopen(target, "wt");
     if (log != NULL) {
         fprintf(log, "Open MaxView installation\nDirectory=%s\n", destination);
-        fprintf(log, "MAXVIEW.CFG and MAXVSET.INI are preserved during upgrades.\n");
+        fprintf(log, "MAXVIEW.CFG, MAXVSET.INI and MAXVAUTO.DAT are preserved during upgrades.\n");
         fclose(log);
     }
     return 1;

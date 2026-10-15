@@ -10,7 +10,7 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.4
+## Current milestone: 0.5
 
 This first runnable milestone provides:
 
@@ -26,12 +26,14 @@ This first runnable milestone provides:
 * `MAXVMEM.EXE`, a read-only DOS/EMS/XMS/VCPI/MAXVTSR/Open-386MAX status tool;
 * `MAXVSET.EXE`, a persistent global settings editor whose options are applied
   by the launcher rather than merely stored;
+* `MAXVAUTO.EXE`, an automatic program detector with preview, selective apply,
+  recursive scanning and an extensible free-software rule database;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.4 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.5 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -61,7 +63,8 @@ installation-media directory `build/OpenMaxView/` containing:
 ```text
 SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
 MAXVAPP.EXE     MAXVMEM.EXE     MAXVSET.EXE
-DVPROBE.EXE     MAXVIEW.CFG     MAXVSET.INI
+MAXVAUTO.EXE    MAXVAUTO.DAT    DVPROBE.EXE
+MAXVIEW.CFG     MAXVSET.INI
 README.TXT      LICENSE.TXT
 ```
 
@@ -78,8 +81,9 @@ SETUP
 ```
 
 The default destination is `C:\MAXVIEW`.  Setup checks all required source
-files before changing the destination and preserves existing `MAXVIEW.CFG`
-and `MAXVSET.INI` files during upgrades.  Automated installations use:
+files before changing the destination and preserves existing `MAXVIEW.CFG`,
+`MAXVSET.INI` and `MAXVAUTO.DAT` files during upgrades.  Automated
+installations use:
 
 ```text
 SETUP /S /D:C:\MAXVIEW
@@ -90,7 +94,7 @@ DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
-Version 0.4 validates its private ABI and reports the root-context status.  It
+Version 0.5 validates its private ABI and reports the root-context status.  It
 does not claim or request multiple VM services until Open 386MAX advertises
 the corresponding capability.
 
@@ -102,7 +106,7 @@ Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
 hotkey|title|command|working-directory|min-kb|max-kb
 ```
 
-The working directory may be empty.  Memory values are advisory in 0.4 and
+The working directory may be empty.  Memory values are advisory in 0.5 and
 will become enforced limits when the VM backend lands.
 
 `MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
@@ -130,6 +134,26 @@ catalogue reload after children, memory-limit display, program hotkeys and the
 Quick Help text.  Scheduler, swapping and per-VM settings are deliberately not
 offered until the Open 386MAX backend advertises those capabilities.  For
 automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and optional `/F:file`.
+
+`MAXVAUTO.EXE` detects known DOS programs in the current directory and every
+directory on `PATH`.  The interactive screen lets the user select discoveries
+before adding them to `MAXVIEW.CFG`; already configured executables are not
+offered again and hotkeys are allocated without collisions.  Additional trees
+can be searched with `/R:directory`.  Automation uses `MAXVAUTO /SCAN` for a
+read-only report, `MAXVAUTO /APPLY` to add every discovery, and
+`MAXVAUTO /CHECK` to validate `MAXVAUTO.DAT`.  `/F:catalog` and `/D:database`
+select alternate files.  Catalogue updates use the same atomic `.NEW`/`.BAK`
+scheme as `MAXVAPP`.
+
+The detection database is plain text and may be extended locally.  Each
+non-comment line has this format:
+
+```text
+filename|title|command|min-kb|max-kb
+```
+
+Filenames follow DOS 8.3 rules.  Detection only checks for a named file; it
+does not execute, inspect or copy third-party programs.
 
 ## Reference-media inventory
 
