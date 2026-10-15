@@ -25,6 +25,10 @@ typedef struct memory_status {
     unsigned resident_present;
     unsigned resident_version;
     unsigned resident_caps;
+    unsigned common_valid;
+    unsigned common_total_bytes;
+    unsigned common_available_bytes;
+    unsigned common_largest_bytes;
     unsigned dv_present;
     unsigned dv_version;
     unsigned vcpi_present;
@@ -117,6 +121,15 @@ static void collect(memory_status *status)
         inregs.x.ax = ODQ_MUX_INFO;
         int86(0x2f, &inregs, &outregs);
         status->resident_caps = outregs.x.bx;
+        if ((status->resident_caps & ODQ_CAP_MEMORY_STATUS) != 0) {
+            memset(&inregs, 0, sizeof(inregs));
+            inregs.x.ax = ODQ_DVC_COMMON_STATUS;
+            int86(0x15, &inregs, &outregs);
+            status->common_valid = 1;
+            status->common_available_bytes = outregs.x.bx;
+            status->common_largest_bytes = outregs.x.cx;
+            status->common_total_bytes = outregs.x.dx;
+        }
     }
 
     memset(&inregs, 0, sizeof(inregs));
@@ -162,6 +175,13 @@ static void print_text(const memory_status *status)
         printf("%u", status->resident_version);
     putchar('\n');
     printf("MV_CAPS=%04X\n", status->resident_caps);
+    if (status->common_valid) {
+        printf("MV_COMMON_TOTAL_BYTES=%u\n", status->common_total_bytes);
+        printf("MV_COMMON_AVAILABLE_BYTES=%u\n",
+               status->common_available_bytes);
+        printf("MV_COMMON_LARGEST_BYTES=%u\n",
+               status->common_largest_bytes);
+    }
     printf("DV_API=%s", status->dv_present ? "present" : "absent");
     if (status->dv_present)
         printf("-%u.%02X", status->dv_version >> 8,
@@ -216,14 +236,22 @@ static void draw(const memory_status *status)
     value_or_na(10, 49, status->xms_present, status->xms_total_kb);
     value_or_na(10, 63, status->xms_present, status->xms_largest_kb);
 
+    if (status->common_valid)
+        sprintf(line, "MaxView common: %u total, %u free, %u largest bytes",
+                status->common_total_bytes, status->common_available_bytes,
+                status->common_largest_bytes);
+    else
+        strcpy(line, "MaxView common pool: unavailable");
+    mvui_write(12, 9, line, MVUI_ACTIVE);
+
     sprintf(line, "MAXVTSR: %s   caps %04X",
             status->resident_present ? "present" : "absent",
             status->resident_caps);
-    mvui_write(13, 9, line, MVUI_ACTIVE);
+    mvui_write(14, 9, line, MVUI_ACTIVE);
     sprintf(line, "DESQview API: %s   VCPI: %s",
             status->dv_present ? "present" : "absent",
             status->vcpi_present ? "present" : "absent");
-    mvui_write(15, 9, line, MVUI_ACTIVE);
+    mvui_write(16, 9, line, MVUI_ACTIVE);
     if (status->backend_present)
         sprintf(line, "Open 386MAX ABI %u.%u: %u active, limit %u",
                 status->backend.abi_version >> 8,
@@ -232,7 +260,7 @@ static void draw(const memory_status *status)
                 status->backend.context_limit);
     else
         strcpy(line, "Open 386MAX MaxView backend: not detected");
-    mvui_write(17, 9, line, MVUI_ACTIVE);
+    mvui_write(18, 9, line, MVUI_ACTIVE);
     mvui_write(19, 9, "Multiple V86 contexts: not available in ABI 1.0",
                MVUI_ACTIVE);
     mvui_button(24, 1, 12, "Exit Esc");

@@ -11,6 +11,7 @@
 | Alternate text-video buffer | Foreground implementation | Aliases B000h/B800h and accepts change notification. |
 | Physical screen queries | Foreground implementation | Reports BIOS rows, columns and mode; no direct-window switch or DV/X identity. |
 | DESQview `PUSHKEY` | Foreground implementation | Adds scan/character pair to the BIOS keyboard buffer. |
+| System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
 | Add/change/delete programs | Implemented | Open text catalogue, atomic update and backup. |
 | Automatic setup | Implemented | Filename-rule scan; no binary inspection. |

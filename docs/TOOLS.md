@@ -97,7 +97,9 @@ MAXVMEM [/T]
 ```
 
 `/T` emits stable key/value output for automated diagnostics. The tool does
-not allocate memory or change the Open 386MAX configuration.
+not allocate memory or change the Open 386MAX configuration. When resident
+API 0.7 or later is loaded, it also reports the total, available and largest
+Open MaxView common-memory block in bytes.
 
 ## MAXVDVP.EXE
 
@@ -126,7 +128,8 @@ for later 1.x scheduler and VM work but are not silently claimed as enforced.
 
 Developer diagnostic for the resident DESQview-compatible calls and the
 Open 386MAX backend query. It exercises pause, critical nesting and alternate
-video-buffer behaviour and prints a pass/fail report.
+video-buffer behaviour, exhausts and releases the bounded task-memory pool,
+checks common-memory accounting and prints a pass/fail report.
 
 ## qipinfo.py
 

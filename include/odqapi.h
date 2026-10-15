@@ -5,16 +5,23 @@
 /* Documented DESQview-compatible calls. */
 #define ODQ_DV_VERSION          0x0280
 #define ODQ_DVC_PAUSE           0x1000
+#define ODQ_DVC_GET_MEMORY_TV   0x1001
+#define ODQ_DVC_PUT_MEMORY_TV   0x1002
 #define ODQ_DVC_BEGIN_CRITICAL  0x101b
 #define ODQ_DVC_END_CRITICAL    0x101c
+#define ODQ_DVC_COMMON_STATUS   0xde04
 #define ODQ_DVC_APP_NUMBER      0xde07
 #define ODQ_DVC_API_LEVEL       0xde0b
+#define ODQ_DVC_GET_MEMORY      0xde0c
+#define ODQ_DVC_PUT_MEMORY      0xde0d
 #define ODQ_DVC_PUSH_KEY        0xde10
 #define ODQ_DVC_JUSTIFY         0xde11
 #define ODQ_DVC_C_STYLE         0xde12
 #define ODQ_DVC_GET_CRITICAL    0xde13
 #define ODQ_DVC_SET_ERROR       0xde15
 #define ODQ_DVC_GET_ERROR       0xde16
+#define ODQ_DVC_GET_COMMON      0xde19
+#define ODQ_DVC_PUT_COMMON      0xde1a
 #define ODQ_DVC_ENTER_CRITICAL  0xde1c
 #define ODQ_DVC_SCREEN_INFO     0xde1e
 #define ODQ_DVC_VIDEO_NOTIFY    0xde2f
@@ -26,7 +33,7 @@
 #define ODQ_MUX_RESET           0xd702
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0006
+#define ODQ_MUX_VERSION         0x0007
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -41,7 +48,14 @@
 #define ODQ_CAP_SCREEN_INFO     0x0400
 #define ODQ_CAP_VIDEO_NOTIFY    0x0800
 #define ODQ_CAP_DVX_VERSION     0x1000
-#define ODQ_CAPABILITIES        0x1fff
+#define ODQ_CAP_SYSTEM_MEMORY   0x2000
+#define ODQ_CAP_COMMON_MEMORY   0x4000
+#define ODQ_CAP_MEMORY_STATUS   0x8000
+#define ODQ_CAPABILITIES        0xffff
+
+#define ODQ_MEMORY_SLOT_SIZE    256
+#define ODQ_SYSTEM_SLOT_COUNT   8
+#define ODQ_COMMON_SLOT_COUNT   4
 
 #define ODQ_TASK_JUSTIFY        0x0001
 #define ODQ_TASK_C_STYLE        0x0002

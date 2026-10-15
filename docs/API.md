@@ -11,16 +11,23 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 |---|---|---|
 | `INT 21h AX=2B01h CX=4445h DX=5351h` | `AL=00h`, `BX=0280h` | Presence and version |
 | `INT 15h AX=1000h` | Returns safely | Foreground `PAUSE`; no scheduler yet |
+| `INT 15h AX=1001h BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | TopView `GETMEM` alias |
+| `INT 15h AX=1002h ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | TopView `PUTMEM` alias |
 | `INT 15h AX=101Bh` | Increments a saturating nesting count | `BEGINC` |
 | `INT 15h AX=101Ch` | Decrements the count without underflow | `ENDC` |
+| `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE07h` | `AX=0001h` | `APPNUM`; one foreground program |
 | `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0280h` | `APILEVEL` |
+| `INT 15h AX=DE0Ch BX=bytes` | `ES:DI=block`, null on failure; `AX=0/1` mirrors status | `GETMEM` |
+| `INT 15h AX=DE0Dh ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | `PUTMEM` |
 | `INT 15h AX=DE10h BH=scan BL=character` | Adds one BIOS-format keyboard entry | Foreground `PUSHKEY` |
 | `INT 15h AX=DE11h BL=mode` | Zero disables, nonzero enables cursor-follow mode | `JUSTIFY` state |
 | `INT 15h AX=DE12h BX=mode` | Zero selects normal, nonzero C-style linefeeds | `CSTYLE` state |
 | `INT 15h AX=DE13h` | `BX=critical nesting count` | `GETCRIT` |
 | `INT 15h AX=DE15h BL=mode` | Selects error-return policy 0, 1 or 2 | `SET ERROR HANDLING` state |
 | `INT 15h AX=DE16h` | `BL=error-return policy` | `GET ERROR HANDLING` |
+| `INT 15h AX=DE19h BX=bytes` | `AX=0`, `ES:DI=block`; null pointer and `AX=1` on failure | `GETCOMMON` |
+| `INT 15h AX=DE1Ah ES:DI=block` | `AX=0` on release, `AX=1` for an invalid pointer | `PUTCOMMON` |
 | `INT 15h AX=DE1Ch` | Increments the critical count | Interrupt-safe `ENTERC` |
 | `INT 15h AX=DE1Eh` | `CL=rows`, `CH=columns`, `BL=video mode` | Physical `SCRNINFO` |
 | `INT 15h AX=DE2Fh` | `BX=0000h` | No direct-window switch in foreground mode |
@@ -35,9 +42,18 @@ child. In foreground mode
 `JUSTIFY` and `CSTYLE` preserve compatibility state; their visible windowing
 effects require the future per-task virtual console. Requesting an API level
 above 2.80 returns the supported maximum but does not yet display DESQview's
-error dialog. The selected error policy is observable now; its carry/null
-failure behaviour becomes relevant as mailbox and system-memory calls are
-implemented.
+error dialog. The selected error policy is observable now. Allocation failure
+returns a null pointer/status in foreground mode; it does not display an
+interactive DESQview error dialog.
+
+The current bounded allocator provides eight 256-byte task-memory slots and
+four 256-byte common-memory slots. Requests from 1 through 256 bytes occupy
+one slot and are zero-filled; larger requests fail without partial
+allocation. `D702h` releases every task-memory slot when the launcher resets
+the foreground task. Common memory deliberately survives a task reset and
+must be returned explicitly. This is a real resident backing store suitable
+for early API clients, but it is not yet DESQview's variable-size memory
+manager; that requires the multi-context Open 386MAX backend.
 
 ## Open MaxView private diagnostics
 
@@ -46,8 +62,8 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0006h`, `DX=0280h` |
-| `D701h` | `BX=1FFFh` capability bits, `CX=critical depth`, `DX=video segment` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0007h`, `DX=0280h` |
+| `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 
@@ -58,6 +74,7 @@ C-style linefeed interpretation. The declarations are in `include/odqapi.h`.
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
 call, task defaults, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, error policy,
+nested task/common-memory allocation, bounds and release,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
 alternate video-buffer calls and foreground `PUSHKEY`. It also reports whether
 the versioned Open 386MAX backend ABI is available.

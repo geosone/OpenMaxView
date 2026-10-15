@@ -6,9 +6,12 @@
 ; Implemented compatibility surface:
 ;   INT 21h AX=2B01h CX='DE' DX='SQ'  presence/version query
 ;   INT 15h AX=1000h                 cooperative PAUSE
+;   INT 15h AX=1001h/1002h           system-memory allocate/release aliases
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
+;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE07h                 foreground program number
 ;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
+;   INT 15h AX=DE0Ch/DE0Dh           system-memory allocate/release
 ;   INT 15h AX=DE10h, BX=scan/char   foreground keyboard PUSHKEY
 ;   INT 15h AX=DE11h, BL=mode        viewport justification mode
 ;   INT 15h AX=DE12h, BX=mode        C-style linefeed mode
@@ -16,6 +19,7 @@
 ;   INT 15h AX=DE15h/DE16h           set/get error-return policy
 ;   INT 15h AX=DE1Ch                 interrupt-safe critical entry
 ;   INT 15h AX=DE1Eh                 physical screen information
+;   INT 15h AX=DE19h/DE1Ah           common-memory allocate/release
 ;   INT 15h AX=DE2Fh                 direct-video activation query
 ;   INT 15h AX=DE30h                 DESQview/X version query
 ;   INT 10h AH=FEh                   alternate text-video buffer
@@ -31,8 +35,13 @@ MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0006h
-CAPABILITIES   equ 1FFFh
+MUX_VERSION    equ 0007h
+CAPABILITIES   equ 0FFFFh
+
+MEM_SLOT_SIZE      equ 0100h
+SYSTEM_SLOT_COUNT  equ 8
+COMMON_SLOT_COUNT  equ 4
+COMMON_TOTAL       equ COMMON_SLOT_COUNT * MEM_SLOT_SIZE
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -145,16 +154,36 @@ int15_handler:
         pushf
         cmp     ax,1000h              ; PAUSE
         je      int15_handled
+        cmp     ax,1001h              ; TopView-compatible GETMEM alias
+        jne     short int15_not_getmem_alias
+        jmp     int15_getmem
+int15_not_getmem_alias:
+        cmp     ax,1002h              ; TopView-compatible PUTMEM alias
+        jne     short int15_not_putmem_alias
+        jmp     int15_putmem
+int15_not_putmem_alias:
         cmp     ax,101Bh              ; BEGINC
-        je      short int15_begin
+        je      int15_begin
         cmp     ax,101Ch              ; ENDC
-        je      short int15_end
+        je      int15_end
+        cmp     ax,0DE04h             ; GET AVAILABLE COMMON MEMORY
+        jne     short int15_not_common_status
+        jmp     int15_common_status
+int15_not_common_status:
         cmp     ax,0DE07h             ; APPNUM
-        je      short int15_appnum
+        je      int15_appnum
         cmp     ax,0DE0Bh             ; APILEVEL
-        je      short int15_apilevel
+        je      int15_apilevel
+        cmp     ax,0DE0Ch             ; GETMEM
+        jne     short int15_not_getmem
+        jmp     int15_getmem
+int15_not_getmem:
+        cmp     ax,0DE0Dh             ; PUTMEM
+        jne     short int15_not_putmem
+        jmp     int15_putmem
+int15_not_putmem:
         cmp     ax,0DE10h             ; PUSHKEY
-        je      short int15_pushkey
+        je      int15_pushkey
         cmp     ax,0DE11h             ; JUSTIFY
         jne     short int15_not_justify
         jmp     int15_justify
@@ -179,6 +208,14 @@ int15_not_get_error:
         jne     short int15_not_enterc
         jmp     int15_begin
 int15_not_enterc:
+        cmp     ax,0DE19h             ; GETCOMMON
+        jne     short int15_not_getcommon
+        jmp     int15_getcommon
+int15_not_getcommon:
+        cmp     ax,0DE1Ah             ; PUTCOMMON
+        jne     short int15_not_putcommon
+        jmp     int15_putcommon
+int15_not_putcommon:
         cmp     ax,0DE1Eh             ; SCRNINFO
         jne     short int15_not_scrninfo
         jmp     int15_scrninfo
@@ -234,28 +271,28 @@ pushkey_done:
         pop     di
         pop     dx
         pop     ax
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_justify:
         and     word ptr cs:task_flags,not TASK_JUSTIFY
         or      bl,bl
-        jz      short int15_handled
+        jz      int15_handled
         or      word ptr cs:task_flags,TASK_JUSTIFY
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_cstyle:
         and     word ptr cs:task_flags,not TASK_CSTYLE
         or      bx,bx
-        jz      short int15_handled
+        jz      int15_handled
         or      word ptr cs:task_flags,TASK_CSTYLE
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_getcrit:
         mov     bx,word ptr cs:critical_depth
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_set_error:
         mov     byte ptr cs:error_mode,bl
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_get_error:
         mov     bl,byte ptr cs:error_mode
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_scrninfo:
         push    ax
         push    es
@@ -273,12 +310,160 @@ scrninfo_rows:
         inc     cl
         pop     es
         pop     ax
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_videonotify:
         xor     bx,bx                 ; no direct-window switch has occurred
-        jmp     short int15_handled
+        jmp     int15_handled
 int15_getdvxversion:
         xor     bx,bx                 ; Open MaxView is not DESQview/X
+        jmp     int15_handled
+
+int15_getmem:
+        push    bx
+        push    cx
+        push    si
+        push    dx
+        mov     si,offset system_used
+        mov     di,offset system_pool
+        mov     cx,SYSTEM_SLOT_COUNT
+        call    allocate_slot
+        pop     dx
+        pop     si
+        pop     cx
+        pop     bx
+        jmp     int15_handled
+
+int15_putmem:
+        push    bx
+        push    cx
+        push    si
+        push    dx
+        mov     si,offset system_used
+        mov     bx,offset system_pool
+        mov     cx,SYSTEM_SLOT_COUNT
+        call    release_slot
+        pop     dx
+        pop     si
+        pop     cx
+        pop     bx
+        jmp     int15_handled
+
+int15_getcommon:
+        push    bx
+        push    cx
+        push    si
+        push    dx
+        mov     si,offset common_used
+        mov     di,offset common_pool
+        mov     cx,COMMON_SLOT_COUNT
+        call    allocate_slot
+        pop     dx
+        pop     si
+        pop     cx
+        pop     bx
+        jmp     int15_handled
+
+int15_putcommon:
+        push    bx
+        push    cx
+        push    si
+        push    dx
+        mov     si,offset common_used
+        mov     bx,offset common_pool
+        mov     cx,COMMON_SLOT_COUNT
+        call    release_slot
+        pop     dx
+        pop     si
+        pop     cx
+        pop     bx
+        jmp     int15_handled
+
+int15_common_status:
+        push    ax
+        push    si
+        xor     bx,bx
+        mov     si,offset common_used
+        mov     cx,COMMON_SLOT_COUNT
+common_status_loop:
+        cmp     byte ptr cs:[si],0
+        jne     short common_status_used
+        add     bx,MEM_SLOT_SIZE
+common_status_used:
+        inc     si
+        loop    common_status_loop
+        xor     cx,cx
+        or      bx,bx
+        jz      short common_status_done
+        mov     cx,MEM_SLOT_SIZE
+common_status_done:
+        mov     dx,COMMON_TOTAL
+        pop     si
+        pop     ax
+        jmp     short int15_handled
+
+; Allocate one bounded resident slot.  BX is the requested byte count,
+; SI is the allocation bitmap, DI is the pool base and CX is the slot count.
+; AX=0 and ES:DI identify a zero-filled slot; AX=1 and 0000:0000 mean failure.
+allocate_slot:
+        mov     ax,1
+        or      bx,bx
+        jz      short allocate_fail
+        cmp     bx,MEM_SLOT_SIZE
+        ja      short allocate_fail
+allocate_scan:
+        cmp     byte ptr cs:[si],0
+        je      short allocate_found
+        inc     si
+        add     di,MEM_SLOT_SIZE
+        loop    allocate_scan
+allocate_fail:
+        xor     di,di
+        mov     es,di
+        mov     ax,1
+        ret
+allocate_found:
+        mov     byte ptr cs:[si],1
+        push    cs
+        pop     es
+        push    di
+        push    cx
+        push    ax
+        pushf
+        cld
+        xor     ax,ax
+        mov     cx,MEM_SLOT_SIZE / 2
+        rep     stosw
+        popf
+        pop     ax
+        pop     cx
+        pop     di
+        xor     ax,ax
+        ret
+
+; Release an exact slot pointer.  ES:DI is the pointer, SI the bitmap,
+; BX the pool base and CX the slot count.  AX=0 succeeds; AX=1 rejects it.
+release_slot:
+        mov     ax,es
+        push    cs
+        pop     dx
+        cmp     ax,dx
+        jne     short release_fail
+release_scan:
+        cmp     di,bx
+        je      short release_found
+        inc     si
+        add     bx,MEM_SLOT_SIZE
+        loop    release_scan
+release_fail:
+        mov     ax,1
+        ret
+release_found:
+        cmp     byte ptr cs:[si],0
+        je      short release_fail
+        mov     byte ptr cs:[si],0
+        xor     ax,ax
+        ret
+
 int15_handled:
         popf
         iret
@@ -314,6 +499,21 @@ int2f_reset:
         mov     word ptr cs:api_level,0100h
         mov     word ptr cs:task_flags,TASK_JUSTIFY
         mov     byte ptr cs:error_mode,0
+        push    ax
+        push    cx
+        push    di
+        push    es
+        push    cs
+        pop     es
+        xor     ax,ax
+        mov     di,offset system_used
+        mov     cx,SYSTEM_SLOT_COUNT
+        cld
+        rep     stosb
+        pop     es
+        pop     di
+        pop     cx
+        pop     ax
         popf
         iret
 int2f_task_info:
@@ -335,8 +535,12 @@ api_level      dw 0100h
 task_flags     dw TASK_JUSTIFY
 error_mode     db 0
 video_segment  dw 0B800h
+system_used    db SYSTEM_SLOT_COUNT dup(0)
+common_used    db COMMON_SLOT_COUNT dup(0)
+system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
+common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.6 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.7 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
