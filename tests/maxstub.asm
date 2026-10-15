@@ -46,6 +46,10 @@ qpi_entry:
         je      short qpi_free
         cmp     ax,0600h
         je      short qpi_clone
+        cmp     ax,0800h
+        jne     short qpi_not_switch
+        jmp     qpi_switch
+qpi_not_switch:
         cmp     ax,4D00h
         je      short qpi_query
         cmp     ax,4D01h
@@ -73,7 +77,7 @@ qpi_version:
         clc
         retf
 qpi_context:
-        mov     edx,00001234h
+        mov     edx,dword ptr cs:qpi_active_context
         clc
         retf
 qpi_alloc:
@@ -95,7 +99,20 @@ qpi_free:
         jne     short qpi_error
         cmp     edx,00005678h
         jne     short qpi_error
+        cmp     dword ptr cs:qpi_active_context,00005678h
+        je      short qpi_error
         mov     byte ptr cs:qpi_allocated,0
+        clc
+        retf
+qpi_switch:
+        cmp     edx,00001234h
+        je      short qpi_switch_valid
+        cmp     byte ptr cs:qpi_allocated,1
+        jne     short qpi_error
+        cmp     edx,00005678h
+        jne     short qpi_error
+qpi_switch_valid:
+        mov     dword ptr cs:qpi_active_context,edx
         clc
         retf
 qpi_error:
@@ -104,5 +121,6 @@ qpi_error:
 
 old2f           dd 0
 qpi_allocated   db 0
+qpi_active_context dd 00001234h
 resident_end:
         end     start

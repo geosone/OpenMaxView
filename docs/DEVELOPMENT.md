@@ -56,6 +56,8 @@ Watcom. Do not add NASM as an alternate hidden requirement.
 * Before starting Windows from private-address-space mode `08h`, restore and
   verify the Open 386MAX standard/root context. Windows snapshots the page
   table for the first 4 MiB at startup, so this transition must fail closed.
+  `odq_max_context_restore` provides the verified backend operation; a caller
+  must abort the launch if it returns false.
 * Treat QPI page-table frames as 32-bit physical page numbers. Release only
   frames allocated and owned by the same lifecycle layer, and never release
   the active or root context.

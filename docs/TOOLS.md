@@ -143,8 +143,9 @@ its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
 keyboard injection, verifies the resident installation path, and prints a
 pass/fail report. Its backend line includes the negotiated QPI version and
 active page-table frame. It rejects an empty token, allocates and clones one
-context, rejects root release and a second outstanding clone, and releases
-the owned clone again without ever activating it.
+context, rejects root release and a second outstanding clone, verifies a
+switch to that clone, refuses to free it while active, verifies restoration of
+the captured root and then releases the clone.
 
 ## qipinfo.py
 

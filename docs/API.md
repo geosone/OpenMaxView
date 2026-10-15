@@ -152,10 +152,21 @@ the active 0-4 MB page table into it. It never invokes `08h`, so the clone is
 not made active. This first wrapper owns at most one clone. If `06h` fails it
 immediately attempts to roll the `04h` allocation back through `05h`.
 
+`odq_max_context_activate` accepts only the owned clone, calls QPI `08h` and
+then verifies the active frame through `07h`. `odq_max_context_restore` uses
+`08h` to return to the root frame captured by the first successful backend
+query while private status identifies context ID 1. A query made from any
+other administrative context reports status but does not enable lifecycle
+calls. If activation verification fails, the wrapper immediately attempts
+root restoration. Callers must treat a failed restoration as fatal and must
+not start Windows or free the clone.
+
 `odq_max_context_release` accepts only that owned, non-active clone and clears
 the caller's token after QPI `05h` succeeds. Empty, foreign and duplicate
 tokens fail closed. These calls establish safe resource lifetime only; they
-are not a scheduler or permission to free the root/active context.
+are not a scheduler or permission to free the root/active context. Release is
+explicitly rejected until a verified root restoration has cleared the active
+state.
 
 ## Conformance probe
 
@@ -177,5 +188,4 @@ including invalid-handle rejection. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
-clone, and one allocate/clone/release cycle without switching away from the
-root context.
+clone, one verified clone/root switch pair and release only after restoration.

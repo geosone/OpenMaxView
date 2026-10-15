@@ -77,5 +77,6 @@ is the separately maintained Open 386MAX project.
 Open 386MAX's `9x` branch is the development target for the backend contract.
 Milestone 0.8 validates private ABI 1.0 and QPI functions `03h` and `07h`. Its
 developer probe also tests a bounded `04h`/`06h`/`05h` allocate, clone and
-release cycle. Context switching is not yet performed by the shipped launcher,
-even though current Open 386MAX provides the required QPI calls.
+release cycle plus verified `08h` switches to the clone and back to the
+captured root. Context switching is not yet performed by the shipped launcher,
+even though the guarded backend wrapper and current Open 386MAX provide it.

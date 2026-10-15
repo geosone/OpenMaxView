@@ -23,8 +23,10 @@ typedef struct odq_max_qpi_context {
 /* Returns nonzero only after discovery, signature and status validation. */
 int odq_max_backend_query(odq_max_backend_info *information);
 
-/* Require a successful query. One owned clone is allowed and never activated. */
+/* Require a successful root query. Clone allocation does not activate it. */
 int odq_max_context_clone(odq_max_qpi_context *context);
 int odq_max_context_release(odq_max_qpi_context *context);
+int odq_max_context_activate(const odq_max_qpi_context *context);
+int odq_max_context_restore(void);
 
 #endif

@@ -680,10 +680,25 @@ int main(void)
                 return 41;
             }
             puts("QPI second owned context clone rejected.");
+            if (!odq_max_context_activate(&qpi_context)) {
+                puts("QPI owned context activation failed.");
+                return 42;
+            }
+            puts("QPI owned context activation verified.");
+            if (odq_max_context_release(&qpi_context)) {
+                puts("QPI released the active owned context.");
+                return 43;
+            }
+            puts("QPI active owned context release rejected.");
+            if (!odq_max_context_restore()) {
+                puts("QPI root context restoration failed.");
+                return 44;
+            }
+            puts("QPI root context restoration verified.");
             if (!odq_max_context_release(&qpi_context) ||
                 qpi_context.page_table != 0) {
                 puts("QPI context release failed.");
-                return 42;
+                return 45;
             }
             puts("Open 386MAX QPI context lifecycle passed.");
         }
