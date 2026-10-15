@@ -13,6 +13,7 @@
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
 ;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
+;   INT 15h AH=12h, BH=00h           HANDLE object-message subset
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE05h                 conventional-memory availability
 ;   INT 15h AX=DE06h                 expanded-memory availability
@@ -45,6 +46,7 @@
 ;   INT 2Fh AX=D702h                 reset per-foreground-task state
 ;   INT 2Fh AX=D703h                 query per-foreground-task state
 ;   INT 2Fh AX=D704h                 extended capability query
+;   INT 2Fh AX=D705h                 object-message capability query
 
 DV_VERSION     equ 0280h
 MUX_STATUS     equ 0D700h
@@ -52,10 +54,12 @@ MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
+MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0011h
+MUX_VERSION    equ 0012h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
+CAPABILITIES3  equ 0001h             ; HANDLE message subset
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -182,6 +186,14 @@ int10_chain:
 
 int15_handler:
         pushf
+        cmp     ah,12h                ; TopView/DESQview SEND MESSAGE
+        jne     short int15_not_message
+        or      bh,bh                 ; HANDLE is message 00h
+        jne     short int15_unknown_message
+        jmp     int15_message_handle
+int15_unknown_message:
+        jmp     int15_chain
+int15_not_message:
         cmp     ax,1000h              ; PAUSE
         je      int15_handled
         cmp     ax,1001h              ; TopView-compatible GETMEM alias
@@ -505,6 +517,40 @@ int15_object_type:
         jmp     int15_handled
 int15_object_type_invalid:
         xor     bx,bx
+        jmp     int15_handled
+
+; HANDLE uses the TopView message ABI: the caller reserves a DWORD on its
+; stack before INT 15h, and the service replaces it with an object pointer.
+; At this entry the handler's PUSHF plus the interrupt frame place that DWORD
+; ten bytes above BP after saving BP. Only the resident task/window exists;
+; mailbox, keyboard and OBJECTQ selectors therefore return a null handle.
+int15_message_handle:
+        push    bp
+        mov     bp,sp
+        push    ax
+        cmp     bl,0                  ; validate/return stacked handle
+        je      short message_handle_stacked
+        cmp     bl,1                  ; current task's window
+        je      short message_handle_current
+        jmp     short message_handle_null
+message_handle_stacked:
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_handle_null
+        mov     ax,word ptr ss:[bp+12]
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short message_handle_null
+        jmp     short message_handle_done
+message_handle_current:
+        mov     word ptr ss:[bp+10],0
+        mov     ax,word ptr cs:task_handle_segment
+        mov     word ptr ss:[bp+12],ax
+        jmp     short message_handle_done
+message_handle_null:
+        mov     word ptr ss:[bp+10],0
+        mov     word ptr ss:[bp+12],0
+message_handle_done:
+        pop     ax
+        pop     bp
         jmp     int15_handled
 
 ; Locate the sole full-screen foreground window.  A search below that window
@@ -1119,6 +1165,8 @@ int2f_handler:
         je      short int2f_task_info
         cmp     ax,MUX_CAPS2
         je      short int2f_caps2
+        cmp     ax,MUX_CAPS3
+        je      short int2f_caps3
         jmp     short int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
@@ -1168,6 +1216,12 @@ int2f_caps2:
         xor     dx,dx
         popf
         iret
+int2f_caps3:
+        mov     bx,CAPABILITIES3
+        xor     cx,cx
+        xor     dx,dx
+        popf
+        iret
 int2f_chain:
         popf
         jmp     dword ptr cs:old2f
@@ -1203,7 +1257,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.17 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.18 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

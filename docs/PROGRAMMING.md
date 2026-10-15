@@ -60,9 +60,9 @@ static int maxview_present(unsigned *version)
 ```
 
 `BX=0280h` identifies the compatible API level. Open MaxView-private feature
-negotiation uses `ODQ_MUX_STATUS`, `ODQ_MUX_INFO` and `ODQ_MUX_CAPS2`. A
-portable application should prefer documented calls and treat private bits as
-optional acceleration or diagnostics.
+negotiation uses `ODQ_MUX_STATUS`, `ODQ_MUX_INFO`, `ODQ_MUX_CAPS2` and
+`ODQ_MUX_CAPS3`. A portable application should prefer documented calls and
+treat private bits as optional acceleration or diagnostics.
 
 ## Yielding instead of busy waiting
 
@@ -150,9 +150,27 @@ output.
 an arbitrary handle with `IS_OBJECT` before using it. `OBJECT_TYPE` returns
 `ODQ_OBJECT_WINDOW_TASK` for the current resident task object.
 
-The message calls `HANDLE`, `NEW`, `FREE`, mailboxes, timers and panels use a
-special stack ABI and are not implemented yet. Do not substitute private
-handles or assume that an integer is a valid object pointer.
+The `HANDLE` message uses the original stack ABI rather than normal register
+returns. Reserve a DWORD before `INT 15h`; selector `01h` replaces it with the
+current task's window handle, while selector `00h` validates a handle already
+there. The low word is the offset and the high word is the segment:
+
+```asm
+        xor     ax,ax
+        push    ax                    ; reserved result segment
+        push    ax                    ; reserved result offset
+        mov     ax,1200h              ; AH=12h SEND MESSAGE
+        mov     bx,0001h              ; BH=HANDLE, BL=current window
+        int     15h
+        pop     di                    ; result offset
+        pop     es                    ; result segment
+```
+
+Check for `0000:0000`, and keep the pushes and pops balanced. Selectors for
+mailboxes, keyboards and OBJECTQs currently return null because those objects
+do not exist. `NEW`, `FREE`, timers, panels and the blocking message calls are
+still unavailable. Do not substitute private handles or assume that an
+integer is a valid object pointer.
 
 ## Text video
 

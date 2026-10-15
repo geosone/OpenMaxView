@@ -66,7 +66,12 @@ static int query_state(unsigned expected_depth, unsigned *video_segment)
     *video_segment = outregs.x.dx;
     inregs.x.ax = ODQ_MUX_CAPS2;
     int86(0x2f, &inregs, &outregs);
-    return outregs.x.bx == ODQ_CAPABILITIES2 &&
+    if (outregs.x.bx != ODQ_CAPABILITIES2 ||
+        outregs.x.cx != 0 || outregs.x.dx != 0)
+        return 0;
+    inregs.x.ax = ODQ_MUX_CAPS3;
+    int86(0x2f, &inregs, &outregs);
+    return outregs.x.bx == ODQ_CAPABILITIES3 &&
            outregs.x.cx == 0 && outregs.x.dx == 0;
 }
 

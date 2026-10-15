@@ -20,6 +20,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
 | `INT 15h AX=1024h BX=window` | `ES:DI=buffer`, `CX=bytes`, `DL=0` | `GETBUF`; foreground text buffer |
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
+| `INT 15h AH=12h BH=00h BL=selector`, reserved DWORD on caller stack | Replaces the DWORD with an object handle | `HANDLE`; selectors 00h and 01h for the sole foreground window |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
@@ -91,8 +92,13 @@ operate on one real resident identity, not placeholder numbers. Starting
 `OBJNEXT` at `0000:0000` returns that task; traversing from the returned handle
 produces the null end marker. The version-1.00 `WININFO` record identifies task
 1, its owner handle, process status bit and the foreground-only constraint.
-Dynamic `NEW`, `FREE` and message-object calls remain unimplemented until
-their stack ABI and ownership rules have conformance coverage.
+The `HANDLE` message implements the original caller-stack ABI. Selector `00h`
+validates and returns the object pointer already in the reserved DWORD;
+selector `01h` returns the current task's window. Selectors `02h` through
+`07h` return `0000:0000` because mailbox, keyboard and OBJECTQ objects do not
+exist yet. Dynamic `NEW`, `FREE` and all other message operations remain
+unimplemented until their ownership and blocking rules have conformance
+coverage.
 
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
@@ -127,11 +133,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0011h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0012h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
+| `D705h` | `BX=0001h` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -139,6 +146,9 @@ C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
 `WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
 plus conventional-memory, expanded-memory, `DBGPOKE` status-line output and
 keyboard-mouse mode. The declarations are in `include/odqapi.h`.
+For `D705h`, bit 0 advertises the bounded `HANDLE` message subset. Later
+message classes receive separate bits rather than being inferred from API
+version 2.80.
 
 ## Open 386MAX QPI wrapper
 
@@ -200,8 +210,9 @@ navigates current-process and bounded system-memory accounting,
 navigates the one-item object list, validates DOS ownership and the versioned
 window-information record,
 nested `BEGINC`/`ENTERC` regions, `GETCRIT`, `SCRNINFO`, video identity,
-alternate video-buffer calls, foreground `PUSHKEY` and targeted `PUTKEY`,
-including invalid-handle rejection. It also reports whether the versioned
+alternate video-buffer calls, foreground `PUSHKEY`, targeted `PUTKEY` and the
+`HANDLE` caller-stack ABI, including valid, foreign and unavailable object
+selectors. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding

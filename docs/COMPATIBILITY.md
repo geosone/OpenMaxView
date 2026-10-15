@@ -17,6 +17,7 @@
 | Conventional/expanded status | Foreground implementation | DOS MCB and standard EMS queries reported in documented KB units. |
 | Physical debug status | Implemented | `DBGPOKE` appends characters on the bottom text row without replacing attributes. |
 | Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
+| `HANDLE` object message | Foreground implementation | Original caller-stack ABI returns or validates the sole window handle; unavailable object classes return null. |
 | Window location and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; `GETBUF` exposes the active text page. |
 | Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
@@ -26,7 +27,7 @@
 | ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
 | Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one owned clone can be allocated, activated and verified; one page mapping can be saved, installed, verified and restored before returning to root and releasing the clone. |
 | `.DVP` compatibility | Versioned import implemented | Launch and advanced task fields persist; advanced enforcement awaits backend support. |
-| Objects, panels, mailboxes, timers | Planned for 1.x | Must be independently specified and tested. |
+| Dynamic objects, panels, mailboxes, timers | Planned for 1.x | `NEW`, `FREE` and blocking messages must be independently specified and tested. |
 | Concurrent V86 tasks and scheduler | Planned for 1.x | QPI context/IRQ primitives exist; MaxView register, DOS-state and scheduling code is still required. |
 | Per-task video, keyboard and I/O | Planned for 1.x | A guarded one-page QPI mapping wrapper exists; complete task memory maps and trap integration are still required. |
 | Remote viewing | Deferred to 2.x | No remote code is present in 0.8 or the 1.x goal. |

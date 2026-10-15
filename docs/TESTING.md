@@ -31,7 +31,8 @@ checks:
   conventional/expanded-memory status and attribute-preserving physical
   `DBGPOKE` output,
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `LOCATE`/`GETBUF`,
-  `PROCESSMEM`, foreground `PUSHKEY` and
+  `PROCESSMEM`, the `HANDLE` message stack ABI with valid/foreign/unavailable
+  selectors, foreground `PUSHKEY` and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone

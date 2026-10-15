@@ -14,6 +14,7 @@
 #define ODQ_DVC_GET_VERSION     0x1022
 #define ODQ_DVC_GET_BUFFER      0x1024
 #define ODQ_DVC_KEYBOARD_MOUSE  0x102d
+#define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_COMMON_STATUS   0xde04
 #define ODQ_DVC_CONVENTIONAL_STATUS 0xde05
 #define ODQ_DVC_EXPANDED_STATUS 0xde06
@@ -49,8 +50,9 @@
 #define ODQ_MUX_RESET           0xd702
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
+#define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0011
+#define ODQ_MUX_VERSION         0x0012
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -87,6 +89,18 @@
 #define ODQ_CAP2_DEBUG_POKE     0x4000
 #define ODQ_CAP2_KEYBOARD_MOUSE 0x8000
 #define ODQ_CAPABILITIES2       0xffff
+
+#define ODQ_CAP3_MESSAGE_HANDLE 0x0001
+#define ODQ_CAPABILITIES3       ODQ_CAP3_MESSAGE_HANDLE
+
+#define ODQ_HANDLE_STACK        0x00
+#define ODQ_HANDLE_WINDOW       0x01
+#define ODQ_HANDLE_TASK_MAILBOX 0x02
+#define ODQ_HANDLE_MAILBOX      0x03
+#define ODQ_HANDLE_TASK_KEYBOARD 0x04
+#define ODQ_HANDLE_KEYBOARD     0x05
+#define ODQ_HANDLE_TASK_OBJECTQ 0x06
+#define ODQ_HANDLE_OBJECTQ      0x07
 
 #define ODQ_DV_PATH_SIZE        67
 

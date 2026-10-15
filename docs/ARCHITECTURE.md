@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.17 resident API tracks foreground task compatibility state and nested
+The 0.18 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -61,9 +61,10 @@ The sole foreground task is represented by a paragraph-aligned resident
 object header. Its public handle is a genuine `segment:0000` pointer, so
 `GETFOREGROUND`, `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type
 query share one identity. This exposes honest one-item enumeration and task
-metadata while continuing to label the window foreground-only. Dynamic
-objects are not exposed until the message-call stack ABI is implemented and
-tested.
+metadata while continuing to label the window foreground-only. The
+`AH=12h/BH=00h` `HANDLE` message now implements the caller-stack ABI for that
+window, including identity validation and null results for object classes not
+yet present. Dynamic allocation and blocking object messages remain deferred.
 
 The same foreground object now backs `LOCATE` and `GETBUF`: coordinates in the
 physical text screen resolve to the one full-screen window, and its virtual
@@ -175,7 +176,8 @@ network-specific ABI is to be added to Open 386MAX.
 | Task enumeration and metadata | foreground implementation | `DOSUSER`, one-item `OBJNEXT`, version-1.00 `WININFO` |
 | Window location and buffer | foreground implementation | Full-screen `LOCATE`; `GETBUF` aliases the active text page |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
-| Panels, mailboxes, objects | planned | DESQview-specific object API |
+| Object messages | partial | `HANDLE` stack ABI for the foreground window; dynamic objects and blocking messages planned |
+| Panels, mailboxes, timers | planned | DESQview-specific dynamic object API |
 | Concurrent V86 tasks | planned | Backend primitives available through QPI (contexts, IRQ calldowns); scheduler pending |
 | Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
 | `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
@@ -261,8 +263,8 @@ The detailed release criteria are maintained in [`ROADMAP.md`](ROADMAP.md).
 Remote viewing is deliberately deferred to the 2.x design note and is not part
 of the current backend contract.
 
-1. Expand the resident API from the foreground task-state baseline with
-   object handles, timers, keyboard queues and mailboxes; provide tiny
+1. Expand the resident API from the tested foreground `HANDLE` message with
+   object lifetime, timers, keyboard queues and mailboxes; provide tiny
    conformance programs for every call.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal
    process descriptor as scheduler and VM capabilities become available.
