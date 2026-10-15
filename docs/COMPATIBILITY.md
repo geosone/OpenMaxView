@@ -13,6 +13,7 @@
 | DESQview keyboard injection | Foreground implementation | `PUSHKEY` and handle-validated `PUTKEY` add scan/character pairs to the BIOS buffer. |
 | System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each. |
 | Process memory status | Foreground implementation | Validated current-process MCB size and bounded task-system pool accounting. |
+| Conventional/expanded status | Foreground implementation | DOS MCB and standard EMS queries reported in documented KB units. |
 | Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
 | Window location and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; `GETBUF` exposes the active text page. |
 | Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |

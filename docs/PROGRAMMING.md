@@ -132,6 +132,12 @@ flags in `AX`. Call it only from normal process context. Foreground mode does
 not report swapping or shared memory, and its system allocator remains the
 documented fixed-slot foundation rather than the future VM allocator.
 
+`ODQ_DVC_CONVENTIONAL_STATUS` and `ODQ_DVC_EXPANDED_STATUS` return available,
+largest and total KB in `BX`, `CX` and `DX`. Treat zeros as unavailable and do
+not call the conventional query from a hardware interrupt handler because it
+must obtain the DOS memory-chain root. These calls report capacity only; they
+do not reserve memory.
+
 ## Foreground task object
 
 `GET_FOREGROUND` returns the segment of a `segment:0000` task handle. Validate

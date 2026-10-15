@@ -13,6 +13,8 @@
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
 ;   INT 15h AX=DE04h                 common-memory availability
+;   INT 15h AX=DE05h                 conventional-memory availability
+;   INT 15h AX=DE06h                 expanded-memory availability
 ;   INT 15h AX=DE07h                 foreground program number
 ;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
 ;   INT 15h AX=DE0Ch/DE0Dh           system-memory allocate/release
@@ -49,9 +51,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 000Eh
+MUX_VERSION    equ 000Fh
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 0FFFh
+CAPABILITIES2  equ 3FFFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -215,6 +217,14 @@ int15_not_getbuf:
         jne     short int15_not_common_status
         jmp     int15_common_status
 int15_not_common_status:
+        cmp     ax,0DE05h             ; conventional-memory availability
+        jne     short int15_not_conventional_status
+        jmp     int15_conventional_status
+int15_not_conventional_status:
+        cmp     ax,0DE06h             ; expanded-memory availability
+        jne     short int15_not_expanded_status
+        jmp     int15_expanded_status
+int15_not_expanded_status:
         cmp     ax,0DE07h             ; APPNUM
         je      int15_appnum
         cmp     ax,0DE0Bh             ; APILEVEL
@@ -741,7 +751,124 @@ common_status_done:
         mov     dx,COMMON_TOTAL
         pop     si
         pop     ax
-        jmp     short int15_handled
+        jmp     int15_handled
+
+; Walk the DOS MCB chain and report free conventional memory in KiB.  This is
+; a process-context service because AH=52h chains into DOS.  Invalid chains
+; fail closed with zero available/largest values while retaining BIOS total.
+int15_conventional_status:
+        push    ax
+        push    si
+        push    di
+        push    bp
+        push    es
+        xor     si,si                 ; free paragraphs
+        xor     di,di                 ; largest free block in paragraphs
+        mov     ah,52h                ; DOS list of lists
+        int     21h
+        cmp     bx,2
+        jb      short conventional_invalid
+        mov     ax,word ptr es:[bx-2] ; first MCB segment
+        mov     bp,4096               ; malformed-chain guard
+conventional_loop:
+        or      ax,ax
+        jz      short conventional_invalid
+        cmp     ax,0A000h
+        jae     short conventional_invalid
+        mov     es,ax
+        mov     bl,byte ptr es:[0]
+        cmp     bl,'M'
+        je      short conventional_type_ok
+        cmp     bl,'Z'
+        jne     short conventional_invalid
+conventional_type_ok:
+        mov     cx,word ptr es:[3]
+        or      cx,cx
+        jz      short conventional_invalid
+        cmp     word ptr es:[1],0
+        jne     short conventional_used
+        add     si,cx
+        jc      short conventional_invalid
+        cmp     cx,di
+        jbe     short conventional_used
+        mov     di,cx
+conventional_used:
+        cmp     bl,'Z'
+        je      short conventional_done
+        mov     ax,es
+        add     ax,cx
+        inc     ax
+        dec     bp
+        jnz     short conventional_loop
+conventional_invalid:
+        xor     si,si
+        xor     di,di
+conventional_done:
+        mov     bx,si
+        shr     bx,1
+        shr     bx,1
+        shr     bx,1
+        shr     bx,1
+        shr     bx,1
+        shr     bx,1                  ; paragraphs to KiB
+        mov     cx,di
+        shr     cx,1
+        shr     cx,1
+        shr     cx,1
+        shr     cx,1
+        shr     cx,1
+        shr     cx,1
+        int     12h
+        mov     dx,ax                 ; BIOS conventional total in KiB
+        pop     es
+        pop     bp
+        pop     di
+        pop     si
+        pop     ax
+        jmp     int15_handled
+
+; Translate the standard EMS page counts to the KiB units required by DE06h.
+; With a conventional EMS provider, all unallocated pages form the largest
+; allocatable block.  Values beyond the 16-bit KiB result are saturated.
+int15_expanded_status:
+        push    ax
+        mov     ah,40h
+        int     67h
+        or      ah,ah
+        jnz     short expanded_unavailable
+        mov     ah,42h
+        int     67h
+        or      ah,ah
+        jnz     short expanded_unavailable
+        cmp     bx,0FFFh
+        jbe     short expanded_free_scale
+        mov     bx,0FFFFh
+        jmp     short expanded_free_done
+expanded_free_scale:
+        shl     bx,1
+        shl     bx,1
+        shl     bx,1
+        shl     bx,1
+expanded_free_done:
+        mov     cx,bx
+        cmp     dx,0FFFh
+        jbe     short expanded_total_scale
+        mov     dx,0FFFFh
+        jmp     short expanded_done
+expanded_total_scale:
+        shl     dx,1
+        shl     dx,1
+        shl     dx,1
+        shl     dx,1
+expanded_done:
+        pop     ax
+        jmp     int15_handled
+expanded_unavailable:
+        xor     bx,bx
+        xor     cx,cx
+        xor     dx,dx
+        pop     ax
+        jmp     int15_handled
 
 ; Allocate one bounded resident slot.  BX is the requested byte count,
 ; SI is the allocation bitmap, DI is the pool base and CX is the slot count.
@@ -965,7 +1092,9 @@ system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
 ; Keep this label paragraph-aligned: GETFOREGROUND returns segment:0000.
-        org     1200h
+; Dynamic alignment remains correct as the resident code grows.
+TASK_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      TASK_OBJECT_PAD dup (0)
 task_object    label byte
         dw      0,0                   ; previous and next task objects
         dw      0FEDCh                ; DESQview-compatible object signature
@@ -975,7 +1104,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.14 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.15 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

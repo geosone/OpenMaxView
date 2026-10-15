@@ -20,6 +20,8 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
 | `INT 15h AX=1024h BX=window` | `ES:DI=buffer`, `CX=bytes`, `DL=0` | `GETBUF`; foreground text buffer |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
+| `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
+| `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
 | `INT 15h AX=DE07h` | `AX=0001h` | `APPNUM`; one foreground program |
 | `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0280h` | `APILEVEL` |
 | `INT 15h AX=DE0Ch BX=bytes` | `ES:DI=block`, null on failure; `AX=0/1` mirrors status | `GETMEM` |
@@ -67,6 +69,13 @@ must be returned explicitly. This is a real resident backing store suitable
 for early API clients, but it is not yet DESQview's variable-size memory
 manager; that requires the multi-context Open 386MAX backend.
 
+The conventional-memory status call walks the validated DOS MCB chain and
+uses BIOS `INT 12h` for the installed total. It is therefore a normal
+process-context call, not an interrupt-handler service. The expanded-memory
+status call translates standard EMS page counts to KB; in the current
+foreground EMS model, all unallocated pages form the largest available block.
+Unavailable or malformed providers return zero available/largest values.
+
 The foreground task has a paragraph-aligned, pointer-compatible object handle
 with the documented `FEDCh` signature and window/task type. `GETFOREGROUND`,
 `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore
@@ -110,17 +119,18 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=000Eh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=000Fh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=0FFFh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=3FFFh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 11 advertise
+C-style linefeed interpretation. For `D704h`, bits 0 through 13 advertise
 `ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT`,
 `WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
-support. The declarations are in `include/odqapi.h`.
+plus conventional- and expanded-memory status. The declarations are in
+`include/odqapi.h`.
 
 ## Conformance probe
 
@@ -128,6 +138,7 @@ After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
 call, resident installation path, task defaults, `APPNUM`, `APILEVEL`,
 `JUSTIFY`, `CSTYLE`, error policy,
 task/common-memory allocation, bounds and release, the resident
+conventional- and expanded-memory status services,
 foreground task handle and its validation/type,
 navigates physical coordinates and validates the foreground text buffer,
 navigates current-process and bounded system-memory accounting,

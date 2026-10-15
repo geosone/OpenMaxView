@@ -238,6 +238,25 @@ int main(void)
     puts("Resident common-memory APIs passed.");
 
     memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_CONVENTIONAL_STATUS;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.dx != 640 || outregs.x.bx == 0 ||
+        outregs.x.cx == 0 || outregs.x.cx > outregs.x.bx ||
+        outregs.x.bx > outregs.x.dx) {
+        puts("Conventional-memory status API failed.");
+        return 49;
+    }
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_EXPANDED_STATUS;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.x.dx == 0 || outregs.x.bx == 0 ||
+        outregs.x.cx != outregs.x.bx || outregs.x.bx > outregs.x.dx) {
+        puts("Expanded-memory status API failed.");
+        return 50;
+    }
+    puts("Conventional and expanded memory status APIs passed.");
+
+    memset(&inregs, 0, sizeof(inregs));
     inregs.x.ax = ODQ_DVC_GET_FOREGROUND;
     int86(0x15, &inregs, &outregs);
     task_segment = outregs.x.bx;
