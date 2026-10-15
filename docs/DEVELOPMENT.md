@@ -62,9 +62,10 @@ Watcom. Do not add NASM as an alternate hidden requirement.
   frames allocated and owned by the same lifecycle layer, and never release
   the active or root context.
 * Treat QPI `09h`/`0Ah` mapped-page frames as the interface's 16-bit values.
-  Map only inside the owned active clone, save and verify the original frame,
-  and never leave that clone while a replacement is outstanding. Do not map
-  over the caller record, backend code/data or active stack.
+  Map only the private page allocated and owned by the same wrapper, inside
+  the owned active clone. Save and verify the original frame, and never leave
+  that clone while a replacement is outstanding. Do not map over the caller
+  record, backend code/data or active stack.
 
 ## Change workflow
 

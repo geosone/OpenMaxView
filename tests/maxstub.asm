@@ -45,7 +45,7 @@ qpi_entry:
         cmp     ax,0500h
         je      short qpi_is_free
         cmp     ax,0600h
-        je      short qpi_clone
+        je      short qpi_is_clone
         cmp     ax,0800h
         je      short qpi_is_switch
         cmp     ax,0900h
@@ -57,6 +57,8 @@ qpi_is_switch:
         jmp     qpi_switch
 qpi_is_free:
         jmp     qpi_free
+qpi_is_clone:
+        jmp     qpi_clone
 qpi_is_map_query:
         jmp     qpi_map_query
 qpi_is_map_set:
@@ -95,12 +97,19 @@ qpi_context:
 qpi_alloc:
         cmp     byte ptr cs:qpi_allocated,0
         je      short qpi_alloc_available
+        cmp     byte ptr cs:qpi_page_allocated,0
+        je      short qpi_page_available
         stc
         retf
 qpi_alloc_available:
         mov     byte ptr cs:qpi_allocated,1
         mov     word ptr cs:qpi_mapping_page,0FFFFh
         mov     edx,00005678h
+        clc
+        retf
+qpi_page_available:
+        mov     byte ptr cs:qpi_page_allocated,1
+        mov     edx,00006789h
         clc
         retf
 qpi_clone:
@@ -117,6 +126,8 @@ qpi_clone_valid:
         clc
         retf
 qpi_free:
+        cmp     edx,00006789h
+        je      short qpi_free_page
         cmp     byte ptr cs:qpi_allocated,1
         je      short qpi_free_allocated
         stc
@@ -128,9 +139,26 @@ qpi_free_allocated:
         retf
 qpi_free_owned:
         cmp     dword ptr cs:qpi_active_context,00005678h
-        je      short qpi_error
+        jne     short qpi_free_context_inactive
+        stc
+        retf
+qpi_free_context_inactive:
         mov     byte ptr cs:qpi_allocated,0
         mov     word ptr cs:qpi_mapping_page,0FFFFh
+        clc
+        retf
+qpi_free_page:
+        cmp     byte ptr cs:qpi_page_allocated,1
+        je      short qpi_free_page_allocated
+        stc
+        retf
+qpi_free_page_allocated:
+        cmp     dword ptr cs:qpi_active_context,00001234h
+        je      short qpi_free_page_in_root
+        stc
+        retf
+qpi_free_page_in_root:
+        mov     byte ptr cs:qpi_page_allocated,0
         clc
         retf
 qpi_switch:
@@ -173,6 +201,7 @@ qpi_error:
 
 old2f           dd 0
 qpi_allocated   db 0
+qpi_page_allocated db 0
 qpi_active_context dd 00001234h
 qpi_mapping_page dw 0FFFFh
 qpi_mapping_frame dw 0

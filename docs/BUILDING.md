@@ -79,6 +79,7 @@ Milestone 0.8 validates private ABI 1.0 and QPI functions `03h` and `07h`. Its
 developer probe also tests a bounded `04h`/`06h`/`05h` allocate, clone and
 release cycle plus verified `08h` switches to the clone and back to the
 captured root. In the clone it exercises a single `09h`/`0Ah` mapping with
-read-back, restoration and a guard against leaving the context prematurely.
+an independently allocated `04h` private data page, read-back, restoration and
+guards against leaving the context or releasing resources out of order.
 Context switching is not yet performed by the shipped launcher, even though
 the guarded backend wrapper and current Open 386MAX provide it.

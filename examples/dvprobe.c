@@ -106,7 +106,11 @@ int main(void)
     odq_max_backend_info backend;
     odq_max_qpi_context qpi_context;
     odq_max_qpi_context qpi_second;
+    odq_max_qpi_page qpi_page;
+    odq_max_qpi_page qpi_second_page;
     odq_max_qpi_mapping qpi_mapping;
+    unsigned scratch_segment;
+    unsigned aligned_segment;
 
     inregs.x.ax = ODQ_MUX_RESET;
     int86(0x2f, &inregs, &outregs);
@@ -686,6 +690,24 @@ int main(void)
                 return 41;
             }
             puts("QPI second owned context clone rejected.");
+            qpi_page.frame = 0;
+            if (!odq_max_page_allocate(&qpi_page)) {
+                puts("QPI private data-page allocation failed.");
+                return 59;
+            }
+            printf("QPI allocated private data page %08lX.\n",
+                   qpi_page.frame);
+            qpi_second_page.frame = 0;
+            if (odq_max_page_allocate(&qpi_second_page)) {
+                puts("QPI accepted a second private data page.");
+                return 60;
+            }
+            puts("QPI second private data-page allocation rejected.");
+            if (_dos_allocmem(0x0200, &scratch_segment) != 0) {
+                puts("DOS scratch-area allocation failed.");
+                return 61;
+            }
+            aligned_segment = (scratch_segment + 0x00ffu) & 0xff00u;
             if (!odq_max_context_activate(&qpi_context)) {
                 puts("QPI owned context activation failed.");
                 return 42;
@@ -696,12 +718,18 @@ int main(void)
                 return 43;
             }
             puts("QPI active owned context release rejected.");
+            if (odq_max_page_release(&qpi_page)) {
+                puts("QPI released a private page from the active clone.");
+                return 62;
+            }
+            puts("QPI active-clone private page release rejected.");
             memset(&qpi_mapping, 0, sizeof(qpi_mapping));
-            qpi_mapping.linear_page = 0x20;
+            qpi_mapping.linear_page = aligned_segment >> 8;
             if (!odq_max_mapping_query(&qpi_mapping)) {
                 puts("QPI mapping query failed.");
                 return 55;
             }
+            qpi_mapping.mapped_frame = (unsigned)qpi_page.frame;
             if (!odq_max_mapping_install(&qpi_mapping) ||
                 !qpi_mapping.installed) {
                 puts("QPI mapping installation failed.");
@@ -724,11 +752,22 @@ int main(void)
                 return 44;
             }
             puts("QPI root context restoration verified.");
+            if (odq_max_context_release(&qpi_context)) {
+                puts("QPI released a clone that still owns a private page.");
+                return 64;
+            }
+            puts("QPI private-page ownership blocks clone release.");
+            if (!odq_max_page_release(&qpi_page) || qpi_page.frame != 0) {
+                puts("QPI private data-page release failed.");
+                return 65;
+            }
+            puts("QPI private data page released after root restoration.");
             if (!odq_max_context_release(&qpi_context) ||
                 qpi_context.page_table != 0) {
                 puts("QPI context release failed.");
                 return 45;
             }
+            _dos_freemem(scratch_segment);
             puts("Open 386MAX QPI context lifecycle passed.");
         }
     } else {

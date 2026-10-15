@@ -176,15 +176,25 @@ the caller's token after QPI `05h` succeeds. Empty, foreign and duplicate
 tokens fail closed. These calls establish safe resource lifetime only; they
 are not a scheduler or permission to free the root/active context. Release is
 explicitly rejected until a verified root restoration has cleared the active
-state.
+state. It is also rejected while an owned private data page remains allocated.
+
+`odq_max_page_allocate` and `odq_max_page_release` manage one private 4 KiB
+data page with QPI `04h`/`05h`. Allocation requires an existing clone and the
+verified root context; release additionally requires that no replacement
+mapping is active. A second allocation, release from the active clone, and
+empty or foreign page tokens fail closed. Because QPI `0Ah` accepts a 16-bit
+physical page frame, mapping an allocated frame outside that representable
+range is rejected rather than truncated; the full 32-bit allocation token
+remains available for release.
 
 `odq_max_mapping_query`, `odq_max_mapping_install` and
 `odq_max_mapping_restore` provide the first bounded part of the task-memory
 map. They accept a 4 KiB linear-page number from `0000h` through `03FFh` and
 use QPI `09h`/`0Ah` only while this wrapper's owned clone is active. The
 mapping record contains the linear page, the saved original 16-bit physical
-frame, the requested frame and an installed flag. At most one replacement may
-be outstanding. Installation reads the old frame and verifies the new frame;
+frame, the requested frame and an installed flag. The requested frame must be
+the private page owned by this wrapper. At most one replacement may be
+outstanding. Installation reads the old frame and verifies the new frame;
 restoration writes the saved frame and reads it back before clearing ownership.
 
 An outstanding or unverifiable mapping blocks both root restoration and clone
@@ -217,5 +227,6 @@ Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
 clone, one verified clone/root switch pair, a saved/set/read-back/restored
-single-page mapping, refusal to leave the clone while that mapping is active,
-and release only after restoration.
+single-page mapping backed by an owned QPI data page, refusal to release that
+page from the clone, refusal to leave the clone while its mapping is active,
+and page/context release only after verified restoration.

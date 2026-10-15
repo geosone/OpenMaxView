@@ -10,6 +10,8 @@
         public  odq_max_context_release_
         public  odq_max_context_activate_
         public  odq_max_context_restore_
+        public  odq_max_page_allocate_
+        public  odq_max_page_release_
         public  odq_max_mapping_query_
         public  odq_max_mapping_install_
         public  odq_max_mapping_restore_
@@ -234,6 +236,8 @@ odq_max_context_release_ proc near
         jne     short context_release_failed
         cmp     word ptr cs:qpi_mapping_active,0
         jne     short context_release_failed
+        cmp     dword ptr cs:qpi_owned_page,0
+        jne     short context_release_failed
         mov     ax,QPI_FREE_PAGE
         pushf
         call    dword ptr cs:qpi_entry
@@ -333,6 +337,88 @@ context_restore_failed:
         ret
 odq_max_context_restore_ endp
 
+; Allocate one private physical data page while the root context is active.
+; Keep the complete QPI 04h frame; the mapping layer separately rejects frames
+; that cannot be represented by QPI 0Ah.
+odq_max_page_allocate_ proc near
+        push    si
+        mov     si,ax
+        or      si,si
+        jz      short page_allocate_failed
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short page_allocate_failed
+        cmp     dword ptr cs:qpi_owned_context,0
+        je      short page_allocate_failed
+        cmp     word ptr cs:qpi_owned_active,0
+        jne     short page_allocate_failed
+        cmp     word ptr cs:qpi_mapping_active,0
+        jne     short page_allocate_failed
+        cmp     dword ptr cs:qpi_owned_page,0
+        jne     short page_allocate_failed
+
+        mov     ax,QPI_ALLOC_PAGE
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short page_allocate_returned
+        add     sp,2
+        jmp     short page_allocate_failed
+page_allocate_returned:
+        add     sp,2
+        test    edx,edx
+        jz      short page_allocate_rollback
+        mov     dword ptr [si],edx
+        mov     dword ptr cs:qpi_owned_page,edx
+        mov     ax,1
+        pop     si
+        ret
+page_allocate_rollback:
+        mov     ax,QPI_FREE_PAGE
+        pushf
+        call    dword ptr cs:qpi_entry
+        add     sp,2
+page_allocate_failed:
+        xor     ax,ax
+        pop     si
+        ret
+odq_max_page_allocate_ endp
+
+; Release only the page owned here, after the clone mapping has been restored
+; and the verified root context is active again.
+odq_max_page_release_ proc near
+        push    si
+        mov     si,ax
+        or      si,si
+        jz      short page_release_failed
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short page_release_failed
+        cmp     word ptr cs:qpi_owned_active,0
+        jne     short page_release_failed
+        cmp     word ptr cs:qpi_mapping_active,0
+        jne     short page_release_failed
+        mov     edx,dword ptr [si]
+        test    edx,edx
+        jz      short page_release_failed
+        cmp     edx,dword ptr cs:qpi_owned_page
+        jne     short page_release_failed
+        mov     ax,QPI_FREE_PAGE
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short page_released
+        add     sp,2
+        jmp     short page_release_failed
+page_released:
+        add     sp,2
+        mov     dword ptr [si],0
+        mov     dword ptr cs:qpi_owned_page,0
+        mov     ax,1
+        pop     si
+        ret
+page_release_failed:
+        xor     ax,ax
+        pop     si
+        ret
+odq_max_page_release_ endp
+
 ; Read the physical frame currently mapped at one 4 KB linear page. Mapping
 ; access is deliberately limited to the clone owned and activated here.
 odq_max_mapping_query_ proc near
@@ -398,6 +484,10 @@ mapping_original_returned:
         mov     word ptr cs:qpi_mapping_original,dx
         mov     cx,word ptr cs:qpi_mapping_page
         mov     dx,word ptr [si+4]
+        cmp     word ptr cs:qpi_owned_page+2,0
+        jne     mapping_install_failed
+        cmp     dx,word ptr cs:qpi_owned_page
+        jne     mapping_install_failed
         mov     word ptr cs:qpi_mapping_target,dx
         mov     word ptr cs:qpi_mapping_active,1
         mov     word ptr [si+6],1
@@ -522,6 +612,7 @@ qpi_context_ready dw 0
 qpi_owned_context dd 0
 qpi_root_context  dd 0
 qpi_owned_active  dw 0
+qpi_owned_page     dd 0
 qpi_mapping_active   dw 0
 qpi_mapping_page     dw 0
 qpi_mapping_original dw 0

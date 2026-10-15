@@ -20,6 +20,10 @@ typedef struct odq_max_qpi_context {
     unsigned long page_table;
 } odq_max_qpi_context;
 
+typedef struct odq_max_qpi_page {
+    unsigned long frame;
+} odq_max_qpi_page;
+
 typedef struct odq_max_qpi_mapping {
     unsigned linear_page;
     unsigned original_frame;
@@ -35,6 +39,10 @@ int odq_max_context_clone(odq_max_qpi_context *context);
 int odq_max_context_release(odq_max_qpi_context *context);
 int odq_max_context_activate(const odq_max_qpi_context *context);
 int odq_max_context_restore(void);
+
+/* One private data page may be owned alongside the page-table clone. */
+int odq_max_page_allocate(odq_max_qpi_page *page);
+int odq_max_page_release(odq_max_qpi_page *page);
 
 /* Mapping calls operate only in the active clone owned by this wrapper. */
 int odq_max_mapping_query(odq_max_qpi_mapping *mapping);

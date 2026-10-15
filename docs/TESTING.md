@@ -36,9 +36,10 @@ checks:
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone
-  guards, verified clone/root switching, one verified page-map/restore cycle,
-  refusal to restore root with an outstanding map, active-release refusal and
-  final release;
+  guards, verified clone/root switching, bounded private-page allocation, one
+  verified page-map/restore cycle in an exclusively reserved DOS test area,
+  refusal to restore root with an outstanding map, out-of-order release
+  refusal and final ordered release;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;
 * duplicate-free automatic application;
