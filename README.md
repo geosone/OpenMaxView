@@ -10,7 +10,7 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.6
+## Current milestone: 0.7
 
 This first runnable milestone provides:
 
@@ -30,12 +30,13 @@ This first runnable milestone provides:
   recursive scanning and an extensible free-software rule database;
 * `MAXVFILE.EXE`, a DOS file-services manager for directory navigation, file
   copying, renaming, directory creation and confirmed deletion;
+* `MAXVANSI.COM`, a compact resident ANSI console for foreground DOS output;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.6 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.7 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -67,6 +68,7 @@ SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
 MAXVAPP.EXE     MAXVMEM.EXE     MAXVSET.EXE
 MAXVAUTO.EXE    MAXVAUTO.DAT    DVPROBE.EXE
 MAXVFILE.EXE    MAXVIEW.CFG     MAXVSET.INI
+MAXVANSI.COM
 README.TXT      LICENSE.TXT
 ```
 
@@ -96,7 +98,7 @@ DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
-Version 0.6 validates its private ABI and reports the root-context status.  It
+Version 0.7 validates its private ABI and reports the root-context status.  It
 does not claim or request multiple VM services until Open 386MAX advertises
 the corresponding capability.
 
@@ -108,7 +110,7 @@ Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
 hotkey|title|command|working-directory|min-kb|max-kb
 ```
 
-The working directory may be empty.  Memory values are advisory in 0.6 and
+The working directory may be empty.  Memory values are advisory in 0.7 and
 will become enforced limits when the VM backend lands.
 
 `MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
@@ -164,6 +166,14 @@ to copy a file onto itself and never deletes without an explicit confirmation.
 For scripts and diagnostics, `/LIST /P:directory` emits a canonical directory
 listing, `/COPY source destination [/Y]` copies without overwriting unless
 requested, and `/DELETE file /Y` requires the explicit `/Y` guard.
+
+`MAXVANSI.COM` installs once as an `INT 29h` foreground console service.  It
+supports cursor movement and positioning (`A`, `B`, `C`, `D`, `H`, `f`),
+screen and line erase (`J`, `K`), cursor save/restore (`s`, `u`), and the basic
+ANSI colour, bold, blink and reverse-video attributes (`m`).  Installation is
+discoverable through a private, versioned multiplex query, and a second run is
+harmless.  Programs that write directly to video memory bypass the service;
+per-window ANSI state will require the future multi-context video backend.
 
 ## Reference-media inventory
 

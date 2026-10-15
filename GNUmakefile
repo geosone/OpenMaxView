@@ -16,7 +16,8 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
-	$(BUILD)/MAXVFILE.EXE $(BUILD)/DVPROBE.EXE $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
+	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
+	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT
 
@@ -83,6 +84,12 @@ $(BUILD)/maxvfile.obj: src/maxvfile.c include/mvui.h | $(BUILD)
 $(BUILD)/MAXVFILE.EXE: $(BUILD)/maxvfile.obj $(BUILD)/mvui.obj
 	cd $(BUILD) && $(JWLINK) format dos name MAXVFILE.EXE option quiet option map=MAXVFILE.MAP option stack=8192 option nofarcalls file maxvfile.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
+$(BUILD)/maxvansi.obj: kernel/maxvansi.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/MAXVANSI.COM: $(BUILD)/maxvansi.obj
+	cd $(BUILD) && $(JWLINK) format dos com name MAXVANSI.COM option quiet option map=MAXVANSI.MAP file maxvansi.obj
+
 $(BUILD)/dvprobe.obj: examples/dvprobe.c include/maxbackend.h include/odqapi.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
@@ -94,6 +101,12 @@ $(BUILD)/maxstub.obj: tests/maxstub.asm | $(BUILD)
 
 $(BUILD)/MAXSTUB.COM: $(BUILD)/maxstub.obj
 	cd $(BUILD) && $(JWLINK) format dos com name MAXSTUB.COM option quiet option map=MAXSTUB.MAP file maxstub.obj
+
+$(BUILD)/ansiprobe.obj: tests/ansiprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/ANSIPRB.COM: $(BUILD)/ansiprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name ANSIPRB.COM option quiet option map=ANSIPRB.MAP file ansiprobe.obj
 
 $(BUILD)/setup.obj: src/setup.c | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
@@ -122,7 +135,7 @@ package: all
 	cp $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVTSR.COM \
 		$(BUILD)/MAXVAPP.EXE $(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE \
 		$(BUILD)/MAXVAUTO.EXE $(BUILD)/MAXVFILE.EXE $(BUILD)/DVPROBE.EXE \
-		$(BUILD)/MAXVIEW.CFG \
+		$(BUILD)/MAXVANSI.COM $(BUILD)/MAXVIEW.CFG \
 		$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 		$(BUILD)/LICENSE.TXT $(PACKAGE)/
 
@@ -141,7 +154,7 @@ test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect
 	$(BUILD)/test_autodetect
 	python3 -m unittest discover -s tests -p 'test_*.py'
 
-test-dos: all $(BUILD)/MAXSTUB.COM
+test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
 	rm -rf $(BUILD)/INSTTEST
 	rm -rf $(BUILD)/AUTOTEST
 	rm -rf $(BUILD)/FILETEST
@@ -156,6 +169,10 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 		-c 'MAXVTSR.COM > MVTSR.TXT' -c 'MAXVTSR.COM > MVTSR2.TXT' \
 		-c 'DVPROBE.EXE > MVPROBE.TXT' -c 'MAXSTUB.COM' \
 		-c 'DVPROBE.EXE > MVPROBE2.TXT' -c 'exit' >/dev/null 2>&1
+	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
+		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
+		-c 'MAXVANSI.COM > ANSI1.TXT' -c 'MAXVANSI.COM > ANSI2.TXT' \
+		-c 'ANSIPRB.COM > ANSIPRB.TXT' -c 'exit' >/dev/null 2>&1
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'SETUP.EXE /S /D:C:\BUILD\INSTTEST > INSTALL.TXT' \
@@ -195,6 +212,9 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 	rg -q 'Alternate video-buffer API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend not detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend ABI 1.0, 2/4 contexts' $(BUILD)/MVPROBE2.TXT
+	rg -q 'ANSI console 1.0 installed' $(BUILD)/ANSI1.TXT
+	rg -q 'already installed' $(BUILD)/ANSI2.TXT
+	rg -q 'MAXVANSI probe passed' $(BUILD)/ANSIPRB.TXT
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	rg -q 'valid program' $(BUILD)/CFGCHK.TXT
 	rg -q 'MAXVAPP.EXE' $(BUILD)/CFGLIST.TXT
@@ -228,6 +248,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM
 	test -f $(BUILD)/INSTTEST/MAXVSET.EXE
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.EXE
 	test -f $(BUILD)/INSTTEST/MAXVFILE.EXE
+	test -f $(BUILD)/INSTTEST/MAXVANSI.COM
 	test -f $(BUILD)/INSTTEST/MAXVIEW.CFG
 	test -f $(BUILD)/INSTTEST/MAXVSET.INI
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.DAT

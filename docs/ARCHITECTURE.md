@@ -22,7 +22,7 @@ on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
 next launch.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
-contains no memory-manager logic.  In 0.6 it launches a child through DOS and
+contains no memory-manager logic.  In 0.7 it launches a child through DOS and
 regains control when that child exits.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
@@ -59,6 +59,13 @@ current foreground execution model: directory browsing, binary file copy,
 rename, directory creation and guarded deletion.  It uses DOS file APIs only
 and has no dependency on unavailable V86 context services.  Scriptable list,
 copy and delete modes make its file operations testable inside DOSBox.
+
+`MAXVANSI.COM` is a small JWasm/JWlink resident foreground console.  It owns a
+versioned private `INT 2Fh` presence query and parses common ANSI sequences on
+the DOS fast-console `INT 29h` path.  Character rendering and attributes go
+through BIOS video services.  It intentionally makes no claim of per-task
+ANSI state: direct video writes and future concurrent contexts belong to the
+Open 386MAX video-virtualisation boundary.
 
 The shared 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,

@@ -219,7 +219,7 @@ static void draw_desktop(const char *directory, unsigned selected,
     mvui_fill(0, 0, 0, 79, ' ', MVUI_MENU);
     mvui_write(0, 1, "Files", MVUI_MENU);
     mvui_put(0, 1, 'F', MVUI_MENU_TRIGGER);
-    mvui_write(0, 60, "Open MaxView 0.6", MVUI_MENU_TRIGGER);
+    mvui_write(0, 60, "Open MaxView 0.7", MVUI_MENU_TRIGGER);
     mvui_fill(2, 1, 21, 58, ' ', MVUI_DATA);
     mvui_shadow(2, 1, 21, 58);
     mvui_fill(2, 62, 21, 77, ' ', MVUI_QUICK);
