@@ -56,10 +56,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0013h
+MUX_VERSION    equ 0014h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 0003h             ; HANDLE and timer NEW/FREE
+CAPABILITIES3  equ 0007h             ; HANDLE and timer lifecycle/control
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -197,6 +197,18 @@ int15_handler:
         je      short int15_dispatch_new
         cmp     bh,2                  ; FREE
         je      short int15_dispatch_free
+        cmp     bh,8                  ; SIZEOF
+        je      short int15_dispatch_timer_query
+        cmp     bh,9                  ; LEN
+        je      short int15_dispatch_timer_query
+        cmp     bh,0Ah                ; ADDTO
+        je      short int15_dispatch_timer_add
+        cmp     bh,0Ch                ; OPEN
+        je      short int15_dispatch_timer_open_close
+        cmp     bh,0Dh                ; CLOSE
+        je      short int15_dispatch_timer_open_close
+        cmp     bh,0Fh                ; STATUS
+        je      short int15_dispatch_timer_query
         jmp     short int15_unknown_message
 int15_dispatch_handle:
         jmp     int15_message_handle
@@ -204,6 +216,12 @@ int15_dispatch_new:
         jmp     int15_message_new
 int15_dispatch_free:
         jmp     int15_message_free
+int15_dispatch_timer_query:
+        jmp     int15_message_timer_query
+int15_dispatch_timer_add:
+        jmp     int15_message_timer_add
+int15_dispatch_timer_open_close:
+        jmp     int15_message_timer_open_close
 int15_unknown_message:
         jmp     int15_chain
 int15_not_message:
@@ -612,6 +630,8 @@ message_new_scan:
         jmp     short message_new_done
 message_new_found:
         mov     word ptr cs:timer_used[si],1
+        mov     word ptr cs:timer_open[si],0
+        mov     word ptr cs:timer_state[si],0
         mov     ax,word ptr cs:timer_handle_segments[si]
         mov     word ptr ss:[bp+12],ax
 message_new_done:
@@ -621,8 +641,9 @@ message_new_done:
         pop     bp
         jmp     int15_handled
 
-; FREE message class 00h consumes a timer pointer from the caller's reserved
-; DWORD. Invalid, stale and non-timer handles are harmless no-ops.
+; FREE message class 00h consumes and pops a timer pointer from the caller's
+; stack. Invalid, stale and non-timer handles are harmless no-ops, but the
+; documented stack pop still occurs.
 int15_message_free:
         push    bp
         mov     bp,sp
@@ -636,10 +657,125 @@ int15_message_free:
         call    timer_validate
         jc      short message_free_done
         mov     word ptr cs:timer_used[si],0
+        mov     word ptr cs:timer_open[si],0
+        mov     word ptr cs:timer_state[si],0
 message_free_done:
         pop     si
         pop     ax
+        call    message_shift4
         pop     bp
+        add     sp,4
+        jmp     int15_handled
+
+; SIZEOF returns elapsed hundredths, LEN returns remaining hundredths and
+; STATUS returns the documented closed/running state bits. The handle DWORD
+; is replaced in place by the query result.
+int15_message_timer_query:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        cmp     word ptr ss:[bp+10],0
+        jne     short timer_query_invalid
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+        jc      short timer_query_invalid
+        call    timer_elapsed
+        cmp     bh,08h
+        je      short timer_query_store
+        cmp     bh,09h
+        je      short timer_query_length
+        xor     ax,ax                 ; STATUS
+        xor     dx,dx
+        cmp     word ptr cs:timer_open[si],0
+        jne     short timer_query_status_open
+        mov     dx,8000h              ; closed
+        jmp     short timer_query_store
+timer_query_status_open:
+        cmp     word ptr cs:timer_state[si],1
+        jne     short timer_query_store
+        mov     dx,4000h              ; open and running
+        jmp     short timer_query_store
+timer_query_length:
+        cmp     word ptr cs:timer_state[si],1
+        jne     short timer_query_invalid
+        mov     cx,word ptr cs:timer_duration_lo[si]
+        sub     cx,ax
+        mov     ax,cx
+        mov     cx,word ptr cs:timer_duration_hi[si]
+        sbb     cx,dx
+        mov     dx,cx
+        jmp     short timer_query_store
+timer_query_invalid:
+        xor     ax,ax
+        xor     dx,dx
+timer_query_store:
+        mov     word ptr ss:[bp+10],ax
+        mov     word ptr ss:[bp+12],dx
+timer_query_done:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+
+; OPEN and CLOSE consume one timer handle DWORD. ADDTO consumes a timer handle
+; followed by a relative DWORD duration in hundredths of a second.
+int15_message_timer_open_close:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     word ptr ss:[bp+10],0
+        jne     short timer_open_close_done
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+        jc      short timer_open_close_done
+        mov     word ptr cs:timer_state[si],0
+        cmp     bh,0Ch
+        jne     short timer_close
+        mov     word ptr cs:timer_open[si],1
+        jmp     short timer_open_close_done
+timer_close:
+        mov     word ptr cs:timer_open[si],0
+timer_open_close_done:
+        pop     si
+        pop     ax
+        call    message_shift4
+        pop     bp
+        add     sp,4
+        jmp     int15_handled
+
+int15_message_timer_add:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    dx
+        push    si
+        cmp     word ptr ss:[bp+10],0
+        jne     short timer_add_done
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+        jc      short timer_add_done
+        call    timer_now
+        mov     word ptr cs:timer_start_lo[si],ax
+        mov     word ptr cs:timer_start_hi[si],dx
+        mov     ax,word ptr ss:[bp+14]
+        mov     word ptr cs:timer_duration_lo[si],ax
+        mov     ax,word ptr ss:[bp+16]
+        mov     word ptr cs:timer_duration_hi[si],ax
+        mov     word ptr cs:timer_open[si],1
+        mov     word ptr cs:timer_state[si],1
+timer_add_done:
+        pop     si
+        pop     dx
+        pop     ax
+        call    message_shift8
+        pop     bp
+        add     sp,8
         jmp     int15_handled
 
 ; Locate the sole full-screen foreground window.  A search below that window
@@ -1223,6 +1359,109 @@ timer_validate_done:
         pop     bx
         ret
 
+; Return hundredths since midnight in DX:AX using the BIOS tick counter.
+; Multiplication by 500/91 tracks the 18.2 Hz clock to within about one tick
+; while avoiding DOS calls from the resident INT 15h handler.
+timer_now:
+        push    bx
+        push    cx
+        push    si
+        push    di
+        xor     ax,ax
+        int     1Ah                    ; CX:DX ticks since midnight
+        mov     ax,dx
+        mov     bx,500
+        mul     bx
+        mov     si,ax                  ; low product word
+        mov     di,dx                  ; carry into high word
+        mov     ax,cx
+        mul     bx
+        add     ax,di                  ; product fits below 2^32 per day
+        mov     cx,ax                  ; high product word
+        mov     bx,91
+        xor     dx,dx
+        mov     ax,cx
+        div     bx
+        mov     cx,ax                  ; high quotient word
+        mov     ax,si
+        div     bx
+        mov     dx,cx
+        pop     di
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+
+; Return elapsed hundredths for timer slot SI in DX:AX. A running timer is
+; advanced against the BIOS clock, including one midnight wrap, and becomes
+; state 2 when its bounded duration expires.
+timer_elapsed:
+        push    bx
+        push    cx
+        cmp     word ptr cs:timer_state[si],1
+        je      short timer_elapsed_running
+        cmp     word ptr cs:timer_state[si],2
+        je      short timer_elapsed_expired
+        xor     ax,ax
+        xor     dx,dx
+        jmp     short timer_elapsed_done
+timer_elapsed_expired:
+        mov     ax,word ptr cs:timer_duration_lo[si]
+        mov     dx,word ptr cs:timer_duration_hi[si]
+        jmp     short timer_elapsed_done
+timer_elapsed_running:
+        call    timer_now
+        sub     ax,word ptr cs:timer_start_lo[si]
+        sbb     dx,word ptr cs:timer_start_hi[si]
+        jnc     short timer_elapsed_compare
+        add     ax,0D600h              ; 8,640,000 hundredths per day
+        adc     dx,0083h
+timer_elapsed_compare:
+        mov     bx,word ptr cs:timer_duration_hi[si]
+        cmp     dx,bx
+        jb      short timer_elapsed_done
+        ja      short timer_elapsed_finish
+        mov     cx,word ptr cs:timer_duration_lo[si]
+        cmp     ax,cx
+        jb      short timer_elapsed_done
+timer_elapsed_finish:
+        mov     word ptr cs:timer_state[si],2
+        mov     ax,word ptr cs:timer_duration_lo[si]
+        mov     dx,word ptr cs:timer_duration_hi[si]
+timer_elapsed_done:
+        pop     cx
+        pop     bx
+        ret
+
+; Relocate the saved flags/IRET frame over one consumed handle DWORD.
+; BP is the message handler frame pointer.
+message_shift4:
+        push    ax
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+12],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+10],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp+8],ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp+6],ax
+        pop     ax
+        ret
+
+; Relocate the frame over a handle plus one DWORD argument.
+message_shift8:
+        push    ax
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+16],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+14],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp+12],ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp+10],ax
+        pop     ax
+        ret
+
 ; Build four paragraph-addressable public timer headers. Every slot is 32
 ; bytes, so its segment:0000 handle remains stable for the resident lifetime.
 initialize_timer_objects:
@@ -1424,6 +1663,12 @@ system_used    db SYSTEM_SLOT_COUNT dup(0)
 common_used    db COMMON_SLOT_COUNT dup(0)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
 timer_handle_segments dw TIMER_SLOT_COUNT dup(0)
+timer_open     dw TIMER_SLOT_COUNT dup(0)
+timer_state    dw TIMER_SLOT_COUNT dup(0)
+timer_start_lo dw TIMER_SLOT_COUNT dup(0)
+timer_start_hi dw TIMER_SLOT_COUNT dup(0)
+timer_duration_lo dw TIMER_SLOT_COUNT dup(0)
+timer_duration_hi dw TIMER_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
@@ -1446,7 +1691,7 @@ TIMER_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      TIMER_OBJECT_PAD dup (0)
 timer_objects  db (TIMER_SLOT_COUNT * TIMER_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.19 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.20 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

@@ -36,6 +36,79 @@ allocate_unique:
         add     si,2
         loop    allocate_loop
 
+        ; A new timer is closed until OPEN or a start message.
+        mov     ax,word ptr timer_segments
+        mov     bx,0F00h              ; STATUS
+        call    timer_query
+        or      ax,ax
+        jnz     failed
+        cmp     dx,8000h
+        jne     failed
+
+        ; OPEN produces an idle timer. ADDTO starts a relative 2-second timer
+        ; and consumes both handle and duration from the caller stack.
+        mov     ax,word ptr timer_segments
+        mov     bx,0C00h              ; OPEN
+        call    timer_command
+        mov     ax,word ptr timer_segments
+        mov     bx,0F00h
+        call    timer_query
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+        mov     ax,word ptr timer_segments
+        mov     cx,200
+        call    timer_add
+        mov     ax,word ptr timer_segments
+        mov     bx,0F00h
+        call    timer_query
+        or      ax,ax
+        jnz     failed
+        cmp     dx,4000h
+        jne     failed
+
+        ; LEN is remaining time and SIZEOF is elapsed time.
+        mov     ax,word ptr timer_segments
+        mov     bx,0900h              ; LEN
+        call    timer_query
+        or      dx,dx
+        jnz     failed
+        or      ax,ax
+        jz      failed
+        cmp     ax,200
+        ja      failed
+        mov     ax,word ptr timer_segments
+        mov     bx,0800h              ; SIZEOF
+        call    timer_query
+        or      dx,dx
+        jnz     failed
+        cmp     ax,200
+        ja      failed
+
+        ; CLOSE stops the timer. A zero-length ADDTO auto-opens it and expires
+        ; immediately, leaving the documented open/idle status.
+        mov     ax,word ptr timer_segments
+        mov     bx,0D00h              ; CLOSE
+        call    timer_command
+        mov     ax,word ptr timer_segments
+        mov     bx,0F00h
+        call    timer_query
+        or      ax,ax
+        jnz     failed
+        cmp     dx,8000h
+        jne     failed
+        mov     ax,word ptr timer_segments
+        xor     cx,cx
+        call    timer_add
+        mov     ax,word ptr timer_segments
+        mov     bx,0F00h
+        call    timer_query
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+
         ; A fifth timer fails cleanly with a null pointer.
         call    new_timer
         or      ax,ax
@@ -187,7 +260,45 @@ free_timer:
         mov     ax,1200h
         mov     bx,0200h              ; FREE object
         int     15h
-        add     sp,4
+        pop     bx
+        ret
+
+; Query message in BH replaces the handle DWORD with DX:AX result.
+timer_query:
+        push    bx
+        push    ax                    ; handle segment
+        xor     ax,ax
+        push    ax                    ; handle offset
+        mov     ax,1200h
+        int     15h
+        pop     ax                    ; result low word
+        pop     dx                    ; result high word
+        pop     bx
+        ret
+
+; OPEN/CLOSE message in BH consumes the handle DWORD.
+timer_command:
+        push    bx
+        push    ax
+        xor     ax,ax
+        push    ax
+        mov     ax,1200h
+        int     15h
+        pop     bx
+        ret
+
+; ADDTO starts handle AX for relative duration CX hundredths. Both DWORDs are
+; consumed by the interrupt service.
+timer_add:
+        push    bx
+        xor     dx,dx
+        push    dx                    ; duration high word
+        push    cx                    ; duration low word
+        push    ax                    ; handle segment
+        push    dx                    ; handle offset
+        mov     ax,1200h
+        mov     bx,0A00h
+        int     15h
         pop     bx
         ret
 

@@ -18,8 +18,8 @@ This first runnable milestone provides:
 * `MAXVTSR.COM`, a resident compatibility service which implements the
   documented DESQview presence query, cooperative `PAUSE`, nested critical
   sections, foreground task-state calls, the `HANDLE` object-message stack
-  ABI, bounded timer `NEW`/`FREE`, `LOCATE`, `GETBUF`, `PUSHKEY` and alternate
-  text-video-buffer calls;
+  ABI, bounded nonblocking timer lifecycle/countdown messages, `LOCATE`,
+  `GETBUF`, `PUSHKEY` and alternate text-video-buffer calls;
 * Open 386MAX backend ABI discovery/status validation and a diagnostic screen;
 * the Open 386MAX QUILIB look: two-pane layout, palette, shadows, hotkeys and
   bottom command buttons;

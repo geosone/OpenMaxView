@@ -195,13 +195,39 @@ the offset on the stack:
         mov     ax,1200h
         mov     bx,0200h              ; BH=FREE, BL=object
         int     15h
-        add     sp,4
 ```
 
+`FREE` removes that handle DWORD itself; do not adjust `SP` afterward. This
+differs from `HANDLE` and `NEW`, which leave their result DWORD for the caller
+to pop.
+
 `IS_OBJECT`, `OBJECT_TYPE`, `HANDLE` selector `00h` and `OBJNEXT` recognize a
-timer only while allocated. Current timer objects provide lifetime and
-identity, not countdown, read, write or wait operations. Programs must treat
-pool exhaustion as normal and must free every timer they own.
+timer only while allocated. Programs must treat pool exhaustion as normal and
+must free every timer they own.
+
+`ADDTO` starts a relative timer. Push the duration first and the handle last,
+because selector `00h` requires the handle at the top of the stack. The
+service consumes both DWORDs:
+
+```asm
+        xor     ax,ax
+        push    ax                    ; duration high word
+        mov     ax,200
+        push    ax                    ; two seconds, in hundredths
+        push    es                    ; timer segment
+        push    di                    ; timer offset
+        mov     ax,1200h
+        mov     bx,0A00h              ; BH=ADDTO, BL=stack handle
+        int     15h
+```
+
+`OPEN` (`BH=0Ch`) and `CLOSE` (`BH=0Dh`) consume one handle DWORD. `SIZEOF`
+(`BH=08h`), `LEN` (`BH=09h`) and `STATUS` (`BH=0Fh`) instead replace the
+handle with a DWORD result. `SIZEOF` reports elapsed hundredths and `LEN`
+reports remaining hundredths. `STATUS` is `80000000h` when closed,
+`40000000h` while running and zero while open but idle/expired. The current
+BIOS-clock implementation supports durations spanning at most one midnight
+wrap. Absolute-time `WRITE` and blocking `READ` are not yet available.
 
 ## Text video
 

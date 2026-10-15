@@ -22,7 +22,12 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AH=12h BH=00h BL=selector`, object DWORD on caller stack | Replaces or validates the DWORD | `HANDLE`; selector 00h validates task/timer handles, selector 01h returns the foreground window |
 | `INT 15h AH=12h BH=01h BL=0Bh`, reserved DWORD on caller stack | Replaces the DWORD with a timer handle or null | `NEW`; bounded four-object timer pool |
-| `INT 15h AH=12h BH=02h BL=00h`, timer DWORD on caller stack | Releases a live timer; invalid handles are ignored | `FREE`; timer lifecycle only |
+| `INT 15h AH=12h BH=02h BL=00h`, timer DWORD on caller stack | Releases a live timer and pops the DWORD; invalid handles are ignored | `FREE`; timer lifecycle only |
+| `INT 15h AH=12h BH=08h BL=00h`, timer DWORD on caller stack | Replaces handle with elapsed hundredths | Timer `SIZEOF` |
+| `INT 15h AH=12h BH=09h BL=00h`, timer DWORD on caller stack | Replaces handle with remaining hundredths | Timer `LEN` |
+| `INT 15h AH=12h BH=0Ah BL=00h`, timer then duration DWORDs on caller stack | Starts a relative timer and pops both DWORDs | Timer `ADDTO`; duration below handle |
+| `INT 15h AH=12h BH=0Ch/0Dh BL=00h`, timer DWORD on caller stack | Opens/closes timer and pops handle | Timer `OPEN`/`CLOSE` |
+| `INT 15h AH=12h BH=0Fh BL=00h`, timer DWORD on caller stack | Replaces handle with state DWORD | Timer `STATUS`: closed `80000000h`, running `40000000h`, idle zero |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
@@ -101,9 +106,11 @@ selector `01h` returns the current task's window. Selectors `02h` through
 `07h` return `0000:0000` because mailbox, keyboard and OBJECTQ objects do not
 exist yet. `NEW` class `0Bh` allocates one of four timers and `FREE` class
 `00h` releases it. A fifth allocation returns null, released handles stop
-passing `ISOBJ`, and task reset reclaims every timer. These objects currently
-provide identity and lifetime only: countdown/read/write/wait messages remain
-unimplemented until their timing and blocking rules have conformance coverage.
+passing `ISOBJ`, and task reset reclaims every timer. `OPEN`, `CLOSE` and
+relative `ADDTO` control timers; `SIZEOF`, `LEN` and `STATUS` query them using
+the BIOS clock without a resident DOS call. Durations are bounded to one
+midnight wrap. Absolute `WRITE` and blocking `READ` remain unimplemented until
+their scheduling rules have conformance coverage.
 
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
@@ -138,12 +145,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0013h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0014h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory and timers |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=0003h` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=0007h` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -151,9 +158,10 @@ C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
 `WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
 plus conventional-memory, expanded-memory, `DBGPOKE` status-line output and
 keyboard-mouse mode. The declarations are in `include/odqapi.h`.
-For `D705h`, bit 0 advertises the bounded `HANDLE` message subset and bit 1
-advertises timer `NEW`/`FREE`. Later message classes receive separate bits
-rather than being inferred from API version 2.80.
+For `D705h`, bit 0 advertises the bounded `HANDLE` message subset, bit 1
+advertises timer `NEW`/`FREE`, and bit 2 advertises nonblocking timer control
+and queries. Later message classes receive separate bits rather than being
+inferred from API version 2.80.
 
 ## Open 386MAX QPI wrapper
 
@@ -244,8 +252,9 @@ alternate video-buffer calls, foreground `PUSHKEY`, targeted `PUTKEY` and the
 `HANDLE` caller-stack ABI, including valid, foreign and unavailable object
 selectors. The separate `OBJPROBE.COM` exhausts the four-timer pool, checks
 unique pointer-compatible handles, validates object identity/type and
-enumeration, frees and reuses a slot, verifies reset reclamation, and cleans
-up its final timer. `DVPROBE` also reports whether the versioned
+enumeration, exercises open/close, relative countdown, elapsed/remaining/state
+queries and stack consumption, frees and reuses a slot, verifies reset
+reclamation, and cleans up its final timer. `DVPROBE` also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
