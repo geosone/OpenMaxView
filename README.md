@@ -10,7 +10,7 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.3
+## Current milestone: 0.4
 
 This first runnable milestone provides:
 
@@ -24,12 +24,14 @@ This first runnable milestone provides:
 * `MAXVAPP.EXE`, a full-screen Add/Change/Delete Program catalogue editor with
   atomic `.NEW`/`.BAK` updates;
 * `MAXVMEM.EXE`, a read-only DOS/EMS/XMS/VCPI/MAXVTSR/Open-386MAX status tool;
+* `MAXVSET.EXE`, a persistent global settings editor whose options are applied
+  by the launcher rather than merely stored;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.3 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.4 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -58,8 +60,9 @@ installation-media directory `build/OpenMaxView/` containing:
 
 ```text
 SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
-MAXVAPP.EXE     MAXVMEM.EXE     DVPROBE.EXE
-MAXVIEW.CFG     README.TXT      LICENSE.TXT
+MAXVAPP.EXE     MAXVMEM.EXE     MAXVSET.EXE
+DVPROBE.EXE     MAXVIEW.CFG     MAXVSET.INI
+README.TXT      LICENSE.TXT
 ```
 
 Run `MAXVIEW`.  The launcher installs `MAXVTSR.COM` automatically when it is
@@ -75,8 +78,8 @@ SETUP
 ```
 
 The default destination is `C:\MAXVIEW`.  Setup checks all required source
-files before changing the destination and preserves an existing
-`MAXVIEW.CFG` during upgrades.  Automated installations use:
+files before changing the destination and preserves existing `MAXVIEW.CFG`
+and `MAXVSET.INI` files during upgrades.  Automated installations use:
 
 ```text
 SETUP /S /D:C:\MAXVIEW
@@ -87,7 +90,7 @@ DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
-Version 0.3 validates its private ABI and reports the root-context status.  It
+Version 0.4 validates its private ABI and reports the root-context status.  It
 does not claim or request multiple VM services until Open 386MAX advertises
 the corresponding capability.
 
@@ -99,7 +102,7 @@ Each non-comment line in `MAXVIEW.CFG` has six pipe-separated fields:
 hotkey|title|command|working-directory|min-kb|max-kb
 ```
 
-The working directory may be empty.  Memory values are advisory in 0.3 and
+The working directory may be empty.  Memory values are advisory in 0.4 and
 will become enforced limits when the VM backend lands.
 
 `MAXVAPP` edits this catalogue with the same QUILIB-style interface as the
@@ -119,6 +122,14 @@ buttons as the rest of Open MaxView.  `MAXVMEM /T` emits testable key/value
 status for DOS conventional memory, EMS, XMS, the resident API, VCPI and the
 Open 386MAX backend.  Values which cannot be measured safely are shown as
 `N/A`; the tool does not pretend that ABI 1.0 supplies multiple V86 contexts.
+
+`MAXVSET.EXE` edits launcher-local preferences in `MAXVSET.INI`.  The distinct
+basename prevents its `.NEW` and `.BAK` files from colliding with catalogue
+updates.  The current options control resident-API autoload, exit confirmation,
+catalogue reload after children, memory-limit display, program hotkeys and the
+Quick Help text.  Scheduler, swapping and per-VM settings are deliberately not
+offered until the Open 386MAX backend advertises those capabilities.  For
+automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and optional `/F:file`.
 
 ## Reference-media inventory
 

@@ -10,6 +10,7 @@
 #include "catalog.h"
 #include "maxbackend.h"
 #include "odqapi.h"
+#include "settings.h"
 
 #define SCREEN_COLS 80
 #define SCREEN_ROWS 25
@@ -189,7 +190,7 @@ static void prepare_child_screen(void)
 }
 
 static void show_desktop(const odq_catalog *catalog, unsigned selected,
-                         const char *status)
+                         const char *status, const odq_settings *settings)
 {
     unsigned row, index, first, slot;
     char memory[24];
@@ -206,7 +207,7 @@ static void show_desktop(const odq_catalog *catalog, unsigned selected,
     write_at(0, 25, "Help", ATTR_MENU);
     put_cell(0, 25, 'H', ATTR_MENU_TRIGGER);
     fill(0, 60, 0, 79, ' ', ATTR_DATA);
-    write_at(0, 62, "Open MaxView 0.3", ATTR_DATA);
+    write_at(0, 62, "Open MaxView 0.4", ATTR_DATA);
     shadow(0, 60, 0, 79);
 
     fill(2, 1, 21, 52, ' ', ATTR_DATA);
@@ -215,10 +216,12 @@ static void show_desktop(const odq_catalog *catalog, unsigned selected,
     shadow(2, 56, 21, 76);
     write_at(3, 21, "Open Program", ATTR_DATA_HIGH);
     write_at(3, 62, "Quick Help", ATTR_QUICK_HIGH);
-    write_at(5, 58, "Select with arrows", ATTR_QUICK);
-    write_at(6, 58, "or a red hotkey.", ATTR_QUICK);
-    write_at(8, 58, "Enter starts the", ATTR_QUICK);
-    write_at(9, 58, "selected program.", ATTR_QUICK);
+    if (settings->quick_help) {
+        write_at(5, 58, "Select with arrows", ATTR_QUICK);
+        write_at(6, 58, "or a red hotkey.", ATTR_QUICK);
+        write_at(8, 58, "Enter starts the", ATTR_QUICK);
+        write_at(9, 58, "selected program.", ATTR_QUICK);
+    }
     if (catalog->count == 0) {
         write_at(6, 5, "No programs configured.", ATTR_DATA);
     } else {
@@ -233,7 +236,7 @@ static void show_desktop(const odq_catalog *catalog, unsigned selected,
                      index == selected ? ATTR_TRIGGER : ATTR_DATA_HIGH);
             write_at(row, 6, ") ", attr);
             write_at(row, 8, catalog->programs[index].title, attr);
-            if (catalog->programs[index].max_kb != 0) {
+            if (settings->show_memory && catalog->programs[index].max_kb != 0) {
                 sprintf(memory, "%uK", catalog->programs[index].max_kb);
                 write_at(row, 45, memory, attr);
             }
@@ -286,7 +289,7 @@ static void show_diagnostics(void)
         write_at(13, 12, "Open 386MAX MaxView backend: not detected",
                  ATTR_ACTIVE);
     }
-    write_at(16, 12, "0.3 mode: foreground EXEC and MaxView tools",
+    write_at(16, 12, "0.4 mode: configurable foreground environment",
              ATTR_ACTIVE);
     write_at(18, 12, "Press any key to return.", ATTR_ACTIVE);
     getch();
@@ -301,6 +304,43 @@ static void show_help(void)
     write_at(13, 16, "Esc or Q      Exit Open MaxView", ATTR_ACTIVE);
     write_at(16, 16, "Press any key to return.", ATTR_ACTIVE);
     getch();
+}
+
+static int confirm_exit(void)
+{
+    int key;
+    frame(8, 17, 15, 62, "Leave Open MaxView");
+    write_at(10, 21, "Exit to DOS?", ATTR_ACTIVE);
+    write_at(12, 21, "Press Y to exit or N to continue.", ATTR_ACTIVE);
+    do {
+        key = toupper(getch());
+    } while (key != 'Y' && key != 'N' && key != 27);
+    return key == 'Y';
+}
+
+static void reload_settings(odq_settings *settings)
+{
+    if (odq_settings_load("MAXVSET.INI", settings, NULL) != ODQ_SETTINGS_OK)
+        odq_settings_defaults(settings);
+}
+
+static void reload_catalog_after_child(odq_catalog *catalog,
+                                       unsigned *selected,
+                                       const odq_settings *settings)
+{
+    odq_catalog refreshed;
+    unsigned error_line;
+
+    if (!settings->reload_catalog)
+        return;
+    if (odq_catalog_load("MAXVIEW.CFG", &refreshed, &error_line) !=
+        ODQ_CATALOG_OK)
+        return;
+    *catalog = refreshed;
+    if (catalog->count == 0)
+        *selected = 0;
+    else if (*selected >= catalog->count)
+        *selected = catalog->count - 1;
 }
 
 static int launch(const odq_program *program, char *status)
@@ -328,6 +368,7 @@ static int launch(const odq_program *program, char *status)
 int main(void)
 {
     odq_catalog catalog;
+    odq_settings settings;
     unsigned selected = 0, error_line = 0;
     int result, key;
     char status[76];
@@ -343,7 +384,9 @@ int main(void)
         sprintf(status, "%u program(s) loaded.", catalog.count);
     }
 
-    if (!odq_resident()) {
+    reload_settings(&settings);
+
+    if (settings.auto_tsr && !odq_resident()) {
         system("MAXVTSR.COM >NUL");
         if (odq_resident())
             strcpy(status, "Resident compatibility API installed.");
@@ -351,7 +394,7 @@ int main(void)
     initialise_video();
 
     for (;;) {
-        show_desktop(&catalog, selected, status);
+        show_desktop(&catalog, selected, status, &settings);
         key = getch();
         if (key == 0 || key == 0xe0) {
             key = getch();
@@ -366,22 +409,29 @@ int main(void)
             continue;
         }
         key = toupper(key);
-        if (key == 'Q' || key == 27)
-            break;
+        if (key == 'Q' || key == 27) {
+            if (!settings.confirm_exit || confirm_exit())
+                break;
+            continue;
+        }
         if (key == 'D') {
             show_diagnostics();
             continue;
         }
         if (key == 13 && catalog.count != 0) {
             launch(&catalog.programs[selected], status);
+            reload_settings(&settings);
+            reload_catalog_after_child(&catalog, &selected, &settings);
             continue;
         }
-        if (catalog.count != 0) {
+        if (settings.hotkey_launch && catalog.count != 0) {
             unsigned index;
             for (index = 0; index < catalog.count; ++index)
                 if (catalog.programs[index].hotkey == key) {
                     selected = index;
                     launch(&catalog.programs[selected], status);
+                    reload_settings(&settings);
+                    reload_catalog_after_child(&catalog, &selected, &settings);
                     break;
                 }
         }
