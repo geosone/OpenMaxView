@@ -1,0 +1,9 @@
+/build/
+/patches/
+*.o
+*.obj
+*.map
+*.err
+*.log
+__pycache__/
+
