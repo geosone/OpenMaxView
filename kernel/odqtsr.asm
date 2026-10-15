@@ -7,6 +7,7 @@
 ;   INT 21h AX=2B01h CX='DE' DX='SQ'  presence/version query
 ;   INT 15h AX=1000h                 cooperative PAUSE
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
+;   INT 15h AX=DE10h, BX=scan/char   foreground keyboard PUSHKEY
 ;   INT 10h AH=FEh                   alternate text-video buffer
 ;   INT 10h AH=FFh                   video-buffer change notification
 ;   INT 2Fh AX=D700h                 Open MaxView-private status query
@@ -18,8 +19,8 @@ MUX_STATUS     equ 0D700h
 MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0002h
-CAPABILITIES   equ 000Fh
+MUX_VERSION    equ 0003h
+CAPABILITIES   equ 001Fh
 
         .8086
         .model  tiny
@@ -133,6 +134,8 @@ int15_handler:
         je      short int15_begin
         cmp     ax,101Ch              ; ENDC
         je      short int15_end
+        cmp     ax,0DE10h             ; PUSHKEY
+        je      short int15_pushkey
         jmp     short int15_chain
 int15_begin:
         cmp     word ptr cs:critical_depth,0FFFFh
@@ -143,6 +146,30 @@ int15_end:
         cmp     word ptr cs:critical_depth,0
         je      short int15_handled
         dec     word ptr cs:critical_depth
+        jmp     short int15_handled
+int15_pushkey:
+        push    ax
+        push    dx
+        push    di
+        push    es
+        mov     ax,40h                ; BIOS data area
+        mov     es,ax
+        mov     di,word ptr es:[1Ch]  ; keyboard-buffer tail
+        mov     ax,di
+        add     ax,2
+        cmp     ax,3Eh
+        jb      short pushkey_nowrap
+        mov     ax,1Eh
+pushkey_nowrap:
+        cmp     ax,word ptr es:[1Ah]  ; full when next tail is head
+        je      short pushkey_done
+        mov     word ptr es:[di],bx   ; BH scan code, BL character
+        mov     word ptr es:[1Ch],ax
+pushkey_done:
+        pop     es
+        pop     di
+        pop     dx
+        pop     ax
 int15_handled:
         popf
         iret
@@ -186,7 +213,7 @@ old2f          dd 0
 critical_depth dw 0
 video_segment  dw 0B800h
 
-installed_msg  db 'Open MaxView resident API 0.2 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.3 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

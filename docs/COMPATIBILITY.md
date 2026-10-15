@@ -8,6 +8,7 @@
 | Cooperative pause | Implemented | Returns safely through the resident service. |
 | Critical markers | Implemented | Nested, saturating state reset around each child. |
 | Alternate text-video buffer | Foreground implementation | Aliases B000h/B800h and accepts change notification. |
+| DESQview `PUSHKEY` | Foreground implementation | Adds scan/character pair to the BIOS keyboard buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
 | Add/change/delete programs | Implemented | Open text catalogue, atomic update and backup. |
 | Automatic setup | Implemented | Filename-rule scan; no binary inspection. |

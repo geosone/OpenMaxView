@@ -76,6 +76,18 @@ int main(void)
     int86(0x10, &inregs, &outregs);
     puts("Alternate video-buffer API passed.");
 
+    inregs.x.ax = ODQ_DVC_PUSH_KEY;
+    inregs.h.bh = 0x2d;
+    inregs.h.bl = 'x';
+    int86(0x15, &inregs, &outregs);
+    inregs.h.ah = 0x00;
+    int86(0x16, &inregs, &outregs);
+    if (outregs.h.ah != 0x2d || outregs.h.al != 'x') {
+        puts("Foreground PUSHKEY API failed.");
+        return 6;
+    }
+    puts("Foreground PUSHKEY API passed.");
+
     if (odq_max_backend_query(&backend))
         printf("Open 386MAX backend ABI %u.%u, %u/%u contexts.\n",
                backend.abi_version >> 8, backend.abi_version & 0xff,

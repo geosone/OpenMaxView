@@ -25,7 +25,8 @@ The target builds the full suite and executes headless DOSBox sessions. It
 checks:
 
 * first and repeated installation of `MAXVTSR` and `MAXVANSI`;
-* API version, pause, nested critical sections and alternate video buffer;
+* API version, pause, nested critical sections, foreground `PUSHKEY` and
+  alternate video buffer;
 * absent and stubbed Open 386MAX backend reporting;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;

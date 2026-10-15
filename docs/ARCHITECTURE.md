@@ -14,12 +14,14 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.2 resident API tracks nested critical sections and implements the
+The 0.3 resident API tracks nested critical sections and implements the
 documented `INT 10h/AH=FEh` alternate-buffer query.  In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
 change notifications are accepted.  MAXVIEW resets per-child critical state
 on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
-next launch.
+next launch. The documented `PUSHKEY` call adds a BIOS-format scan/character
+pair to the foreground keyboard buffer; task-private queues remain a 1.x
+multi-context requirement.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.8 it launches a child through DOS and
@@ -95,6 +97,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Cooperative pause | implemented | `INT 15h AX=1000h` returns safely |
 | Critical markers | implemented | Saturating nested depth; reset around each child |
 | Alternate video buffer | implemented for foreground | B000h/B800h alias plus change notification |
+| Keyboard `PUSHKEY` | implemented for foreground | BIOS buffer injection; no per-task queue yet |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
 | Concurrent V86 tasks | planned | Requires Open 386MAX extension |
