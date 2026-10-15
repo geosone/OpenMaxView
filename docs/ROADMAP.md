@@ -20,10 +20,10 @@ Further 0.x work should land in independently testable slices:
    land.
 3. Add cooperative execution primitives for Open MaxView-aware tasks.
 4. Extend the implemented single-context QPI allocate/clone/guarded-switch/
-   owned-private-page-map/restore/ordered-release wrapper into complete task
-   memory maps, then wrap virtual interrupts, timer, video and I/O trapping;
-   implement register state in MaxView where QPI deliberately leaves it to
-   the V86 scheduler.
+   owned-private-page-map/commit/reactivate/restore/ordered-release wrapper
+   into complete task memory maps, then wrap virtual interrupts, timer, video
+   and I/O trapping; implement register state in MaxView where QPI deliberately
+   leaves it to the V86 scheduler.
 5. Add scheduling, per-task DOS state, task switching and true local windows.
 6. Add serial ownership, UART I/O trapping, virtual IRQ delivery and a FOSSIL
    path; validate sustained background BBS transfers.

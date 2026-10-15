@@ -147,7 +147,9 @@ pass/fail report. Its backend line includes the negotiated QPI version and
 active page-table frame. It rejects an empty token, allocates and clones one
 context, rejects root release and a second outstanding clone, verifies a
 switch to that clone, refuses to free it while active, verifies restoration of
-the captured root and then releases the clone.
+the captured root, commits an owned private-page mapping, verifies that it
+persists in the inactive clone across a root/clone switch, restores it and then
+releases the page and clone in order.
 
 ## qipinfo.py
 

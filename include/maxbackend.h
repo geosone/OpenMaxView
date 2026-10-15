@@ -29,6 +29,7 @@ typedef struct odq_max_qpi_mapping {
     unsigned original_frame;
     unsigned mapped_frame;
     unsigned installed;
+    unsigned committed;
 } odq_max_qpi_mapping;
 
 /* Returns nonzero only after discovery, signature and status validation. */
@@ -47,6 +48,7 @@ int odq_max_page_release(odq_max_qpi_page *page);
 /* Mapping calls operate only in the active clone owned by this wrapper. */
 int odq_max_mapping_query(odq_max_qpi_mapping *mapping);
 int odq_max_mapping_install(odq_max_qpi_mapping *mapping);
+int odq_max_mapping_commit(odq_max_qpi_mapping *mapping);
 int odq_max_mapping_restore(odq_max_qpi_mapping *mapping);
 
 #endif

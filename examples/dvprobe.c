@@ -737,12 +737,43 @@ int main(void)
             }
             puts("QPI owned-clone mapping installed and verified.");
             if (odq_max_context_restore()) {
-                puts("QPI restored root with an outstanding mapping.");
+                puts("QPI restored root with an uncommitted mapping.");
                 return 57;
             }
-            puts("QPI root restore blocked by outstanding mapping.");
+            puts("QPI root restore blocked by uncommitted mapping.");
+            if (!odq_max_mapping_commit(&qpi_mapping) ||
+                !qpi_mapping.committed) {
+                puts("QPI mapping commit failed.");
+                return 66;
+            }
+            puts("QPI owned-clone mapping committed.");
+            if (!odq_max_context_restore()) {
+                puts("QPI root restore with a committed mapping failed.");
+                return 67;
+            }
+            puts("QPI committed mapping survived verified root restore.");
+            if (odq_max_page_release(&qpi_page) ||
+                odq_max_context_release(&qpi_context)) {
+                puts("QPI released committed mapping ownership from root.");
+                return 68;
+            }
+            puts("QPI committed mapping blocks page and clone release.");
+            if (odq_max_mapping_query(&qpi_mapping)) {
+                puts("QPI queried an inactive clone mapping from root.");
+                return 69;
+            }
+            if (!odq_max_context_activate(&qpi_context)) {
+                puts("QPI committed clone reactivation failed.");
+                return 70;
+            }
+            if (!odq_max_mapping_query(&qpi_mapping) ||
+                qpi_mapping.mapped_frame != (unsigned)qpi_page.frame) {
+                puts("QPI committed mapping did not persist.");
+                return 71;
+            }
+            puts("QPI committed mapping persisted across context switch.");
             if (!odq_max_mapping_restore(&qpi_mapping) ||
-                qpi_mapping.installed) {
+                qpi_mapping.installed || qpi_mapping.committed) {
                 puts("QPI mapping restoration failed.");
                 return 58;
             }

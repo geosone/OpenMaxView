@@ -38,8 +38,8 @@ checks:
   active page-table frame, empty-token rejection, root-release and second-clone
   guards, verified clone/root switching, bounded private-page allocation, one
   verified page-map/restore cycle in an exclusively reserved DOS test area,
-  refusal to restore root with an outstanding map, out-of-order release
-  refusal and final ordered release;
+  refusal to restore root before map commit, committed-map persistence across
+  a root/clone switch, out-of-order release refusal and final ordered release;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;
 * duplicate-free automatic application;

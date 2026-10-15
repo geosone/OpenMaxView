@@ -187,23 +187,31 @@ physical page frame, mapping an allocated frame outside that representable
 range is rejected rather than truncated; the full 32-bit allocation token
 remains available for release.
 
-`odq_max_mapping_query`, `odq_max_mapping_install` and
-`odq_max_mapping_restore` provide the first bounded part of the task-memory
-map. They accept a 4 KiB linear-page number from `0000h` through `03FFh` and
-use QPI `09h`/`0Ah` only while this wrapper's owned clone is active. The
-mapping record contains the linear page, the saved original 16-bit physical
-frame, the requested frame and an installed flag. The requested frame must be
-the private page owned by this wrapper. At most one replacement may be
-outstanding. Installation reads the old frame and verifies the new frame;
-restoration writes the saved frame and reads it back before clearing ownership.
+`odq_max_mapping_query`, `odq_max_mapping_install`,
+`odq_max_mapping_commit` and `odq_max_mapping_restore` provide the first
+bounded part of the task-memory map. They accept a 4 KiB linear-page number
+from `0000h` through `03FFh` and use QPI `09h`/`0Ah` only while this wrapper's
+owned clone is active. The mapping record contains the linear page, the saved
+original 16-bit physical frame, the requested frame, an installed flag and a
+committed flag. The requested frame must be the private page owned by this
+wrapper. At most one replacement may be outstanding.
 
-An outstanding or unverifiable mapping blocks both root restoration and clone
-release. The mapping record and the backend code, data and active stack must
-remain reachable while `odq_max_mapping_install` returns; callers therefore
-must not use this low-level operation to replace a page containing any of
-them. The wrapper currently tracks frame identity, not raw PTE flag bits. Use
-of QPI `1F00h`/`1F01h` will be required before mappings with special cache or
-device attributes are supported.
+Installation reads the old frame and verifies the new frame, but initially
+leaves the replacement uncommitted. An uncommitted or unverifiable mapping
+blocks root restoration. `odq_max_mapping_commit` validates the complete
+record against backend-owned state and explicitly permits a verified switch
+back to root, leaving the committed replacement in the inactive clone. The
+clone must be reactivated before querying or restoring that mapping.
+Restoration writes the saved frame and reads it back before clearing both
+flags. Any installed mapping, committed or not, blocks release of its data
+page and clone.
+
+The mapping record and the backend code, data and active stack must remain
+reachable while these calls run; callers therefore must not use this
+low-level operation to replace a page containing any of them. The wrapper
+currently tracks frame identity, not raw PTE flag bits. Use of QPI
+`1F00h`/`1F01h` will be required before mappings with special cache or device
+attributes are supported.
 
 ## Conformance probe
 
@@ -226,7 +234,8 @@ selectors. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
-clone, one verified clone/root switch pair, a saved/set/read-back/restored
-single-page mapping backed by an owned QPI data page, refusal to release that
-page from the clone, refusal to leave the clone while its mapping is active,
-and page/context release only after verified restoration.
+clone, a saved/set/read-back/restored single-page mapping backed by an owned
+QPI data page, rejection of a root switch before mapping commit, persistence
+across a verified root/clone switch after commit, refusal to release resources
+while the mapping remains installed, and page/context release only after
+verified restoration.
