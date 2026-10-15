@@ -33,7 +33,7 @@ checks:
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `LOCATE`/`GETBUF`,
   `PROCESSMEM`, the `HANDLE` message stack ABI with valid/foreign/unavailable
   selectors, four-slot timer `NEW`/`FREE` exhaustion, identity, type,
-  enumeration, reuse, stack popping, open/close, relative countdown and
+  enumeration, reuse, stack popping, open/close, relative/absolute countdown and
   elapsed/remaining/state queries, foreground `PUSHKEY` and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and

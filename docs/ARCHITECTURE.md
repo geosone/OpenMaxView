@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.20 resident API tracks foreground task compatibility state and nested
+The 0.21 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -67,10 +67,10 @@ window foreground-only. The `AH=12h/BH=00h` `HANDLE` message implements the
 caller-stack ABI for that window and live timers, including identity
 validation and null results for object classes not yet present. `NEW` and
 `FREE` provide bounded timer ownership, exhaustion and deterministic slot
-reuse. `ADDTO` drives relative countdowns from the BIOS tick counter;
-`OPEN`/`CLOSE`, `SIZEOF`, `LEN` and `STATUS` expose nonblocking control and
-state without calling DOS inside the resident handler. Absolute deadlines and
-blocking waits remain deferred.
+reuse. `ADDTO` and `WRITE` drive relative and absolute countdowns from the BIOS
+tick counter; `OPEN`/`CLOSE`, `SIZEOF`, `LEN` and `STATUS` expose nonblocking
+control and state without calling DOS inside the resident handler. Blocking
+waits remain deferred.
 
 The same foreground object now backs `LOCATE` and `GETBUF`: coordinates in the
 physical text screen resolve to the one full-screen window, and its virtual
@@ -183,7 +183,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Window location and buffer | foreground implementation | Full-screen `LOCATE`; `GETBUF` aliases the active text page |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Object messages | partial | `HANDLE` stack ABI plus bounded timer lifecycle/control; blocking messages planned |
-| Timers | nonblocking subset implemented | Four identities, relative countdown and elapsed/remaining/state queries; absolute/write/wait planned |
+| Timers | nonblocking subset implemented | Four identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
 | Panels and mailboxes | planned | DESQview-specific dynamic object API |
 | Concurrent V86 tasks | planned | Backend primitives available through QPI (contexts, IRQ calldowns); scheduler pending |
 | Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
@@ -282,8 +282,8 @@ The detailed release criteria are maintained in [`ROADMAP.md`](ROADMAP.md).
 Remote viewing is deliberately deferred to the 2.x design note and is not part
 of the current backend contract.
 
-1. Extend the tested relative timer foundation with absolute deadlines and
-   scheduler-backed waits, then add keyboard queues, mailboxes and panels;
+1. Extend the tested timer foundation with scheduler-backed waits, then add
+   keyboard queues, mailboxes and panels;
    provide tiny conformance programs for every call.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal
    process descriptor as scheduler and VM capabilities become available.

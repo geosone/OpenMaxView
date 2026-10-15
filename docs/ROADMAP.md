@@ -13,8 +13,8 @@ Open 386MAX ABI boundary.
 
 Further 0.x work should land in independently testable slices:
 
-1. Extend the implemented `HANDLE` and relative timer messages with absolute
-   deadlines, scheduler-backed waits, keyboard queues, mailboxes and panels.
+1. Extend the implemented `HANDLE` and timer messages with scheduler-backed
+   waits, keyboard queues, mailboxes and panels.
 2. Connect the versioned process profile now retained by `.DVP` import to
    scheduler, video, serial and protection enforcement as backend capabilities
    land.

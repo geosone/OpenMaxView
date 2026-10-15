@@ -227,7 +227,13 @@ handle with a DWORD result. `SIZEOF` reports elapsed hundredths and `LEN`
 reports remaining hundredths. `STATUS` is `80000000h` when closed,
 `40000000h` while running and zero while open but idle/expired. The current
 BIOS-clock implementation supports durations spanning at most one midnight
-wrap. Absolute-time `WRITE` and blocking `READ` are not yet available.
+wrap.
+
+`WRITE` (`BH=05h`) has the same stack layout and consumption as `ADDTO`, but
+the argument is an absolute time in hundredths since midnight. A deadline
+earlier than the current BIOS-clock time means the next midnight occurrence.
+Blocking `READ` is not yet available; polling clients can use `STATUS` or
+`LEN` and yield with `PAUSE` between checks.
 
 ## Text video
 

@@ -56,7 +56,7 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0014h
+MUX_VERSION    equ 0015h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
 CAPABILITIES3  equ 0007h             ; HANDLE and timer lifecycle/control
@@ -197,6 +197,8 @@ int15_handler:
         je      short int15_dispatch_new
         cmp     bh,2                  ; FREE
         je      short int15_dispatch_free
+        cmp     bh,5                  ; WRITE absolute timer deadline
+        je      short int15_dispatch_timer_add
         cmp     bh,8                  ; SIZEOF
         je      short int15_dispatch_timer_query
         cmp     bh,9                  ; LEN
@@ -722,8 +724,8 @@ timer_query_done:
         pop     bp
         jmp     int15_handled
 
-; OPEN and CLOSE consume one timer handle DWORD. ADDTO consumes a timer handle
-; followed by a relative DWORD duration in hundredths of a second.
+; OPEN and CLOSE consume one timer handle DWORD. ADDTO and WRITE consume a
+; timer handle followed by relative/absolute DWORD time in hundredths.
 int15_message_timer_open_close:
         push    bp
         mov     bp,sp
@@ -753,6 +755,7 @@ int15_message_timer_add:
         push    bp
         mov     bp,sp
         push    ax
+        push    cx
         push    dx
         push    si
         cmp     word ptr ss:[bp+10],0
@@ -763,15 +766,30 @@ int15_message_timer_add:
         call    timer_now
         mov     word ptr cs:timer_start_lo[si],ax
         mov     word ptr cs:timer_start_hi[si],dx
+        cmp     bh,05h
+        je      short timer_write_absolute
         mov     ax,word ptr ss:[bp+14]
+        mov     dx,word ptr ss:[bp+16]
+        jmp     short timer_start_store
+timer_write_absolute:
+        mov     cx,word ptr ss:[bp+14]
+        sub     cx,ax
+        mov     ax,cx
+        mov     cx,word ptr ss:[bp+16]
+        sbb     cx,dx
+        mov     dx,cx
+        jnc     short timer_start_store
+        add     ax,0D600h              ; schedule after midnight if needed
+        adc     dx,0083h
+timer_start_store:
         mov     word ptr cs:timer_duration_lo[si],ax
-        mov     ax,word ptr ss:[bp+16]
-        mov     word ptr cs:timer_duration_hi[si],ax
+        mov     word ptr cs:timer_duration_hi[si],dx
         mov     word ptr cs:timer_open[si],1
         mov     word ptr cs:timer_state[si],1
 timer_add_done:
         pop     si
         pop     dx
+        pop     cx
         pop     ax
         call    message_shift8
         pop     bp
@@ -1691,7 +1709,7 @@ TIMER_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      TIMER_OBJECT_PAD dup (0)
 timer_objects  db (TIMER_SLOT_COUNT * TIMER_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.20 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.21 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

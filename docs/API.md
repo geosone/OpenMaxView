@@ -23,6 +23,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=00h BL=selector`, object DWORD on caller stack | Replaces or validates the DWORD | `HANDLE`; selector 00h validates task/timer handles, selector 01h returns the foreground window |
 | `INT 15h AH=12h BH=01h BL=0Bh`, reserved DWORD on caller stack | Replaces the DWORD with a timer handle or null | `NEW`; bounded four-object timer pool |
 | `INT 15h AH=12h BH=02h BL=00h`, timer DWORD on caller stack | Releases a live timer and pops the DWORD; invalid handles are ignored | `FREE`; timer lifecycle only |
+| `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
 | `INT 15h AH=12h BH=08h BL=00h`, timer DWORD on caller stack | Replaces handle with elapsed hundredths | Timer `SIZEOF` |
 | `INT 15h AH=12h BH=09h BL=00h`, timer DWORD on caller stack | Replaces handle with remaining hundredths | Timer `LEN` |
 | `INT 15h AH=12h BH=0Ah BL=00h`, timer then duration DWORDs on caller stack | Starts a relative timer and pops both DWORDs | Timer `ADDTO`; duration below handle |
@@ -106,11 +107,11 @@ selector `01h` returns the current task's window. Selectors `02h` through
 `07h` return `0000:0000` because mailbox, keyboard and OBJECTQ objects do not
 exist yet. `NEW` class `0Bh` allocates one of four timers and `FREE` class
 `00h` releases it. A fifth allocation returns null, released handles stop
-passing `ISOBJ`, and task reset reclaims every timer. `OPEN`, `CLOSE` and
-relative `ADDTO` control timers; `SIZEOF`, `LEN` and `STATUS` query them using
-the BIOS clock without a resident DOS call. Durations are bounded to one
-midnight wrap. Absolute `WRITE` and blocking `READ` remain unimplemented until
-their scheduling rules have conformance coverage.
+passing `ISOBJ`, and task reset reclaims every timer. `OPEN`, `CLOSE`, absolute
+`WRITE` and relative `ADDTO` control timers; `SIZEOF`, `LEN` and `STATUS` query
+them using the BIOS clock without a resident DOS call. Deadlines and durations
+are bounded to one midnight wrap. Blocking `READ` remains unimplemented until
+its scheduling and task-wakeup rules have conformance coverage.
 
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
@@ -145,7 +146,7 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0014h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0015h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory and timers |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
@@ -252,8 +253,8 @@ alternate video-buffer calls, foreground `PUSHKEY`, targeted `PUTKEY` and the
 `HANDLE` caller-stack ABI, including valid, foreign and unavailable object
 selectors. The separate `OBJPROBE.COM` exhausts the four-timer pool, checks
 unique pointer-compatible handles, validates object identity/type and
-enumeration, exercises open/close, relative countdown, elapsed/remaining/state
-queries and stack consumption, frees and reuses a slot, verifies reset
+enumeration, exercises open/close, relative and absolute countdown starts,
+elapsed/remaining/state queries and stack consumption, frees and reuses a slot, verifies reset
 reclamation, and cleans up its final timer. `DVPROBE` also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks

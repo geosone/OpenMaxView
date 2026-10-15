@@ -52,7 +52,7 @@
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0014
+#define ODQ_MUX_VERSION         0x0015
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -100,6 +100,7 @@
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_MESSAGE_NEW     0x1201
 #define ODQ_DVC_MESSAGE_FREE    0x1202
+#define ODQ_DVC_MESSAGE_WRITE   0x1205
 #define ODQ_DVC_MESSAGE_SIZEOF  0x1208
 #define ODQ_DVC_MESSAGE_LEN     0x1209
 #define ODQ_DVC_MESSAGE_ADDTO   0x120a

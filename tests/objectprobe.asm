@@ -57,6 +57,45 @@ allocate_unique:
         jnz     failed
         or      dx,dx
         jnz     failed
+
+        ; WRITE accepts an absolute hundredths-since-midnight deadline. Use a
+        ; deadline one second ahead and verify that it auto-opens the timer.
+        call    current_time
+        add     ax,100
+        adc     dx,0
+        cmp     dx,0083h
+        jb      short absolute_ready
+        ja      short absolute_wrap
+        cmp     ax,0D600h
+        jb      short absolute_ready
+absolute_wrap:
+        sub     ax,0D600h
+        sbb     dx,0083h
+absolute_ready:
+        mov     cx,ax
+        mov     di,dx
+        mov     ax,word ptr timer_segments
+        mov     dx,di
+        call    timer_write
+        mov     ax,word ptr timer_segments
+        mov     bx,0F00h
+        call    timer_query
+        or      ax,ax
+        jnz     failed
+        cmp     dx,4000h
+        jne     failed
+        mov     ax,word ptr timer_segments
+        mov     bx,0900h
+        call    timer_query
+        or      dx,dx
+        jnz     failed
+        or      ax,ax
+        jz      failed
+        cmp     ax,100
+        ja      failed
+        mov     ax,word ptr timer_segments
+        mov     bx,0D00h
+        call    timer_command
         mov     ax,word ptr timer_segments
         mov     cx,200
         call    timer_add
@@ -299,6 +338,52 @@ timer_add:
         mov     ax,1200h
         mov     bx,0A00h
         int     15h
+        pop     bx
+        ret
+
+; WRITE starts handle AX at absolute time DX:CX and consumes both DWORDs.
+timer_write:
+        push    bx
+        push    dx                    ; absolute time high word
+        push    cx                    ; absolute time low word
+        push    ax                    ; handle segment
+        xor     dx,dx
+        push    dx                    ; handle offset
+        mov     ax,1200h
+        mov     bx,0500h
+        int     15h
+        pop     bx
+        ret
+
+; Mirror the resident's DOS-free BIOS tick conversion for an absolute test
+; deadline. Returns hundredths since midnight in DX:AX.
+current_time:
+        push    bx
+        push    cx
+        push    si
+        push    di
+        xor     ax,ax
+        int     1Ah
+        mov     ax,dx
+        mov     bx,500
+        mul     bx
+        mov     si,ax
+        mov     di,dx
+        mov     ax,cx
+        mul     bx
+        add     ax,di
+        mov     cx,ax
+        mov     bx,91
+        xor     dx,dx
+        mov     ax,cx
+        div     bx
+        mov     cx,ax
+        mov     ax,si
+        div     bx
+        mov     dx,cx
+        pop     di
+        pop     si
+        pop     cx
         pop     bx
         ret
 
