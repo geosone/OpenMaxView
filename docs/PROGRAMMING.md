@@ -138,6 +138,12 @@ not call the conventional query from a hardware interrupt handler because it
 must obtain the DOS memory-chain root. These calls report capacity only; they
 do not reserve memory.
 
+`ODQ_DVC_DEBUG_POKE` appends `BL` to the physical bottom text row. It is meant
+for terse diagnostics that must remain visible independently of the current
+foreground window. The call preserves the existing cell attribute and does
+nothing in graphics modes; applications must not use it as normal window
+output.
+
 ## Foreground task object
 
 `GET_FOREGROUND` returns the segment of a `segment:0000` task handle. Validate

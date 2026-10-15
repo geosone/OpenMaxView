@@ -17,6 +17,7 @@
 #define ODQ_DVC_CONVENTIONAL_STATUS 0xde05
 #define ODQ_DVC_EXPANDED_STATUS 0xde06
 #define ODQ_DVC_APP_NUMBER      0xde07
+#define ODQ_DVC_DEBUG_POKE      0xde0a
 #define ODQ_DVC_API_LEVEL       0xde0b
 #define ODQ_DVC_GET_MEMORY      0xde0c
 #define ODQ_DVC_PUT_MEMORY      0xde0d
@@ -48,7 +49,7 @@
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x000f
+#define ODQ_MUX_VERSION         0x0010
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -82,7 +83,8 @@
 #define ODQ_CAP2_PROCESS_MEMORY 0x0800
 #define ODQ_CAP2_CONVENTIONAL_STATUS 0x1000
 #define ODQ_CAP2_EXPANDED_STATUS 0x2000
-#define ODQ_CAPABILITIES2       0x3fff
+#define ODQ_CAP2_DEBUG_POKE     0x4000
+#define ODQ_CAPABILITIES2       0x7fff
 
 #define ODQ_DV_PATH_SIZE        67
 

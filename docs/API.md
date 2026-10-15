@@ -23,6 +23,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
 | `INT 15h AX=DE07h` | `AX=0001h` | `APPNUM`; one foreground program |
+| `INT 15h AX=DE0Ah BL=character` | Registers preserved | `DBGPOKE`; append on physical bottom text row |
 | `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0280h` | `APILEVEL` |
 | `INT 15h AX=DE0Ch BX=bytes` | `ES:DI=block`, null on failure; `AX=0/1` mirrors status | `GETMEM` |
 | `INT 15h AX=DE0Dh ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | `PUTMEM` |
@@ -76,6 +77,11 @@ status call translates standard EMS page counts to KB; in the current
 foreground EMS model, all unallocated pages form the largest available block.
 Unavailable or malformed providers return zero available/largest values.
 
+`DBGPOKE` keeps a resident column, writes only the character byte on the
+bottom row of the active physical text page, and wraps at the BIOS column
+count. Existing attributes are preserved. Calls in graphics or unknown video
+modes are harmless no-ops.
+
 The foreground task has a paragraph-aligned, pointer-compatible object handle
 with the documented `FEDCh` signature and window/task type. `GETFOREGROUND`,
 `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore
@@ -119,18 +125,18 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=000Fh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0010h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=3FFFh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=7FFFh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 13 advertise
+C-style linefeed interpretation. For `D704h`, bits 0 through 14 advertise
 `ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT`,
 `WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
-plus conventional- and expanded-memory status. The declarations are in
-`include/odqapi.h`.
+plus conventional-memory, expanded-memory and `DBGPOKE` status-line output.
+The declarations are in `include/odqapi.h`.
 
 ## Conformance probe
 
@@ -139,6 +145,7 @@ call, resident installation path, task defaults, `APPNUM`, `APILEVEL`,
 `JUSTIFY`, `CSTYLE`, error policy,
 task/common-memory allocation, bounds and release, the resident
 conventional- and expanded-memory status services,
+physical status-line debug output,
 foreground task handle and its validation/type,
 navigates physical coordinates and validates the foreground text buffer,
 navigates current-process and bounded system-memory accounting,

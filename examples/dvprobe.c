@@ -95,6 +95,9 @@ int main(void)
     far_block common_block;
     far_block failed_block;
     unsigned char far *memory;
+    volatile unsigned far *status_line;
+    unsigned saved_status_0;
+    unsigned saved_status_1;
     odq_max_backend_info backend;
 
     inregs.x.ax = ODQ_MUX_RESET;
@@ -533,6 +536,29 @@ int main(void)
         return 24;
     }
     puts("SCRNINFO and video identity APIs passed.");
+
+    status_line = (volatile unsigned far *)
+                  MK_FP(video_segment, 24U * 80U * 2U);
+    saved_status_0 = status_line[0];
+    saved_status_1 = status_line[1];
+    status_line[0] = 0x1e2e;
+    status_line[1] = 0x2f2e;
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_DEBUG_POKE;
+    inregs.h.bl = 'A';
+    int86(0x15, &inregs, &outregs);
+    inregs.x.ax = ODQ_DVC_DEBUG_POKE;
+    inregs.h.bl = 'B';
+    int86(0x15, &inregs, &outregs);
+    if (status_line[0] != 0x1e41 || status_line[1] != 0x2f42) {
+        status_line[0] = saved_status_0;
+        status_line[1] = saved_status_1;
+        puts("DBGPOKE physical status-line API failed.");
+        return 51;
+    }
+    status_line[0] = saved_status_0;
+    status_line[1] = saved_status_1;
+    puts("DBGPOKE physical status-line API passed.");
 
     segread(&segreg);
     segreg.es = video_segment;

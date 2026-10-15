@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.15 resident API tracks foreground task compatibility state and nested
+The 0.16 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -48,6 +48,10 @@ The related `DE05h` and `DE06h` services expose conventional and EMS capacity
 in the documented KB units. Conventional free space comes from a guarded DOS
 MCB walk; EMS values come from the standard page-count query and do not depend
 on private Open 386MAX internals.
+
+The `DE0Ah` debug service writes a character directly to the bottom physical
+text row while preserving its attribute. Its resident cursor follows the BIOS
+geometry and the handler becomes a no-op outside known text modes.
 
 The sole foreground task is represented by a paragraph-aligned resident
 object header. Its public handle is a genuine `segment:0000` pointer, so
@@ -151,6 +155,7 @@ network-specific ABI is to be added to Open 386MAX.
 | System/common memory | bounded foreground implementation | Resident 256-byte slots with allocation, release and status |
 | Process memory status | foreground implementation | Current DOS allocation plus bounded task-system slot accounting |
 | DOS/EMS capacity status | foreground implementation | Guarded MCB accounting and standard EMS page counts |
+| Physical debug status | implemented | Attribute-preserving `DBGPOKE` on the bottom text row |
 | Foreground task object | implemented | Pointer-compatible handle, validation and type query |
 | Task enumeration and metadata | foreground implementation | `DOSUSER`, one-item `OBJNEXT`, version-1.00 `WININFO` |
 | Window location and buffer | foreground implementation | Full-screen `LOCATE`; `GETBUF` aliases the active text page |

@@ -135,7 +135,7 @@ Developer diagnostic for the resident DESQview-compatible calls and the
 Open 386MAX backend query. It exercises pause, critical nesting and alternate
 video-buffer behaviour, exhausts and releases the bounded task-memory pool,
 checks common-memory, conventional/expanded status and `PROCESSMEM`
-accounting, validates the foreground task object and
+accounting, validates physical `DBGPOKE` output, the foreground task object and
 its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted
 keyboard injection, verifies the resident installation path, and prints a
 pass/fail report.

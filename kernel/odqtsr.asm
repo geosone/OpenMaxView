@@ -16,6 +16,7 @@
 ;   INT 15h AX=DE05h                 conventional-memory availability
 ;   INT 15h AX=DE06h                 expanded-memory availability
 ;   INT 15h AX=DE07h                 foreground program number
+;   INT 15h AX=DE0Ah, BL=character   physical status-line debug output
 ;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
 ;   INT 15h AX=DE0Ch/DE0Dh           system-memory allocate/release
 ;   INT 15h AX=DE10h, BX=scan/char   foreground keyboard PUSHKEY
@@ -51,9 +52,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 000Fh
+MUX_VERSION    equ 0010h
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 3FFFh
+CAPABILITIES2  equ 7FFFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -227,6 +228,10 @@ int15_not_conventional_status:
 int15_not_expanded_status:
         cmp     ax,0DE07h             ; APPNUM
         je      int15_appnum
+        cmp     ax,0DE0Ah             ; DBGPOKE
+        jne     short int15_not_dbgpoke
+        jmp     int15_dbgpoke
+int15_not_dbgpoke:
         cmp     ax,0DE0Bh             ; APILEVEL
         je      int15_apilevel
         cmp     ax,0DE0Ch             ; GETMEM
@@ -330,6 +335,72 @@ int15_end_done:
         jmp     int15_handled
 int15_appnum:
         mov     ax,1                   ; sole foreground program
+        jmp     int15_handled
+
+; Write one character on the bottom row of the active physical text page.
+; Attributes are deliberately preserved.  Graphics and unknown modes are a
+; no-op, and the independent debug cursor wraps at the BIOS column count.
+int15_dbgpoke:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    es
+        mov     ax,40h                ; BIOS data area
+        mov     es,ax
+        mov     al,byte ptr es:[49h]  ; current video mode
+        cmp     al,3
+        jbe     short dbgpoke_colour
+        cmp     al,7
+        jne     short dbgpoke_done
+        mov     bp,0B000h
+        jmp     short dbgpoke_geometry
+dbgpoke_colour:
+        mov     bp,0B800h
+dbgpoke_geometry:
+        mov     si,word ptr es:[4Ah]  ; text columns
+        or      si,si
+        jz      short dbgpoke_done
+        xor     cx,cx
+        mov     cl,byte ptr es:[84h]  ; zero-based bottom row
+        or      cl,cl
+        jnz     short dbgpoke_rows
+        mov     cl,24                 ; conservative 25-row fallback
+dbgpoke_rows:
+        mov     ax,si
+        mul     cx
+        shl     ax,1
+        mov     di,ax
+        add     di,word ptr es:[4Eh]  ; active display-page offset
+        xor     ax,ax
+        mov     al,byte ptr cs:debug_column
+        cmp     ax,si
+        jb      short dbgpoke_column
+        xor     ax,ax                 ; geometry changed since previous call
+dbgpoke_column:
+        mov     dx,ax
+        shl     ax,1
+        add     di,ax
+        inc     dx
+        cmp     dx,si
+        jb      short dbgpoke_save_column
+        xor     dx,dx
+dbgpoke_save_column:
+        mov     byte ptr cs:debug_column,dl
+        mov     es,bp
+        mov     byte ptr es:[di],bl
+dbgpoke_done:
+        pop     es
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
         jmp     int15_handled
 int15_apilevel:
         mov     word ptr cs:api_level,bx
@@ -1042,6 +1113,7 @@ int2f_reset:
         mov     word ptr cs:api_level,0100h
         mov     word ptr cs:task_flags,TASK_JUSTIFY
         mov     byte ptr cs:error_mode,0
+        mov     byte ptr cs:debug_column,0
         push    ax
         push    cx
         push    di
@@ -1083,6 +1155,7 @@ critical_depth dw 0
 api_level      dw 0100h
 task_flags     dw TASK_JUSTIFY
 error_mode     db 0
+debug_column   db 0
 video_segment  dw 0B800h
 task_handle_segment dw 0
 install_path   db 67 dup(0)
@@ -1104,7 +1177,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.15 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.16 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
