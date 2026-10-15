@@ -11,6 +11,10 @@ typedef struct far_block {
     unsigned offset;
 } far_block;
 
+static const unsigned qpi_release_order[ODQ_MAX_PRIVATE_PAGES] = {
+    1, 3, 0, 2
+};
+
 static int allocate_block(unsigned function, unsigned bytes,
                           far_block *block)
 {
@@ -94,6 +98,7 @@ int main(void)
     unsigned enumerated_segment;
     unsigned buffer_segment;
     unsigned i;
+    unsigned page_index;
     unsigned char window_info[ODQ_WININFO_SIZE];
     char install_path[ODQ_DV_PATH_SIZE];
     far_block system_blocks[ODQ_SYSTEM_SLOT_COUNT];
@@ -106,8 +111,7 @@ int main(void)
     odq_max_backend_info backend;
     odq_max_qpi_context qpi_context;
     odq_max_qpi_context qpi_second;
-    odq_max_qpi_page qpi_page;
-    odq_max_qpi_page qpi_second_page;
+    odq_max_qpi_page qpi_pages[ODQ_MAX_PRIVATE_PAGES + 1];
     odq_max_qpi_mapping qpi_mapping;
     unsigned scratch_segment;
     unsigned aligned_segment;
@@ -690,19 +694,23 @@ int main(void)
                 return 41;
             }
             puts("QPI second owned context clone rejected.");
-            qpi_page.frame = 0;
-            if (!odq_max_page_allocate(&qpi_page)) {
-                puts("QPI private data-page allocation failed.");
-                return 59;
+            memset(qpi_pages, 0, sizeof(qpi_pages));
+            for (i = 0; i < ODQ_MAX_PRIVATE_PAGES; ++i) {
+                if (!odq_max_page_allocate(&qpi_pages[i]) ||
+                    qpi_pages[i].frame == 0) {
+                    puts("QPI private data-page pool allocation failed.");
+                    return 59;
+                }
             }
-            printf("QPI allocated private data page %08lX.\n",
-                   qpi_page.frame);
-            qpi_second_page.frame = 0;
-            if (odq_max_page_allocate(&qpi_second_page)) {
-                puts("QPI accepted a second private data page.");
+            printf("QPI allocated %u private data pages, %08lX through "
+                   "%08lX.\n", ODQ_MAX_PRIVATE_PAGES,
+                   qpi_pages[0].frame,
+                   qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1].frame);
+            if (odq_max_page_allocate(&qpi_pages[ODQ_MAX_PRIVATE_PAGES])) {
+                puts("QPI exceeded the private data-page pool.");
                 return 60;
             }
-            puts("QPI second private data-page allocation rejected.");
+            puts("QPI private data-page pool limit enforced.");
             if (_dos_allocmem(0x0200, &scratch_segment) != 0) {
                 puts("DOS scratch-area allocation failed.");
                 return 61;
@@ -718,7 +726,8 @@ int main(void)
                 return 43;
             }
             puts("QPI active owned context release rejected.");
-            if (odq_max_page_release(&qpi_page)) {
+            if (odq_max_page_release(
+                    &qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1])) {
                 puts("QPI released a private page from the active clone.");
                 return 62;
             }
@@ -729,7 +738,8 @@ int main(void)
                 puts("QPI mapping query failed.");
                 return 55;
             }
-            qpi_mapping.mapped_frame = (unsigned)qpi_page.frame;
+            qpi_mapping.mapped_frame =
+                (unsigned)qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1].frame;
             if (!odq_max_mapping_install(&qpi_mapping) ||
                 !qpi_mapping.installed) {
                 puts("QPI mapping installation failed.");
@@ -752,7 +762,8 @@ int main(void)
                 return 67;
             }
             puts("QPI committed mapping survived verified root restore.");
-            if (odq_max_page_release(&qpi_page) ||
+            if (odq_max_page_release(
+                    &qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1]) ||
                 odq_max_context_release(&qpi_context)) {
                 puts("QPI released committed mapping ownership from root.");
                 return 68;
@@ -767,7 +778,8 @@ int main(void)
                 return 70;
             }
             if (!odq_max_mapping_query(&qpi_mapping) ||
-                qpi_mapping.mapped_frame != (unsigned)qpi_page.frame) {
+                qpi_mapping.mapped_frame !=
+                    (unsigned)qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1].frame) {
                 puts("QPI committed mapping did not persist.");
                 return 71;
             }
@@ -788,11 +800,17 @@ int main(void)
                 return 64;
             }
             puts("QPI private-page ownership blocks clone release.");
-            if (!odq_max_page_release(&qpi_page) || qpi_page.frame != 0) {
-                puts("QPI private data-page release failed.");
-                return 65;
+            for (i = 0; i < ODQ_MAX_PRIVATE_PAGES; ++i) {
+                page_index = qpi_release_order[i];
+                if (!odq_max_page_release(&qpi_pages[page_index]) ||
+                    qpi_pages[page_index].frame != 0) {
+                    printf("QPI private data-page pool release failed at "
+                           "%u (%08lX).\n", page_index,
+                           qpi_pages[page_index].frame);
+                    return 65;
+                }
             }
-            puts("QPI private data page released after root restoration.");
+            puts("QPI private data-page pool released after root restoration.");
             if (!odq_max_context_release(&qpi_context) ||
                 qpi_context.page_table != 0) {
                 puts("QPI context release failed.");

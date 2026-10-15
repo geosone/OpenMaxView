@@ -5,6 +5,7 @@
 #define ODQ_MAX_ABI_1_0          0x0100
 #define ODQ_MAX_CAP_STATUS       0x0001
 #define ODQ_QPI_VERSION_7_3      0x0703
+#define ODQ_MAX_PRIVATE_PAGES    4
 
 typedef struct odq_max_backend_info {
     unsigned abi_version;
@@ -41,7 +42,7 @@ int odq_max_context_release(odq_max_qpi_context *context);
 int odq_max_context_activate(const odq_max_qpi_context *context);
 int odq_max_context_restore(void);
 
-/* One private data page may be owned alongside the page-table clone. */
+/* A bounded private-page pool may be owned alongside the page-table clone. */
 int odq_max_page_allocate(odq_max_qpi_page *page);
 int odq_max_page_release(odq_max_qpi_page *page);
 

@@ -176,16 +176,17 @@ the caller's token after QPI `05h` succeeds. Empty, foreign and duplicate
 tokens fail closed. These calls establish safe resource lifetime only; they
 are not a scheduler or permission to free the root/active context. Release is
 explicitly rejected until a verified root restoration has cleared the active
-state. It is also rejected while an owned private data page remains allocated.
+state. It is also rejected while any owned private data page remains allocated.
 
-`odq_max_page_allocate` and `odq_max_page_release` manage one private 4 KiB
-data page with QPI `04h`/`05h`. Allocation requires an existing clone and the
-verified root context; release additionally requires that no replacement
-mapping is active. A second allocation, release from the active clone, and
-empty or foreign page tokens fail closed. Because QPI `0Ah` accepts a 16-bit
-physical page frame, mapping an allocated frame outside that representable
-range is rejected rather than truncated; the full 32-bit allocation token
-remains available for release.
+`odq_max_page_allocate` and `odq_max_page_release` manage a fixed pool of four
+private 4 KiB data pages with QPI `04h`/`05h`. Allocation requires an existing
+clone and the verified root context; release additionally requires that no
+replacement mapping is active. Pool overflow, release from the active clone,
+and empty or foreign page tokens fail closed. Slots are independently owned
+and may be released in any order after mappings have been restored. Because
+QPI `0Ah` accepts a 16-bit physical page frame, mapping an allocated frame
+outside that representable range is rejected rather than truncated; the full
+32-bit allocation token remains available for release.
 
 `odq_max_mapping_query`, `odq_max_mapping_install`,
 `odq_max_mapping_commit` and `odq_max_mapping_restore` provide the first
@@ -213,6 +214,11 @@ currently tracks frame identity, not raw PTE flag bits. Use of QPI
 `1F00h`/`1F01h` will be required before mappings with special cache or device
 attributes are supported.
 
+These assembly entry points follow Open Watcom's 16-bit register calling
+convention. Registers not used for parameters or the `AX` return value are
+preserved across the public wrapper even when an underlying QPI call uses
+them. This is part of the C API contract, not merely an optimization detail.
+
 ## Conformance probe
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
@@ -234,8 +240,9 @@ selectors. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
-clone, a saved/set/read-back/restored single-page mapping backed by an owned
-QPI data page, rejection of a root switch before mapping commit, persistence
+clone, allocation and exhaustion of the four-page private pool, a
+saved/set/read-back/restored single-page mapping backed by its last owned QPI
+data page, rejection of a root switch before mapping commit, persistence
 across a verified root/clone switch after commit, refusal to release resources
 while the mapping remains installed, and page/context release only after
 verified restoration.

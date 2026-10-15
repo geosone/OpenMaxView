@@ -97,8 +97,14 @@ qpi_context:
 qpi_alloc:
         cmp     byte ptr cs:qpi_allocated,0
         je      short qpi_alloc_available
-        cmp     byte ptr cs:qpi_page_allocated,0
-        je      short qpi_page_available
+        test    byte ptr cs:qpi_page_mask,01h
+        jz      short qpi_page_0_available
+        test    byte ptr cs:qpi_page_mask,02h
+        jz      short qpi_page_1_available
+        test    byte ptr cs:qpi_page_mask,04h
+        jz      short qpi_page_2_available
+        test    byte ptr cs:qpi_page_mask,08h
+        jz      short qpi_page_3_available
         stc
         retf
 qpi_alloc_available:
@@ -107,9 +113,24 @@ qpi_alloc_available:
         mov     edx,00005678h
         clc
         retf
-qpi_page_available:
-        mov     byte ptr cs:qpi_page_allocated,1
+qpi_page_0_available:
+        or      byte ptr cs:qpi_page_mask,01h
         mov     edx,00006789h
+        clc
+        retf
+qpi_page_1_available:
+        or      byte ptr cs:qpi_page_mask,02h
+        mov     edx,0000678Ah
+        clc
+        retf
+qpi_page_2_available:
+        or      byte ptr cs:qpi_page_mask,04h
+        mov     edx,0000678Bh
+        clc
+        retf
+qpi_page_3_available:
+        or      byte ptr cs:qpi_page_mask,08h
+        mov     edx,0000678Ch
         clc
         retf
 qpi_clone:
@@ -127,7 +148,13 @@ qpi_clone_valid:
         retf
 qpi_free:
         cmp     edx,00006789h
-        je      short qpi_free_page
+        je      short qpi_free_page_0
+        cmp     edx,0000678Ah
+        je      short qpi_free_page_1
+        cmp     edx,0000678Bh
+        je      short qpi_free_page_2
+        cmp     edx,0000678Ch
+        je      short qpi_free_page_3
         cmp     byte ptr cs:qpi_allocated,1
         je      short qpi_free_allocated
         stc
@@ -143,22 +170,41 @@ qpi_free_owned:
         stc
         retf
 qpi_free_context_inactive:
+        cmp     byte ptr cs:qpi_page_mask,0
+        jne     short qpi_free_rejected
         mov     byte ptr cs:qpi_allocated,0
         mov     word ptr cs:qpi_mapping_page,0FFFFh
         clc
         retf
-qpi_free_page:
-        cmp     byte ptr cs:qpi_page_allocated,1
-        je      short qpi_free_page_allocated
+qpi_free_rejected:
         stc
         retf
-qpi_free_page_allocated:
+qpi_free_page_0:
+        test    byte ptr cs:qpi_page_mask,01h
+        jz      short qpi_free_rejected
+        mov     al,0FEh
+        jmp     short qpi_free_page
+qpi_free_page_1:
+        test    byte ptr cs:qpi_page_mask,02h
+        jz      short qpi_free_rejected
+        mov     al,0FDh
+        jmp     short qpi_free_page
+qpi_free_page_2:
+        test    byte ptr cs:qpi_page_mask,04h
+        jz      short qpi_free_rejected
+        mov     al,0FBh
+        jmp     short qpi_free_page
+qpi_free_page_3:
+        test    byte ptr cs:qpi_page_mask,08h
+        jz      short qpi_free_rejected
+        mov     al,0F7h
+qpi_free_page:
         cmp     dword ptr cs:qpi_active_context,00001234h
         je      short qpi_free_page_in_root
         stc
         retf
 qpi_free_page_in_root:
-        mov     byte ptr cs:qpi_page_allocated,0
+        and     byte ptr cs:qpi_page_mask,al
         clc
         retf
 qpi_switch:
@@ -201,7 +247,7 @@ qpi_error:
 
 old2f           dd 0
 qpi_allocated   db 0
-qpi_page_allocated db 0
+qpi_page_mask   db 0
 qpi_active_context dd 00001234h
 qpi_mapping_page dw 0FFFFh
 qpi_mapping_frame dw 0

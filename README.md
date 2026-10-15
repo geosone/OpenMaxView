@@ -165,11 +165,11 @@ Open 386MAX backend.  Values which cannot be measured safely are shown as
 page-table frame; those facts do not by themselves mean that a scheduler is
 running. The developer probe additionally allocates one page-table frame,
 clones the active 0-4 MB mapping into it, briefly performs a verified switch,
-allocates an owned private data page, installs and commits that page in an
-exclusively reserved DOS test area, verifies that it persists across a
-root/clone switch, restores the original mapping, and releases the data page
-before the clone. Root restoration before commit and out-of-order release
-fail closed.
+allocates and exhausts a four-page owned private-data pool, installs and
+commits its last page in an exclusively reserved DOS test area, verifies that
+it persists across a root/clone switch, restores the original mapping, and
+releases every data page before the clone. Root restoration before commit and
+out-of-order release fail closed.
 
 `MAXVSET.EXE` edits launcher-local preferences in `MAXVSET.INI`.  The distinct
 basename prevents its `.NEW` and `.BAK` files from colliding with catalogue

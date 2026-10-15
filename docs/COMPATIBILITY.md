@@ -25,7 +25,7 @@
 | Automatic setup | Implemented | Filename-rule scan; no binary inspection. |
 | Settings, file and memory tools | Implemented | Current foreground-safe features only. |
 | ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
-| Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one clone and one private data page have ordered allocation, activation, verified mapping commit across a root/clone switch, restoration and release. |
+| Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one clone and a four-page private pool have ordered allocation, activation, verified mapping commit across a root/clone switch, restoration and release. |
 | `.DVP` compatibility | Versioned import implemented | Launch and advanced task fields persist; advanced enforcement awaits backend support. |
 | Dynamic objects, panels, mailboxes, timers | Planned for 1.x | `NEW`, `FREE` and blocking messages must be independently specified and tested. |
 | Concurrent V86 tasks and scheduler | Planned for 1.x | QPI context/IRQ primitives exist; MaxView register, DOS-state and scheduling code is still required. |

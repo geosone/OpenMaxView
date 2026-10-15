@@ -220,19 +220,20 @@ exercises this lifecycle, but the launcher remains foreground-only. Lifecycle
 calls are enabled only when private ABI status identifies root context ID 1,
 so a foreign startup context is never adopted as the baseline.
 
-The next bounded layer owns one private 4 KiB data page for point 3. It is
-allocated with `04h` only after a clone exists and while root is active. In the
-clone, the wrapper reads the original linear-page frame with `09h`, installs
-only that owned data frame with `0Ah`, verifies it with `09h`, and applies the
-same write/read-back discipline when restoring the original. A live or
+The next bounded layer owns up to four private 4 KiB data pages for point 3.
+They are allocated with `04h` only after a clone exists and while root is
+active. In the clone, the wrapper reads the original linear-page frame with
+`09h`, installs only a frame from that owned pool with `0Ah`, verifies it with
+`09h`, and applies the same write/read-back discipline when restoring the
+original. A live or
 unverifiable replacement initially prevents root restoration. After an
 explicit record-checked commit, the replacement may persist in the inactive
 clone while the verified root is active. Reactivating the owned clone exposes
 the same mapping for verification and restoration. The installed mapping
-prevents page or clone release, and the data page continues to prevent clone
-release until it has itself been released from root. This is a genuine
-private-page lifetime and persistent mapping primitive, not yet a complete DOS
-memory map or runnable second task.
+prevents page or clone release, and any allocated data page continues to
+prevent clone release until all pool entries have been released from root.
+This is a genuine private-page lifetime and persistent mapping primitive, not
+yet a complete DOS memory map or runnable second task.
 
 Points 1, 4, 7 and 8 stay with Open MaxView (the scheduler runs in V86, as
 DESQview's does on QEMM: it saves and restores a task's registers itself)
@@ -255,7 +256,8 @@ root one is active.
 The backend conformance probe now verifies clone activation, mapping
 installation/restoration through an owned private data page, refusal to leave
 a clone before mapping commit, persistence in the inactive clone after a
-verified root switch, and ordered page/context release. A committed private
+verified root switch, four-page pool exhaustion, and ordered page/context
+release. A committed private
 mapping does not weaken the Windows rule: it remains in the inactive clone,
 while the root switch is verified before control returns. Multi-context
 Windows support still requires the future launcher path to call the same
@@ -279,8 +281,9 @@ of the current backend contract.
    process descriptor as scheduler and VM capabilities become available.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.
 4. Build scheduler state on the tested QPI allocate/clone/guarded-switch/
-   private-page-map/restore/ordered-release wrapper, then wrap interrupt, timer
-   and video primitives without weakening the private-ABI identity check.
+   bounded-page-pool/map/commit/reactivate/restore/ordered-release wrapper,
+   then wrap interrupt, timer and video primitives without weakening the
+   private-ABI identity check.
 5. Add preemptive scheduling, private DOS state, video virtualisation and
    foreground switching.
 6. Test real applications and document deviations from DESQview 2.8.

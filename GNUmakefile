@@ -332,8 +332,8 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	rg -q 'QPI empty context token rejected' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI cloned page table 00005678 without activating it' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI second owned context clone rejected' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI allocated private data page 00006789' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI second private data-page allocation rejected' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI allocated 4 private data pages, 00006789 through 0000678C' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI private data-page pool limit enforced' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI owned context activation verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI active owned context release rejected' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI active-clone private page release rejected' $(BUILD)/MVPROBE2.TXT
@@ -346,7 +346,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	rg -q 'QPI owned-clone mapping restored and verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI root context restoration verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI private-page ownership blocks clone release' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI private data page released after root restoration' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI private data-page pool released after root restoration' $(BUILD)/MVPROBE2.TXT
 	rg -q 'Open 386MAX QPI context lifecycle passed' $(BUILD)/MVPROBE2.TXT
 	rg -q 'MAXVTSR HANDLE message passed' $(BUILD)/HANDLEPR.TXT
 	rg -q 'ANSI console 1.0 installed' $(BUILD)/ANSI1.TXT

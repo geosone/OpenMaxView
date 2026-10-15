@@ -1,5 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Open 386MAX Open-MaxView backend discovery wrapper for 16-bit C callers.
+; Public entry points preserve Open Watcom register parameters not consumed by
+; their signatures; QPI scratch values must not escape into optimized C code.
 
         .model  small
         .386
@@ -33,10 +35,15 @@ QPI_SET_CONTEXT equ 00800h
 QPI_GET_MAPPING equ 00900h
 QPI_SET_MAPPING equ 00A00h
 QPI_LAST_PAGE   equ 003FFh
+QPI_PAGE_SLOTS  equ 4
+QPI_PAGE_BYTES  equ QPI_PAGE_SLOTS * 4
 
 odq_max_backend_query_ proc near
         push    bp
         mov     bp,sp
+        push    bx
+        push    cx
+        push    edx
         push    si
         push    di
         push    es
@@ -169,6 +176,9 @@ backend_done:
         pop     es
         pop     di
         pop     si
+        pop     edx
+        pop     cx
+        pop     bx
         pop     bp
         ret
 
@@ -178,6 +188,9 @@ odq_max_backend_query_ endp
 ; The clone is not activated. If cloning fails, release the allocated page.
 odq_max_context_clone_ proc near
         push    si
+        push    bx
+        push    cx
+        push    edx
         mov     si,ax
         or      si,si
         jz      short context_clone_failed
@@ -212,10 +225,16 @@ context_table_cloned:
         mov     dword ptr [si],edx
         mov     dword ptr cs:qpi_owned_context,edx
         mov     ax,1
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 context_clone_failed:
         xor     ax,ax
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_context_clone_ endp
@@ -223,6 +242,9 @@ odq_max_context_clone_ endp
 ; Release a non-active clone and clear the caller's token on success.
 odq_max_context_release_ proc near
         push    si
+        push    bx
+        push    cx
+        push    edx
         mov     si,ax
         or      si,si
         jz      short context_release_failed
@@ -237,7 +259,7 @@ odq_max_context_release_ proc near
         jne     short context_release_failed
         cmp     word ptr cs:qpi_mapping_active,0
         jne     short context_release_failed
-        cmp     dword ptr cs:qpi_owned_page,0
+        cmp     word ptr cs:qpi_owned_page_count,0
         jne     short context_release_failed
         mov     ax,QPI_FREE_PAGE
         pushf
@@ -250,10 +272,16 @@ context_released:
         mov     dword ptr [si],0
         mov     dword ptr cs:qpi_owned_context,0
         mov     ax,1
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 context_release_failed:
         xor     ax,ax
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_context_release_ endp
@@ -261,6 +289,9 @@ odq_max_context_release_ endp
 ; Activate only the clone owned by this layer and verify QPI 07h afterwards.
 odq_max_context_activate_ proc near
         push    si
+        push    bx
+        push    cx
+        push    edx
         mov     si,ax
         or      si,si
         jz      short context_activate_failed
@@ -292,12 +323,18 @@ context_switch_observed:
         cmp     edx,dword ptr cs:qpi_owned_context
         jne     short context_activate_recover
         mov     ax,1
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 context_activate_recover:
         call    odq_max_context_restore_
 context_activate_failed:
         xor     ax,ax
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_context_activate_ endp
@@ -305,6 +342,9 @@ odq_max_context_activate_ endp
 ; Return to the baseline captured by the first successful QPI 07h query.
 ; The active flag is cleared only after a second 07h verifies the transition.
 odq_max_context_restore_ proc near
+        push    bx
+        push    cx
+        push    edx
         cmp     word ptr cs:qpi_context_ready,1
         jne     short context_restore_failed
         cmp     word ptr cs:qpi_mapping_active,0
@@ -335,17 +375,26 @@ context_restore_observed:
         jne     short context_restore_failed
         mov     word ptr cs:qpi_owned_active,0
         mov     ax,1
+        pop     edx
+        pop     cx
+        pop     bx
         ret
 context_restore_failed:
         xor     ax,ax
+        pop     edx
+        pop     cx
+        pop     bx
         ret
 odq_max_context_restore_ endp
 
 ; Allocate one private physical data page while the root context is active.
 ; Keep the complete QPI 04h frame; the mapping layer separately rejects frames
-; that cannot be represented by QPI 0Ah.
+; that cannot be represented by QPI 0Ah. Ownership uses a fixed-size pool.
 odq_max_page_allocate_ proc near
         push    si
+        push    bx
+        push    cx
+        push    edx
         mov     si,ax
         or      si,si
         jz      short page_allocate_failed
@@ -357,22 +406,37 @@ odq_max_page_allocate_ proc near
         jne     short page_allocate_failed
         cmp     word ptr cs:qpi_mapping_active,0
         jne     short page_allocate_failed
-        cmp     dword ptr cs:qpi_owned_page,0
-        jne     short page_allocate_failed
 
+        xor     bx,bx
+page_allocate_find_slot:
+        cmp     dword ptr cs:qpi_owned_pages[bx],0
+        je      short page_allocate_slot_found
+        add     bx,4
+        cmp     bx,QPI_PAGE_BYTES
+        jb      short page_allocate_find_slot
+        jmp     short page_allocate_failed
+
+page_allocate_slot_found:
+        push    bx
         mov     ax,QPI_ALLOC_PAGE
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short page_allocate_returned
         add     sp,2
+        pop     bx
         jmp     short page_allocate_failed
 page_allocate_returned:
         add     sp,2
+        pop     bx
         test    edx,edx
         jz      short page_allocate_rollback
         mov     dword ptr [si],edx
-        mov     dword ptr cs:qpi_owned_page,edx
+        mov     dword ptr cs:qpi_owned_pages[bx],edx
+        inc     word ptr cs:qpi_owned_page_count
         mov     ax,1
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 page_allocate_rollback:
@@ -382,6 +446,9 @@ page_allocate_rollback:
         add     sp,2
 page_allocate_failed:
         xor     ax,ax
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_page_allocate_ endp
@@ -390,6 +457,9 @@ odq_max_page_allocate_ endp
 ; and the verified root context is active again.
 odq_max_page_release_ proc near
         push    si
+        push    bx
+        push    cx
+        push    edx
         mov     si,ax
         or      si,si
         jz      short page_release_failed
@@ -402,23 +472,42 @@ odq_max_page_release_ proc near
         mov     edx,dword ptr [si]
         test    edx,edx
         jz      short page_release_failed
-        cmp     edx,dword ptr cs:qpi_owned_page
-        jne     short page_release_failed
+
+        xor     bx,bx
+page_release_find_slot:
+        cmp     edx,dword ptr cs:qpi_owned_pages[bx]
+        je      short page_release_slot_found
+        add     bx,4
+        cmp     bx,QPI_PAGE_BYTES
+        jb      short page_release_find_slot
+        jmp     short page_release_failed
+
+page_release_slot_found:
+        push    bx
         mov     ax,QPI_FREE_PAGE
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short page_released
         add     sp,2
+        pop     bx
         jmp     short page_release_failed
 page_released:
         add     sp,2
+        pop     bx
         mov     dword ptr [si],0
-        mov     dword ptr cs:qpi_owned_page,0
+        mov     dword ptr cs:qpi_owned_pages[bx],0
+        dec     word ptr cs:qpi_owned_page_count
         mov     ax,1
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 page_release_failed:
         xor     ax,ax
+        pop     edx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_page_release_ endp
@@ -427,6 +516,9 @@ odq_max_page_release_ endp
 ; access is deliberately limited to the clone owned and activated here.
 odq_max_mapping_query_ proc near
         push    si
+        push    bx
+        push    cx
+        push    dx
         mov     si,ax
         or      si,si
         jz      short mapping_query_failed
@@ -448,10 +540,16 @@ mapping_query_returned:
         add     sp,2
         mov     word ptr [si+4],dx
         mov     ax,1
+        pop     dx
+        pop     cx
+        pop     bx
         pop     si
         ret
 mapping_query_failed:
         xor     ax,ax
+        pop     dx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_mapping_query_ endp
@@ -460,6 +558,9 @@ odq_max_mapping_query_ endp
 ; through QPI 09h. Only one outstanding mapping is permitted.
 odq_max_mapping_install_ proc near
         push    si
+        push    bx
+        push    cx
+        push    dx
         mov     si,ax
         or      si,si
         jz      mapping_install_failed
@@ -476,6 +577,11 @@ odq_max_mapping_install_ proc near
         mov     cx,word ptr [si]
         cmp     cx,QPI_LAST_PAGE
         ja      mapping_install_failed
+        mov     dx,word ptr [si+4]
+        call    qpi_page_is_owned
+        or      ax,ax
+        jz      mapping_install_failed
+        mov     cx,word ptr [si]
         mov     word ptr cs:qpi_mapping_page,cx
 
         mov     ax,QPI_GET_MAPPING
@@ -490,10 +596,6 @@ mapping_original_returned:
         mov     word ptr cs:qpi_mapping_original,dx
         mov     cx,word ptr cs:qpi_mapping_page
         mov     dx,word ptr [si+4]
-        cmp     word ptr cs:qpi_owned_page+2,0
-        jne     mapping_install_failed
-        cmp     dx,word ptr cs:qpi_owned_page
-        jne     mapping_install_failed
         mov     word ptr cs:qpi_mapping_target,dx
         mov     word ptr cs:qpi_mapping_active,1
         mov     word ptr cs:qpi_mapping_committed,0
@@ -524,6 +626,9 @@ mapping_verify_returned:
         cmp     dx,word ptr cs:qpi_mapping_target
         jne     short mapping_install_recover
         mov     ax,1
+        pop     dx
+        pop     cx
+        pop     bx
         pop     si
         ret
 
@@ -557,6 +662,9 @@ mapping_recovery_read:
         mov     word ptr [si+8],0
 mapping_install_failed:
         xor     ax,ax
+        pop     dx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_mapping_install_ endp
@@ -603,6 +711,9 @@ odq_max_mapping_commit_ endp
 ; Put back the saved frame and clear ownership only after QPI 09h observes it.
 odq_max_mapping_restore_ proc near
         push    si
+        push    bx
+        push    cx
+        push    dx
         mov     si,ax
         or      si,si
         jnz     short mapping_restore_pointer_ok
@@ -659,20 +770,52 @@ mapping_restore_read:
         mov     word ptr [si+6],0
         mov     word ptr [si+8],0
         mov     ax,1
+        pop     dx
+        pop     cx
+        pop     bx
         pop     si
         ret
 mapping_restore_failed:
         xor     ax,ax
+        pop     dx
+        pop     cx
+        pop     bx
         pop     si
         ret
 odq_max_mapping_restore_ endp
+
+; Return nonzero when DX names a representable page in the owned pool.
+qpi_page_is_owned proc near
+        push    bx
+        or      dx,dx
+        jz      short qpi_page_owned_missing
+        xor     bx,bx
+qpi_page_owned_next:
+        cmp     word ptr cs:qpi_owned_pages[bx]+2,0
+        jne     short qpi_page_owned_continue
+        cmp     dx,word ptr cs:qpi_owned_pages[bx]
+        je      short qpi_page_owned_found
+qpi_page_owned_continue:
+        add     bx,4
+        cmp     bx,QPI_PAGE_BYTES
+        jb      short qpi_page_owned_next
+qpi_page_owned_missing:
+        xor     ax,ax
+        pop     bx
+        ret
+qpi_page_owned_found:
+        mov     ax,1
+        pop     bx
+        ret
+qpi_page_is_owned endp
 
 qpi_entry         dd 0
 qpi_context_ready dw 0
 qpi_owned_context dd 0
 qpi_root_context  dd 0
 qpi_owned_active  dw 0
-qpi_owned_page     dd 0
+qpi_owned_page_count dw 0
+qpi_owned_pages      dd QPI_PAGE_SLOTS dup (0)
 qpi_mapping_active   dw 0
 qpi_mapping_committed dw 0
 qpi_mapping_page     dw 0
