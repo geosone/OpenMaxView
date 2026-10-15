@@ -26,7 +26,8 @@ The target builds the full suite and executes headless DOSBox sessions. It
 checks:
 
 * first and repeated installation of `MAXVTSR` and `MAXVANSI`;
-* API version, pause, `APPNUM`, `APILEVEL`, `JUSTIFY`, `CSTYLE`, error policy,
+* API version, pause, `APPNUM`, keyboard-mouse mode, `APILEVEL`, `JUSTIFY`,
+  `CSTYLE`, error policy,
   conventional/expanded-memory status and attribute-preserving physical
   `DBGPOKE` output,
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `LOCATE`/`GETBUF`,

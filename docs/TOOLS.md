@@ -133,7 +133,8 @@ claim that they are active today.
 
 Developer diagnostic for the resident DESQview-compatible calls and the
 Open 386MAX backend query. It exercises pause, critical nesting and alternate
-video-buffer behaviour, exhausts and releases the bounded task-memory pool,
+video-buffer behaviour and keyboard-mouse mode, exhausts and releases the
+bounded task-memory pool,
 checks common-memory, conventional/expanded status and `PROCESSMEM`
 accounting, validates physical `DBGPOKE` output, the foreground task object and
 its `DOSUSER`, `OBJNEXT` and `WININFO` metadata, exercises global and targeted

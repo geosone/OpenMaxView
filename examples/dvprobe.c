@@ -151,6 +151,35 @@ int main(void)
     }
     puts("Foreground APPNUM and task defaults passed.");
 
+    memset(&inregs, 0, sizeof(inregs));
+    inregs.x.ax = ODQ_DVC_KEYBOARD_MOUSE;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.h.bl != 0) {
+        puts("Default keyboard-mouse mode failed.");
+        return 52;
+    }
+    inregs.x.ax = ODQ_DVC_KEYBOARD_MOUSE;
+    inregs.h.bl = 1;
+    int86(0x15, &inregs, &outregs);
+    inregs.x.ax = ODQ_DVC_KEYBOARD_MOUSE;
+    inregs.h.bl = 0;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.h.bl != 1) {
+        puts("Keyboard-mouse enable/query failed.");
+        return 53;
+    }
+    inregs.x.ax = ODQ_DVC_KEYBOARD_MOUSE;
+    inregs.h.bl = 2;
+    int86(0x15, &inregs, &outregs);
+    inregs.x.ax = ODQ_DVC_KEYBOARD_MOUSE;
+    inregs.h.bl = 0;
+    int86(0x15, &inregs, &outregs);
+    if (outregs.h.bl != 0) {
+        puts("Keyboard-mouse disable/query failed.");
+        return 54;
+    }
+    puts("Foreground keyboard-mouse state API passed.");
+
     inregs.x.ax = ODQ_DVC_API_LEVEL;
     inregs.x.bx = 0x0230;
     int86(0x15, &inregs, &outregs);

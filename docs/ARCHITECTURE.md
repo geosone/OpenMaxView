@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.16 resident API tracks foreground task compatibility state and nested
+The 0.17 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -27,6 +27,10 @@ BIOS-format scan/character pair to the foreground keyboard buffer. `PUTKEY`
 does the same only for the exact resident task handle and returns a full-buffer
 or invalid-handle status; task-private queues remain a 1.x multi-context
 requirement.
+
+Keyboard-mouse control currently records the documented disabled/enabled
+foreground-task mode and resets it at the child boundary. It does not claim
+mouse-event synthesis before the task-private input backend exists.
 
 Before installation, the resident captures the directory component of its
 DOS executable path. `GETDVPATH` can therefore answer from resident storage
@@ -152,6 +156,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Alternate video buffer | implemented for foreground | B000h/B800h alias plus change notification |
 | Physical video queries | implemented for foreground | `SCRNINFO`, `VIDEONOTIFY`, non-DV/X identity |
 | Keyboard injection | implemented for foreground | Global `PUSHKEY` and handle-validated `PUTKEY` use the BIOS queue |
+| Keyboard-mouse mode | foreground state implemented | Query/enable/disable state; event synthesis awaits task-private input |
 | System/common memory | bounded foreground implementation | Resident 256-byte slots with allocation, release and status |
 | Process memory status | foreground implementation | Current DOS allocation plus bounded task-system slot accounting |
 | DOS/EMS capacity status | foreground implementation | Guarded MCB accounting and standard EMS page counts |

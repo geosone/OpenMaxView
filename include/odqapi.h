@@ -13,6 +13,7 @@
 #define ODQ_DVC_END_CRITICAL    0x101c
 #define ODQ_DVC_GET_VERSION     0x1022
 #define ODQ_DVC_GET_BUFFER      0x1024
+#define ODQ_DVC_KEYBOARD_MOUSE  0x102d
 #define ODQ_DVC_COMMON_STATUS   0xde04
 #define ODQ_DVC_CONVENTIONAL_STATUS 0xde05
 #define ODQ_DVC_EXPANDED_STATUS 0xde06
@@ -49,7 +50,7 @@
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0010
+#define ODQ_MUX_VERSION         0x0011
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -84,7 +85,8 @@
 #define ODQ_CAP2_CONVENTIONAL_STATUS 0x1000
 #define ODQ_CAP2_EXPANDED_STATUS 0x2000
 #define ODQ_CAP2_DEBUG_POKE     0x4000
-#define ODQ_CAPABILITIES2       0x7fff
+#define ODQ_CAP2_KEYBOARD_MOUSE 0x8000
+#define ODQ_CAPABILITIES2       0xffff
 
 #define ODQ_DV_PATH_SIZE        67
 

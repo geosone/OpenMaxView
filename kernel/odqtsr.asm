@@ -12,6 +12,7 @@
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
+;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE05h                 conventional-memory availability
 ;   INT 15h AX=DE06h                 expanded-memory availability
@@ -52,9 +53,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0010h
+MUX_VERSION    equ 0011h
 CAPABILITIES   equ 0FFFFh
-CAPABILITIES2  equ 7FFFh
+CAPABILITIES2  equ 0FFFFh
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -214,6 +215,10 @@ int15_not_getver:
         jne     short int15_not_getbuf
         jmp     int15_getbuf
 int15_not_getbuf:
+        cmp     ax,102Dh              ; keyboard mouse control
+        jne     short int15_not_keyboard_mouse
+        jmp     int15_keyboard_mouse
+int15_not_keyboard_mouse:
         cmp     ax,0DE04h             ; GET AVAILABLE COMMON MEMORY
         jne     short int15_not_common_status
         jmp     int15_common_status
@@ -455,6 +460,25 @@ int15_videonotify:
         jmp     int15_handled
 int15_getdvxversion:
         xor     bx,bx                 ; Open MaxView is not DESQview/X
+        jmp     int15_handled
+
+; Foreground keyboard-mouse compatibility state.  Subfunction zero queries,
+; one enables and two disables.  Event synthesis belongs to the later
+; task-private input backend; unknown subfunctions leave the state unchanged.
+int15_keyboard_mouse:
+        cmp     bl,1
+        je      short keyboard_mouse_enable
+        cmp     bl,2
+        je      short keyboard_mouse_disable
+        cmp     bl,0
+        jne     int15_handled
+        mov     bl,byte ptr cs:keyboard_mouse
+        jmp     int15_handled
+keyboard_mouse_enable:
+        mov     byte ptr cs:keyboard_mouse,1
+        jmp     int15_handled
+keyboard_mouse_disable:
+        mov     byte ptr cs:keyboard_mouse,0
         jmp     int15_handled
 
 int15_isobj:
@@ -1114,6 +1138,7 @@ int2f_reset:
         mov     word ptr cs:task_flags,TASK_JUSTIFY
         mov     byte ptr cs:error_mode,0
         mov     byte ptr cs:debug_column,0
+        mov     byte ptr cs:keyboard_mouse,0
         push    ax
         push    cx
         push    di
@@ -1156,6 +1181,7 @@ api_level      dw 0100h
 task_flags     dw TASK_JUSTIFY
 error_mode     db 0
 debug_column   db 0
+keyboard_mouse db 0
 video_segment  dw 0B800h
 task_handle_segment dw 0
 install_path   db 67 dup(0)
@@ -1177,7 +1203,7 @@ task_object    label byte
         db      1,0                   ; task flag and internal window number
         dw      0,0,0,0,0,0,0        ; bounded public header storage
 
-installed_msg  db 'Open MaxView resident API 0.16 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.17 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

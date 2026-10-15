@@ -19,6 +19,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=101Ch` | Decrements the count without underflow | `ENDC` |
 | `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
 | `INT 15h AX=1024h BX=window` | `ES:DI=buffer`, `CX=bytes`, `DL=0` | `GETBUF`; foreground text buffer |
+| `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
@@ -52,6 +53,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 
 The default API level is 1.00, automatic viewport justification starts
 enabled, C-style linefeeds start disabled, and error policy 0 is selected.
+Keyboard-mouse mode also starts disabled.
 `MAXVIEW` resets these values and the critical count before and after each DOS
 child. In foreground mode
 `JUSTIFY` and `CSTYLE` preserve compatibility state; their visible windowing
@@ -125,23 +127,24 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0010h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0011h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes to defaults |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
-| `D704h` | `BX=7FFFh` extended capability bits, `CX=DX=0` |
+| `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
-C-style linefeed interpretation. For `D704h`, bits 0 through 14 advertise
+C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
 `ISOBJ`, object-type, foreground-handle, `GETVER`, `DOSUSER`, `OBJNEXT`,
 `WININFO`, targeted `PUTKEY`, `GETDVPATH`, `LOCATE`, `GETBUF` and `PROCESSMEM`
-plus conventional-memory, expanded-memory and `DBGPOKE` status-line output.
-The declarations are in `include/odqapi.h`.
+plus conventional-memory, expanded-memory, `DBGPOKE` status-line output and
+keyboard-mouse mode. The declarations are in `include/odqapi.h`.
 
 ## Conformance probe
 
 After loading `MAXVTSR`, run `DVPROBE`. It validates the presence/version
-call, resident installation path, task defaults, `APPNUM`, `APILEVEL`,
+call, resident installation path, task defaults, keyboard-mouse mode,
+`APPNUM`, `APILEVEL`,
 `JUSTIFY`, `CSTYLE`, error policy,
 task/common-memory allocation, bounds and release, the resident
 conventional- and expanded-memory status services,

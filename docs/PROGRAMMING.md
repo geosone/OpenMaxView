@@ -180,6 +180,11 @@ one BIOS-format scan/character pair for the foreground task. Programs must
 handle extended keys and must not assume that injection succeeds when the BIOS
 queue is full.
 
+`ODQ_DVC_KEYBOARD_MOUSE` uses `BL=0` to query, `BL=1` to enable and `BL=2` to
+disable keyboard-mouse mode. A query returns zero or one in `BL`. The current
+foreground implementation retains and resets this compatibility state but
+does not synthesize mouse motion or buttons yet.
+
 ## Serial and BBS programs
 
 An idle communications program must yield, but it must not poll so slowly
