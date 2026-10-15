@@ -62,11 +62,12 @@ Watcom. Do not add NASM as an alternate hidden requirement.
   frames allocated and owned by the same lifecycle layer, and never release
   the active or root context.
 * Treat QPI `09h`/`0Ah` mapped-page frames as the interface's 16-bit values.
-  Map only a private page allocated and owned by the same wrapper, inside the
-  owned active clone. Save and verify the original frame. Never leave that
-  clone with an uncommitted replacement; after explicit commit, switch only to
-  the verified root and reactivate the clone before restoring its map. Do not
-  map over the caller record, backend code/data or active stack.
+  Map only private pages allocated and owned by the same wrapper, inside the
+  owned active clone. Keep linear-page numbers unique and save and verify every
+  original frame. Never leave that clone until all replacements are committed;
+  then switch only to the verified root and reactivate the clone before
+  restoring its table. Do not map over caller records, backend code/data or
+  the active stack.
 * Assembly functions called by Open Watcom C must preserve every register not
   consumed by their declared parameters or return value. In particular, do
   not leak QPI's `CX`/`DX` working values into optimized C callers.

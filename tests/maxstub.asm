@@ -109,7 +109,6 @@ qpi_alloc:
         retf
 qpi_alloc_available:
         mov     byte ptr cs:qpi_allocated,1
-        mov     word ptr cs:qpi_mapping_page,0FFFFh
         mov     edx,00005678h
         clc
         retf
@@ -173,7 +172,6 @@ qpi_free_context_inactive:
         cmp     byte ptr cs:qpi_page_mask,0
         jne     short qpi_free_rejected
         mov     byte ptr cs:qpi_allocated,0
-        mov     word ptr cs:qpi_mapping_page,0FFFFh
         clc
         retf
 qpi_free_rejected:
@@ -211,25 +209,34 @@ qpi_switch:
         cmp     edx,00001234h
         je      short qpi_switch_valid
         cmp     byte ptr cs:qpi_allocated,1
-        jne     short qpi_error
+        jne     qpi_error
         cmp     edx,00005678h
-        jne     short qpi_error
+        jne     qpi_error
 qpi_switch_valid:
         mov     dword ptr cs:qpi_active_context,edx
         clc
         retf
 qpi_map_query:
         cmp     dword ptr cs:qpi_active_context,00005678h
-        jne     short qpi_error
+        jne     qpi_error
         cmp     cx,03FFh
-        ja      short qpi_error
-        cmp     cx,word ptr cs:qpi_mapping_page
-        jne     short qpi_map_identity
-        mov     dx,word ptr cs:qpi_mapping_frame
-        clc
-        retf
+        ja      qpi_error
+        xor     bx,bx
+qpi_map_query_next:
+        cmp     word ptr cs:qpi_mapping_active[bx],0
+        je      short qpi_map_query_continue
+        cmp     cx,word ptr cs:qpi_mapping_page[bx]
+        je      short qpi_map_query_found
+qpi_map_query_continue:
+        add     bx,2
+        cmp     bx,8
+        jb      short qpi_map_query_next
 qpi_map_identity:
         mov     dx,cx
+        clc
+        retf
+qpi_map_query_found:
+        mov     dx,word ptr cs:qpi_mapping_frame[bx]
         clc
         retf
 qpi_map_set:
@@ -237,8 +244,42 @@ qpi_map_set:
         jne     short qpi_error
         cmp     cx,03FFh
         ja      short qpi_error
-        mov     word ptr cs:qpi_mapping_page,cx
-        mov     word ptr cs:qpi_mapping_frame,dx
+        xor     bx,bx
+qpi_map_set_find:
+        cmp     word ptr cs:qpi_mapping_active[bx],0
+        je      short qpi_map_set_next
+        cmp     cx,word ptr cs:qpi_mapping_page[bx]
+        je      short qpi_map_set_existing
+qpi_map_set_next:
+        add     bx,2
+        cmp     bx,8
+        jb      short qpi_map_set_find
+
+        ; The stub's unmodified mapping is identity. Restoring an identity
+        ; page that is not in the table is already complete.
+        cmp     dx,cx
+        je      short qpi_map_set_done
+        xor     bx,bx
+qpi_map_set_free:
+        cmp     word ptr cs:qpi_mapping_active[bx],0
+        je      short qpi_map_set_store
+        add     bx,2
+        cmp     bx,8
+        jb      short qpi_map_set_free
+        jmp     short qpi_error
+
+qpi_map_set_existing:
+        cmp     dx,cx
+        jne     short qpi_map_set_store
+        mov     word ptr cs:qpi_mapping_active[bx],0
+        mov     word ptr cs:qpi_mapping_page[bx],0
+        mov     word ptr cs:qpi_mapping_frame[bx],0
+        jmp     short qpi_map_set_done
+qpi_map_set_store:
+        mov     word ptr cs:qpi_mapping_active[bx],1
+        mov     word ptr cs:qpi_mapping_page[bx],cx
+        mov     word ptr cs:qpi_mapping_frame[bx],dx
+qpi_map_set_done:
         clc
         retf
 qpi_error:
@@ -249,7 +290,8 @@ old2f           dd 0
 qpi_allocated   db 0
 qpi_page_mask   db 0
 qpi_active_context dd 00001234h
-qpi_mapping_page dw 0FFFFh
-qpi_mapping_frame dw 0
+qpi_mapping_active dw 4 dup (0)
+qpi_mapping_page dw 4 dup (0)
+qpi_mapping_frame dw 4 dup (0)
 resident_end:
         end     start

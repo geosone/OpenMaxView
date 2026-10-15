@@ -37,6 +37,8 @@ QPI_SET_MAPPING equ 00A00h
 QPI_LAST_PAGE   equ 003FFh
 QPI_PAGE_SLOTS  equ 4
 QPI_PAGE_BYTES  equ QPI_PAGE_SLOTS * 4
+QPI_MAP_SLOTS   equ 4
+QPI_MAP_BYTES   equ QPI_MAP_SLOTS * 2
 
 odq_max_backend_query_ proc near
         push    bp
@@ -257,7 +259,7 @@ odq_max_context_release_ proc near
         jne     short context_release_failed
         cmp     word ptr cs:qpi_owned_active,0
         jne     short context_release_failed
-        cmp     word ptr cs:qpi_mapping_active,0
+        cmp     word ptr cs:qpi_mapping_count,0
         jne     short context_release_failed
         cmp     word ptr cs:qpi_owned_page_count,0
         jne     short context_release_failed
@@ -347,9 +349,10 @@ odq_max_context_restore_ proc near
         push    edx
         cmp     word ptr cs:qpi_context_ready,1
         jne     short context_restore_failed
-        cmp     word ptr cs:qpi_mapping_active,0
+        cmp     word ptr cs:qpi_mapping_count,0
         je      short context_restore_mapping_ok
-        cmp     word ptr cs:qpi_mapping_committed,1
+        mov     ax,word ptr cs:qpi_mapping_count
+        cmp     ax,word ptr cs:qpi_mapping_committed_count
         jne     short context_restore_failed
 context_restore_mapping_ok:
         mov     edx,dword ptr cs:qpi_root_context
@@ -404,7 +407,7 @@ odq_max_page_allocate_ proc near
         je      short page_allocate_failed
         cmp     word ptr cs:qpi_owned_active,0
         jne     short page_allocate_failed
-        cmp     word ptr cs:qpi_mapping_active,0
+        cmp     word ptr cs:qpi_mapping_count,0
         jne     short page_allocate_failed
 
         xor     bx,bx
@@ -467,7 +470,7 @@ odq_max_page_release_ proc near
         jne     short page_release_failed
         cmp     word ptr cs:qpi_owned_active,0
         jne     short page_release_failed
-        cmp     word ptr cs:qpi_mapping_active,0
+        cmp     word ptr cs:qpi_mapping_count,0
         jne     short page_release_failed
         mov     edx,dword ptr [si]
         test    edx,edx
@@ -555,7 +558,7 @@ mapping_query_failed:
 odq_max_mapping_query_ endp
 
 ; Save the old frame, install one replacement with QPI 0Ah and verify it
-; through QPI 09h. Only one outstanding mapping is permitted.
+; through QPI 09h. Linear pages are unique within the bounded mapping table.
 odq_max_mapping_install_ proc near
         push    si
         push    bx
@@ -568,8 +571,8 @@ odq_max_mapping_install_ proc near
         jne     mapping_install_failed
         cmp     word ptr cs:qpi_owned_active,1
         jne     mapping_install_failed
-        cmp     word ptr cs:qpi_mapping_active,0
-        jne     mapping_install_failed
+        cmp     word ptr cs:qpi_mapping_count,QPI_MAP_SLOTS
+        jae     mapping_install_failed
         cmp     word ptr [si+6],0
         jne     mapping_install_failed
         cmp     word ptr [si+8],0
@@ -581,49 +584,83 @@ odq_max_mapping_install_ proc near
         call    qpi_page_is_owned
         or      ax,ax
         jz      mapping_install_failed
-        mov     cx,word ptr [si]
-        mov     word ptr cs:qpi_mapping_page,cx
 
+        mov     cx,word ptr [si]
+        xor     bx,bx
+mapping_install_duplicate_next:
+        cmp     word ptr cs:qpi_mapping_active[bx],0
+        je      short mapping_install_duplicate_continue
+        cmp     cx,word ptr cs:qpi_mapping_page[bx]
+        je      mapping_install_failed
+mapping_install_duplicate_continue:
+        add     bx,2
+        cmp     bx,QPI_MAP_BYTES
+        jb      short mapping_install_duplicate_next
+
+        xor     bx,bx
+mapping_install_slot_next:
+        cmp     word ptr cs:qpi_mapping_active[bx],0
+        je      short mapping_install_slot_found
+        add     bx,2
+        cmp     bx,QPI_MAP_BYTES
+        jb      short mapping_install_slot_next
+        jmp     mapping_install_failed
+mapping_install_slot_found:
+        mov     word ptr cs:qpi_mapping_page[bx],cx
+
+        push    bx
         mov     ax,QPI_GET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_original_returned
         add     sp,2
+        pop     bx
         jmp     mapping_install_failed
 mapping_original_returned:
         add     sp,2
+        pop     bx
         mov     word ptr [si+2],dx
-        mov     word ptr cs:qpi_mapping_original,dx
-        mov     cx,word ptr cs:qpi_mapping_page
+        mov     word ptr cs:qpi_mapping_original[bx],dx
+        mov     cx,word ptr cs:qpi_mapping_page[bx]
         mov     dx,word ptr [si+4]
-        mov     word ptr cs:qpi_mapping_target,dx
-        mov     word ptr cs:qpi_mapping_active,1
-        mov     word ptr cs:qpi_mapping_committed,0
+        mov     word ptr cs:qpi_mapping_target[bx],dx
+        mov     word ptr cs:qpi_mapping_active[bx],1
+        mov     word ptr cs:qpi_mapping_committed[bx],0
+        inc     word ptr cs:qpi_mapping_count
         mov     word ptr [si+6],1
         mov     word ptr [si+8],0
 
+        push    bx
         mov     ax,QPI_SET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_set_returned
         add     sp,2
-        mov     word ptr cs:qpi_mapping_active,0
-        mov     word ptr cs:qpi_mapping_committed,0
+        pop     bx
+        mov     word ptr cs:qpi_mapping_active[bx],0
+        mov     word ptr cs:qpi_mapping_page[bx],0
+        mov     word ptr cs:qpi_mapping_original[bx],0
+        mov     word ptr cs:qpi_mapping_target[bx],0
+        dec     word ptr cs:qpi_mapping_count
         mov     word ptr [si+6],0
         mov     word ptr [si+8],0
-        jmp     short mapping_install_failed
+        jmp     mapping_install_failed
 mapping_set_returned:
         add     sp,2
-        mov     cx,word ptr cs:qpi_mapping_page
+        pop     bx
+        mov     cx,word ptr cs:qpi_mapping_page[bx]
+        push    bx
         mov     ax,QPI_GET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_verify_returned
         add     sp,2
+        pop     bx
         jmp     short mapping_install_recover
 mapping_verify_returned:
         add     sp,2
-        cmp     dx,word ptr cs:qpi_mapping_target
+        pop     bx
+        cmp     dx,word ptr cs:qpi_mapping_target[bx]
         jne     short mapping_install_recover
         mov     ax,1
         pop     dx
@@ -635,29 +672,39 @@ mapping_verify_returned:
 mapping_install_recover:
         ; Keep the mapping marked active if restoration fails. That fail-closed
         ; state prevents both a root switch and clone release.
-        mov     cx,word ptr cs:qpi_mapping_page
-        mov     dx,word ptr cs:qpi_mapping_original
+        mov     cx,word ptr cs:qpi_mapping_page[bx]
+        mov     dx,word ptr cs:qpi_mapping_original[bx]
+        push    bx
         mov     ax,QPI_SET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_recovery_set
         add     sp,2
+        pop     bx
         jmp     short mapping_install_failed
 mapping_recovery_set:
         add     sp,2
-        mov     cx,word ptr cs:qpi_mapping_page
+        pop     bx
+        mov     cx,word ptr cs:qpi_mapping_page[bx]
+        push    bx
         mov     ax,QPI_GET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_recovery_read
         add     sp,2
+        pop     bx
         jmp     short mapping_install_failed
 mapping_recovery_read:
         add     sp,2
-        cmp     dx,word ptr cs:qpi_mapping_original
+        pop     bx
+        cmp     dx,word ptr cs:qpi_mapping_original[bx]
         jne     short mapping_install_failed
-        mov     word ptr cs:qpi_mapping_active,0
-        mov     word ptr cs:qpi_mapping_committed,0
+        mov     word ptr cs:qpi_mapping_active[bx],0
+        mov     word ptr cs:qpi_mapping_committed[bx],0
+        mov     word ptr cs:qpi_mapping_page[bx],0
+        mov     word ptr cs:qpi_mapping_original[bx],0
+        mov     word ptr cs:qpi_mapping_target[bx],0
+        dec     word ptr cs:qpi_mapping_count
         mov     word ptr [si+6],0
         mov     word ptr [si+8],0
 mapping_install_failed:
@@ -673,37 +720,50 @@ odq_max_mapping_install_ endp
 ; mapping may remain in that inactive clone while the verified root is active.
 odq_max_mapping_commit_ proc near
         push    si
+        push    bx
         mov     si,ax
         or      si,si
-        jz      short mapping_commit_failed
+        jz      mapping_commit_failed
         cmp     word ptr cs:qpi_context_ready,1
-        jne     short mapping_commit_failed
+        jne     mapping_commit_failed
         cmp     word ptr cs:qpi_owned_active,1
-        jne     short mapping_commit_failed
-        cmp     word ptr cs:qpi_mapping_active,1
-        jne     short mapping_commit_failed
-        cmp     word ptr cs:qpi_mapping_committed,0
-        jne     short mapping_commit_failed
+        jne     mapping_commit_failed
         cmp     word ptr [si+6],1
-        jne     short mapping_commit_failed
+        jne     mapping_commit_failed
         cmp     word ptr [si+8],0
-        jne     short mapping_commit_failed
+        jne     mapping_commit_failed
+
+        xor     bx,bx
+mapping_commit_find:
+        cmp     word ptr cs:qpi_mapping_active[bx],1
+        jne     short mapping_commit_next
         mov     ax,word ptr [si]
-        cmp     ax,word ptr cs:qpi_mapping_page
-        jne     short mapping_commit_failed
+        cmp     ax,word ptr cs:qpi_mapping_page[bx]
+        jne     short mapping_commit_next
         mov     ax,word ptr [si+2]
-        cmp     ax,word ptr cs:qpi_mapping_original
-        jne     short mapping_commit_failed
+        cmp     ax,word ptr cs:qpi_mapping_original[bx]
+        jne     short mapping_commit_next
         mov     ax,word ptr [si+4]
-        cmp     ax,word ptr cs:qpi_mapping_target
+        cmp     ax,word ptr cs:qpi_mapping_target[bx]
+        je      short mapping_commit_found
+mapping_commit_next:
+        add     bx,2
+        cmp     bx,QPI_MAP_BYTES
+        jb      short mapping_commit_find
+        jmp     short mapping_commit_failed
+mapping_commit_found:
+        cmp     word ptr cs:qpi_mapping_committed[bx],0
         jne     short mapping_commit_failed
-        mov     word ptr cs:qpi_mapping_committed,1
+        mov     word ptr cs:qpi_mapping_committed[bx],1
+        inc     word ptr cs:qpi_mapping_committed_count
         mov     word ptr [si+8],1
         mov     ax,1
+        pop     bx
         pop     si
         ret
 mapping_commit_failed:
         xor     ax,ax
+        pop     bx
         pop     si
         ret
 odq_max_mapping_commit_ endp
@@ -725,48 +785,69 @@ mapping_restore_pointer_ok:
 mapping_restore_backend_ok:
         cmp     word ptr cs:qpi_owned_active,1
         jne     mapping_restore_failed
-        cmp     word ptr cs:qpi_mapping_active,1
-        jne     mapping_restore_failed
         cmp     word ptr [si+6],1
         jne     mapping_restore_failed
-        mov     ax,word ptr [si+8]
-        cmp     ax,word ptr cs:qpi_mapping_committed
-        jne     mapping_restore_failed
-        mov     cx,word ptr [si]
-        cmp     cx,word ptr cs:qpi_mapping_page
-        jne     mapping_restore_failed
-        mov     dx,word ptr [si+2]
-        cmp     dx,word ptr cs:qpi_mapping_original
-        jne     mapping_restore_failed
-        mov     dx,word ptr [si+4]
-        cmp     dx,word ptr cs:qpi_mapping_target
-        jne     mapping_restore_failed
-        mov     dx,word ptr [si+2]
 
+        xor     bx,bx
+mapping_restore_find:
+        cmp     word ptr cs:qpi_mapping_active[bx],1
+        jne     short mapping_restore_next
+        mov     ax,word ptr [si]
+        cmp     ax,word ptr cs:qpi_mapping_page[bx]
+        jne     short mapping_restore_next
+        mov     ax,word ptr [si+2]
+        cmp     ax,word ptr cs:qpi_mapping_original[bx]
+        jne     short mapping_restore_next
+        mov     ax,word ptr [si+4]
+        cmp     ax,word ptr cs:qpi_mapping_target[bx]
+        je      short mapping_restore_found
+mapping_restore_next:
+        add     bx,2
+        cmp     bx,QPI_MAP_BYTES
+        jb      short mapping_restore_find
+        jmp     mapping_restore_failed
+mapping_restore_found:
+        mov     ax,word ptr [si+8]
+        cmp     ax,word ptr cs:qpi_mapping_committed[bx]
+        jne     mapping_restore_failed
+        mov     cx,word ptr cs:qpi_mapping_page[bx]
+        mov     dx,word ptr cs:qpi_mapping_original[bx]
+
+        push    bx
         mov     ax,QPI_SET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_restore_set
         add     sp,2
+        pop     bx
         jmp     short mapping_restore_failed
 mapping_restore_set:
         add     sp,2
-        mov     cx,word ptr cs:qpi_mapping_page
+        pop     bx
+        mov     cx,word ptr cs:qpi_mapping_page[bx]
+        push    bx
         mov     ax,QPI_GET_MAPPING
         pushf
         call    dword ptr cs:qpi_entry
         jnc     short mapping_restore_read
         add     sp,2
+        pop     bx
         jmp     short mapping_restore_failed
 mapping_restore_read:
         add     sp,2
-        cmp     dx,word ptr cs:qpi_mapping_original
+        pop     bx
+        cmp     dx,word ptr cs:qpi_mapping_original[bx]
         jne     short mapping_restore_failed
-        mov     word ptr cs:qpi_mapping_active,0
-        mov     word ptr cs:qpi_mapping_committed,0
-        mov     word ptr cs:qpi_mapping_page,0
-        mov     word ptr cs:qpi_mapping_original,0
-        mov     word ptr cs:qpi_mapping_target,0
+        cmp     word ptr cs:qpi_mapping_committed[bx],0
+        je      short mapping_restore_not_committed
+        dec     word ptr cs:qpi_mapping_committed_count
+mapping_restore_not_committed:
+        dec     word ptr cs:qpi_mapping_count
+        mov     word ptr cs:qpi_mapping_active[bx],0
+        mov     word ptr cs:qpi_mapping_committed[bx],0
+        mov     word ptr cs:qpi_mapping_page[bx],0
+        mov     word ptr cs:qpi_mapping_original[bx],0
+        mov     word ptr cs:qpi_mapping_target[bx],0
         mov     word ptr [si+6],0
         mov     word ptr [si+8],0
         mov     ax,1
@@ -816,10 +897,12 @@ qpi_root_context  dd 0
 qpi_owned_active  dw 0
 qpi_owned_page_count dw 0
 qpi_owned_pages      dd QPI_PAGE_SLOTS dup (0)
-qpi_mapping_active   dw 0
-qpi_mapping_committed dw 0
-qpi_mapping_page     dw 0
-qpi_mapping_original dw 0
-qpi_mapping_target   dw 0
+qpi_mapping_count           dw 0
+qpi_mapping_committed_count dw 0
+qpi_mapping_active          dw QPI_MAP_SLOTS dup (0)
+qpi_mapping_committed       dw QPI_MAP_SLOTS dup (0)
+qpi_mapping_page            dw QPI_MAP_SLOTS dup (0)
+qpi_mapping_original        dw QPI_MAP_SLOTS dup (0)
+qpi_mapping_target          dw QPI_MAP_SLOTS dup (0)
 
         end

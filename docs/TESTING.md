@@ -37,10 +37,10 @@ checks:
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone
   guards, verified clone/root switching, four-page private-pool exhaustion,
-  one verified page-map/restore cycle using its last page in an exclusively
-  reserved DOS test area,
-  refusal to restore root before map commit, committed-map persistence across
-  a root/clone switch, out-of-order release refusal and final ordered release;
+  a four-entry verified map/restore cycle in an exclusively reserved DOS test
+  area, refusal to restore root with a partially committed table, committed
+  table persistence across a root/clone switch, out-of-order release refusal
+  and final ordered release;
 * installer completeness and preservation of all three user files;
 * catalogue, settings and automatic-detection command modes;
 * duplicate-free automatic application;

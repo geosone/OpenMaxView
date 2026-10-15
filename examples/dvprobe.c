@@ -112,7 +112,8 @@ int main(void)
     odq_max_qpi_context qpi_context;
     odq_max_qpi_context qpi_second;
     odq_max_qpi_page qpi_pages[ODQ_MAX_PRIVATE_PAGES + 1];
-    odq_max_qpi_mapping qpi_mapping;
+    odq_max_qpi_mapping qpi_mappings[ODQ_MAX_MAPPINGS];
+    odq_max_qpi_mapping qpi_extra_mapping;
     unsigned scratch_segment;
     unsigned aligned_segment;
 
@@ -711,7 +712,8 @@ int main(void)
                 return 60;
             }
             puts("QPI private data-page pool limit enforced.");
-            if (_dos_allocmem(0x0200, &scratch_segment) != 0) {
+            if (_dos_allocmem((ODQ_MAX_MAPPINGS + 1) * 0x0100,
+                              &scratch_segment) != 0) {
                 puts("DOS scratch-area allocation failed.");
                 return 61;
             }
@@ -732,36 +734,72 @@ int main(void)
                 return 62;
             }
             puts("QPI active-clone private page release rejected.");
-            memset(&qpi_mapping, 0, sizeof(qpi_mapping));
-            qpi_mapping.linear_page = aligned_segment >> 8;
-            if (!odq_max_mapping_query(&qpi_mapping)) {
-                puts("QPI mapping query failed.");
-                return 55;
+            memset(qpi_mappings, 0, sizeof(qpi_mappings));
+            for (i = 0; i < ODQ_MAX_MAPPINGS; ++i) {
+                qpi_mappings[i].linear_page = (aligned_segment >> 8) + i;
+                if (!odq_max_mapping_query(&qpi_mappings[i])) {
+                    puts("QPI mapping-table query failed.");
+                    return 55;
+                }
+                qpi_mappings[i].mapped_frame =
+                    (unsigned)qpi_pages[i].frame;
+                if (!odq_max_mapping_install(&qpi_mappings[i]) ||
+                    !qpi_mappings[i].installed) {
+                    puts("QPI mapping-table installation failed.");
+                    return 56;
+                }
+                if (i == 0) {
+                    memset(&qpi_extra_mapping, 0,
+                           sizeof(qpi_extra_mapping));
+                    qpi_extra_mapping.linear_page =
+                        qpi_mappings[i].linear_page;
+                    qpi_extra_mapping.mapped_frame =
+                        (unsigned)qpi_pages[1].frame;
+                    if (odq_max_mapping_install(&qpi_extra_mapping)) {
+                        puts("QPI accepted a duplicate linear-page mapping.");
+                        return 74;
+                    }
+                }
             }
-            qpi_mapping.mapped_frame =
-                (unsigned)qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1].frame;
-            if (!odq_max_mapping_install(&qpi_mapping) ||
-                !qpi_mapping.installed) {
-                puts("QPI mapping installation failed.");
-                return 56;
+            puts("QPI four-entry mapping table installed and verified.");
+            memset(&qpi_extra_mapping, 0, sizeof(qpi_extra_mapping));
+            qpi_extra_mapping.linear_page =
+                (aligned_segment >> 8) + ODQ_MAX_MAPPINGS;
+            qpi_extra_mapping.mapped_frame = (unsigned)qpi_pages[0].frame;
+            if (odq_max_mapping_install(&qpi_extra_mapping)) {
+                puts("QPI exceeded the mapping-table capacity.");
+                return 75;
             }
-            puts("QPI owned-clone mapping installed and verified.");
+            puts("QPI mapping-table duplicate and capacity guards passed.");
             if (odq_max_context_restore()) {
                 puts("QPI restored root with an uncommitted mapping.");
                 return 57;
             }
             puts("QPI root restore blocked by uncommitted mapping.");
-            if (!odq_max_mapping_commit(&qpi_mapping) ||
-                !qpi_mapping.committed) {
-                puts("QPI mapping commit failed.");
-                return 66;
+            for (i = 0; i < ODQ_MAX_MAPPINGS - 1; ++i) {
+                if (!odq_max_mapping_commit(&qpi_mappings[i]) ||
+                    !qpi_mappings[i].committed) {
+                    puts("QPI mapping-table partial commit failed.");
+                    return 66;
+                }
             }
-            puts("QPI owned-clone mapping committed.");
+            if (odq_max_context_restore()) {
+                puts("QPI restored root with a partially committed table.");
+                return 72;
+            }
+            puts("QPI partial mapping-table commit blocks root restore.");
+            if (!odq_max_mapping_commit(
+                    &qpi_mappings[ODQ_MAX_MAPPINGS - 1]) ||
+                !qpi_mappings[ODQ_MAX_MAPPINGS - 1].committed) {
+                puts("QPI final mapping-table commit failed.");
+                return 73;
+            }
+            puts("QPI complete owned-clone mapping table committed.");
             if (!odq_max_context_restore()) {
                 puts("QPI root restore with a committed mapping failed.");
                 return 67;
             }
-            puts("QPI committed mapping survived verified root restore.");
+            puts("QPI committed mapping table survived verified root restore.");
             if (odq_max_page_release(
                     &qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1]) ||
                 odq_max_context_release(&qpi_context)) {
@@ -769,7 +807,7 @@ int main(void)
                 return 68;
             }
             puts("QPI committed mapping blocks page and clone release.");
-            if (odq_max_mapping_query(&qpi_mapping)) {
+            if (odq_max_mapping_query(&qpi_mappings[0])) {
                 puts("QPI queried an inactive clone mapping from root.");
                 return 69;
             }
@@ -777,19 +815,25 @@ int main(void)
                 puts("QPI committed clone reactivation failed.");
                 return 70;
             }
-            if (!odq_max_mapping_query(&qpi_mapping) ||
-                qpi_mapping.mapped_frame !=
-                    (unsigned)qpi_pages[ODQ_MAX_PRIVATE_PAGES - 1].frame) {
-                puts("QPI committed mapping did not persist.");
-                return 71;
+            for (i = 0; i < ODQ_MAX_MAPPINGS; ++i) {
+                if (!odq_max_mapping_query(&qpi_mappings[i]) ||
+                    qpi_mappings[i].mapped_frame !=
+                        (unsigned)qpi_pages[i].frame) {
+                    puts("QPI committed mapping table did not persist.");
+                    return 71;
+                }
             }
-            puts("QPI committed mapping persisted across context switch.");
-            if (!odq_max_mapping_restore(&qpi_mapping) ||
-                qpi_mapping.installed || qpi_mapping.committed) {
-                puts("QPI mapping restoration failed.");
-                return 58;
+            puts("QPI committed mapping table persisted across context switch.");
+            for (i = 0; i < ODQ_MAX_MAPPINGS; ++i) {
+                page_index = qpi_release_order[i];
+                if (!odq_max_mapping_restore(&qpi_mappings[page_index]) ||
+                    qpi_mappings[page_index].installed ||
+                    qpi_mappings[page_index].committed) {
+                    puts("QPI mapping-table restoration failed.");
+                    return 58;
+                }
             }
-            puts("QPI owned-clone mapping restored and verified.");
+            puts("QPI owned-clone mapping table restored and verified.");
             if (!odq_max_context_restore()) {
                 puts("QPI root context restoration failed.");
                 return 44;

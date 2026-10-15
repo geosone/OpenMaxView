@@ -6,6 +6,7 @@
 #define ODQ_MAX_CAP_STATUS       0x0001
 #define ODQ_QPI_VERSION_7_3      0x0703
 #define ODQ_MAX_PRIVATE_PAGES    4
+#define ODQ_MAX_MAPPINGS         4
 
 typedef struct odq_max_backend_info {
     unsigned abi_version;

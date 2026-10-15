@@ -222,18 +222,19 @@ so a foreign startup context is never adopted as the baseline.
 
 The next bounded layer owns up to four private 4 KiB data pages for point 3.
 They are allocated with `04h` only after a clone exists and while root is
-active. In the clone, the wrapper reads the original linear-page frame with
-`09h`, installs only a frame from that owned pool with `0Ah`, verifies it with
-`09h`, and applies the same write/read-back discipline when restoring the
-original. A live or
-unverifiable replacement initially prevents root restoration. After an
-explicit record-checked commit, the replacement may persist in the inactive
-clone while the verified root is active. Reactivating the owned clone exposes
-the same mapping for verification and restoration. The installed mapping
-prevents page or clone release, and any allocated data page continues to
-prevent clone release until all pool entries have been released from root.
-This is a genuine private-page lifetime and persistent mapping primitive, not
-yet a complete DOS memory map or runnable second task.
+active. In the clone, the wrapper reads up to four original linear-page frames
+with `09h`, installs only frames from that owned pool with `0Ah`, verifies each
+with `09h`, and applies the same write/read-back discipline when restoring
+them. Linear-page numbers are unique within this bounded table. Any live,
+uncommitted or unverifiable replacement initially prevents root restoration.
+Only after every entry has an explicit record-checked commit may the table
+persist in the inactive clone while the verified root is active. Reactivating
+the owned clone exposes the same mappings for verification and restoration.
+Any installed mapping prevents page or clone release, and any allocated data
+page continues to prevent clone release until all pool entries have been
+released from root. This is a genuine private-page lifetime and persistent
+mapping-table primitive, not yet a complete DOS memory map or runnable second
+task.
 
 Points 1, 4, 7 and 8 stay with Open MaxView (the scheduler runs in V86, as
 DESQview's does on QEMM: it saves and restores a task's registers itself)
@@ -253,11 +254,11 @@ and fail the Windows launch if the standard context cannot be established.
 Open 386MAX enforces the invariant as well: its `INT 2Fh AX=1605h` handler
 refuses the Windows start (`CX` non-zero) while a QPI context other than the
 root one is active.
-The backend conformance probe now verifies clone activation, mapping
-installation/restoration through an owned private data page, refusal to leave
-a clone before mapping commit, persistence in the inactive clone after a
-verified root switch, four-page pool exhaustion, and ordered page/context
-release. A committed private
+The backend conformance probe now verifies clone activation, a four-entry
+mapping table backed by the owned private-page pool, refusal to leave a clone
+before every mapping is committed, persistence in the inactive clone after a
+verified root switch, pool/table exhaustion, and ordered page/context release.
+A committed private
 mapping does not weaken the Windows rule: it remains in the inactive clone,
 while the root switch is verified before control returns. Multi-context
 Windows support still requires the future launcher path to call the same

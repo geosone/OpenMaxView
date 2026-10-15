@@ -195,17 +195,18 @@ from `0000h` through `03FFh` and use QPI `09h`/`0Ah` only while this wrapper's
 owned clone is active. The mapping record contains the linear page, the saved
 original 16-bit physical frame, the requested frame, an installed flag and a
 committed flag. The requested frame must be the private page owned by this
-wrapper. At most one replacement may be outstanding.
+wrapper. Up to four replacements may be outstanding, and their linear-page
+numbers must be unique.
 
 Installation reads the old frame and verifies the new frame, but initially
-leaves the replacement uncommitted. An uncommitted or unverifiable mapping
+leaves that table entry uncommitted. Any uncommitted or unverifiable entry
 blocks root restoration. `odq_max_mapping_commit` validates the complete
-record against backend-owned state and explicitly permits a verified switch
-back to root, leaving the committed replacement in the inactive clone. The
-clone must be reactivated before querying or restoring that mapping.
-Restoration writes the saved frame and reads it back before clearing both
-flags. Any installed mapping, committed or not, blocks release of its data
-page and clone.
+record against backend-owned state; a verified switch back to root is
+permitted only after every installed entry is committed. The replacements
+then remain in the inactive clone. The clone must be reactivated before
+querying or restoring them. Restoration writes each saved frame and reads it
+back before clearing that entry's two flags. Any installed mapping, committed
+or not, blocks release of all data pages and the clone.
 
 The mapping record and the backend code, data and active stack must remain
 reachable while these calls run; callers therefore must not use this
@@ -240,9 +241,9 @@ selectors. It also reports whether the versioned
 Open 386MAX backend ABI is available and, when it is, the standard QPI version
 and active page-table frame. Against a context-capable provider it also checks
 active/root and empty-token rejection, rejection of a second outstanding
-clone, allocation and exhaustion of the four-page private pool, a
-saved/set/read-back/restored single-page mapping backed by its last owned QPI
-data page, rejection of a root switch before mapping commit, persistence
-across a verified root/clone switch after commit, refusal to release resources
-while the mapping remains installed, and page/context release only after
+clone, allocation and exhaustion of the four-page private pool, a four-entry
+saved/set/read-back/restored mapping table backed by those QPI data pages,
+rejection of a root switch before every entry is committed, persistence across
+a verified root/clone switch after full commit, refusal to release resources
+while any mapping remains installed, and page/context release only after
 verified restoration.

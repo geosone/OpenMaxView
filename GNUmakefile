@@ -337,13 +337,15 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	rg -q 'QPI owned context activation verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI active owned context release rejected' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI active-clone private page release rejected' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI owned-clone mapping installed and verified' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI four-entry mapping table installed and verified' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI mapping-table duplicate and capacity guards passed' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI root restore blocked by uncommitted mapping' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI owned-clone mapping committed' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI committed mapping survived verified root restore' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI partial mapping-table commit blocks root restore' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI complete owned-clone mapping table committed' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI committed mapping table survived verified root restore' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI committed mapping blocks page and clone release' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI committed mapping persisted across context switch' $(BUILD)/MVPROBE2.TXT
-	rg -q 'QPI owned-clone mapping restored and verified' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI committed mapping table persisted across context switch' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI owned-clone mapping table restored and verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI root context restoration verified' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI private-page ownership blocks clone release' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI private data-page pool released after root restoration' $(BUILD)/MVPROBE2.TXT
