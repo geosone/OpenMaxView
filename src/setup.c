@@ -45,6 +45,7 @@ static const install_file files[] = {
     { "MAXVAUTO.EXE", "MAXVAUTO.EXE", 1, 0 },
     { "MAXVFILE.EXE", "MAXVFILE.EXE", 1, 0 },
     { "MAXVANSI.COM", "MAXVANSI.COM", 1, 0 },
+    { "MAXVDVP.EXE", "MAXVDVP.EXE", 1, 0 },
     { "MAXVIEW.CFG", "MAXVIEW.CFG", 1, 1 },
     { "MAXVSET.INI", "MAXVSET.INI", 1, 1 },
     { "MAXVAUTO.DAT", "MAXVAUTO.DAT", 1, 1 },

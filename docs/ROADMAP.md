@@ -15,8 +15,9 @@ Further 0.x work should land in independently testable slices:
 
 1. Extend the resident API with handles, object lifetime, timers, keyboard
    queues, mailboxes and panel calls.
-2. Parse documented `.DVP` fields into a versioned internal process
-   descriptor while retaining an editable open format.
+2. Extend the implemented `.DVP` parser beyond basic catalogue import by
+   carrying its decoded scheduler, video, serial and protection fields into a
+   versioned internal process descriptor as backend capabilities land.
 3. Add cooperative execution primitives for Open MaxView-aware tasks.
 4. Specify, implement and test Open 386MAX VM create/destroy, register state,
    memory maps, virtual interrupts, video and I/O trapping.

@@ -69,6 +69,12 @@ through BIOS video services.  It intentionally makes no claim of per-task
 ANSI state: direct video writes and future concurrent contexts belong to the
 Open 386MAX video-virtualisation boundary.
 
+`MAXVDVP.EXE` and the host-testable `dvp` module parse the documented binary
+TopView/DESQview program-information layout without using Quarterdeck code.
+The parser validates the base checksum and bounded ASCIZ fields. Import maps
+only fields represented by the open catalogue; it exposes advanced DVP values
+for diagnostics rather than pretending that foreground mode enforces them.
+
 The shared 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,
 red triggers, cyan selection, shadows, double dialog borders and bottom
@@ -102,7 +108,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
 | Concurrent V86 tasks | planned | Requires Open 386MAX extension |
 | Per-task video and I/O | planned | Requires page mapping and port traps |
-| DVP binary compatibility | planned | Plain-text ODP catalogue is used meanwhile |
+| `.DVP` import | basic fields implemented | Advanced VM/scheduler fields decoded but not enforced |
 
 ## VM-backend contract (planned)
 
@@ -130,8 +136,8 @@ of the current backend contract.
 1. Expand the resident API from the 0.2 pause/critical/video baseline with
    object handles, timers, keyboard queues and mailboxes; provide tiny
    conformance programs for every call.
-2. Parse documented `.DVP` fields and translate them into an internal process
-   descriptor.
+2. Carry the implemented `.DVP` parser's advanced fields into an internal
+   process descriptor as scheduler and VM capabilities become available.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.
 4. Define and implement the Open 386MAX VM extension.
 5. Add preemptive scheduling, private DOS state, video virtualisation and

@@ -15,7 +15,7 @@
 | Settings, file and memory tools | Implemented | Current foreground-safe features only. |
 | ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
 | Open 386MAX backend | Discovery/status only | ABI 1.0 has no multi-context capability. |
-| `.DVP` compatibility | Planned for 1.x | Version-1 text catalogue is used now. |
+| `.DVP` compatibility | Basic import implemented | Launch fields import; advanced task fields await backend support. |
 | Objects, panels, mailboxes, timers | Planned for 1.x | Must be independently specified and tested. |
 | Concurrent V86 tasks and scheduler | Planned for 1.x | Requires the new Open 386MAX contract. |
 | Per-task video, keyboard and I/O | Planned for 1.x | Requires context isolation and traps. |

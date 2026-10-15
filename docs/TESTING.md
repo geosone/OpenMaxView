@@ -8,10 +8,11 @@ Run:
 make test
 ```
 
-The catalogue, settings and automatic-detection modules are compiled as strict
-C89 with warnings as errors. Tests cover valid and invalid records, limits,
-duplicate handling, atomic-save behaviour and detection. Python unit tests
-exercise the read-only QIP directory parser.
+The catalogue, settings, automatic-detection and DVP modules are compiled as
+strict C89 with warnings as errors. Tests cover valid and invalid records,
+limits, duplicate handling, atomic-save behaviour and detection. Synthetic,
+freely generated DVP data tests checksum rejection, bounded field parsing and
+catalogue conversion. Python unit tests exercise the read-only QIP parser.
 
 ## DOS integration tests
 
@@ -32,7 +33,8 @@ checks:
 * catalogue, settings and automatic-detection command modes;
 * duplicate-free automatic application;
 * file list, copy, overwrite, self-copy guard and guarded deletion;
-* ANSI cursor, character and colour behaviour.
+* ANSI cursor, character and colour behaviour;
+* DVP validation, field listing, catalogue import and imported-catalogue check.
 
 Temporary DOS trees are created below `build/`. The test does not touch a
 real DOS installation or proprietary reference media.

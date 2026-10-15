@@ -66,3 +66,17 @@ EDIT.COM|DOS text editor|EDIT.COM|192|640
 
 Use `MAXVAUTO /CHECK` after hand editing. Because Setup preserves this file,
 local free-software and site-specific rules survive an upgrade.
+
+## DESQview .DVP import
+
+`.DVP` is a binary compatibility input, not an Open MaxView configuration file
+to edit. `MAXVDVP` validates the checksum over the common PIF/DVP base and
+bounded title, pathname, directory and parameter fields before conversion. It
+maps these values plus the menu key and conventional-memory limits into a new
+catalogue record. The source file is opened read-only.
+
+DESQview-specific script-buffer, idle-poll, text/graphics-page, EMS,
+serial-port and protection fields are decoded for `/LIST`. They are not stored
+in the version-1 catalogue because the foreground launcher cannot enforce
+them. A later versioned process descriptor will retain them when the matching
+1.x scheduler and VM capabilities exist.

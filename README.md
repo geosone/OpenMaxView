@@ -31,6 +31,7 @@ This first runnable milestone provides:
 * `MAXVFILE.EXE`, a DOS file-services manager for directory navigation, file
   copying, renaming, directory creation and confirmed deletion;
 * `MAXVANSI.COM`, a compact resident ANSI console for foreground DOS output;
+* `MAXVDVP.EXE`, a validated DESQview `.DVP` inspector and catalogue importer;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
@@ -82,7 +83,7 @@ SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
 MAXVAPP.EXE     MAXVMEM.EXE     MAXVSET.EXE
 MAXVAUTO.EXE    MAXVAUTO.DAT    DVPROBE.EXE
 MAXVFILE.EXE    MAXVIEW.CFG     MAXVSET.INI
-MAXVANSI.COM
+MAXVANSI.COM    MAXVDVP.EXE
 README.TXT      LICENSE.TXT     DOCS.TXT
 USERGUID.TXT    TOOLS.TXT       CONFIG.TXT
 BUILDING.TXT    TESTING.TXT     COMPAT.TXT
@@ -193,6 +194,16 @@ ANSI colour, bold, blink and reverse-video attributes (`m`).  Installation is
 discoverable through a private, versioned multiplex query, and a second run is
 harmless.  Programs that write directly to video memory bypass the service;
 per-window ANSI state will require the future multi-context video backend.
+
+`MAXVDVP.EXE` reads the documented TopView/DESQview program-information
+layout, verifies the base checksum and imports the title, command, parameters,
+working directory, menu key and memory limits into `MAXVIEW.CFG`. Running
+`MAXVDVP` opens a 386MAX-style `.DVP` browser and confirmation screen.
+Automation uses `/CHECK`, `/LIST` or `/IMPORT`, with `/F:catalog` and optional
+`/K:key`.
+Advanced DVP scheduling, virtualization, serial-port and protection fields are
+reported by `/LIST` but are not enforced until the corresponding 1.x backend
+capabilities exist.
 
 ## Reference-media inventory
 

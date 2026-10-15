@@ -60,6 +60,12 @@ It compares filenames with `MAXVAUTO.DAT`, excludes commands already present
 in the catalogue, and lets the user choose what to add. It never executes a
 detected file. Additional directory trees may be supplied with `/R:directory`.
 
+Existing DESQview entries can be migrated with `MAXVDVP old-PIF.DVP`. Review
+the decoded title, command, directory and memory limits, then press Enter to
+add the entry. The import never modifies the DVP. Use `MAXVDVP /CHECK file.DVP`
+before batch migration and keep the generated `MAXVIEW.BAK` until the imported
+program has been tested.
+
 ## Configure Open MaxView
 
 Run `MAXVSET` to change global preferences. Every displayed setting is used

@@ -98,6 +98,29 @@ MAXVMEM [/T]
 `/T` emits stable key/value output for automated diagnostics. The tool does
 not allocate memory or change the Open 386MAX configuration.
 
+## MAXVDVP.EXE
+
+Validated DESQview Program Information File inspector and importer.
+
+```text
+MAXVDVP
+MAXVDVP file.dvp [/F:catalog] [/K:key]
+MAXVDVP /CHECK|/LIST file.dvp
+MAXVDVP /IMPORT file.dvp [/F:catalog] [/K:key]
+```
+
+With no filename the 386MAX-style browser lists `.DVP` files in the current
+directory. Selecting a file opens the confirmation screen. `/CHECK` verifies
+the documented base size, checksum and required fields. `/LIST` prints decoded
+base and DESQview 2.x fields. `/IMPORT` adds the basic launch record without
+interaction. `/F:` selects another catalogue and `/K:` requests a hotkey.
+Colliding hotkeys are replaced automatically; duplicate commands and full
+catalogues are rejected. Catalogue updates retain the prior file as `.BAK`.
+
+The current catalogue can represent title, command/parameters, directory,
+hotkey and conventional-memory limits. Other decoded DVP fields remain visible
+for later 1.x scheduler and VM work but are not silently claimed as enforced.
+
 ## DVPROBE.EXE
 
 Developer diagnostic for the resident DESQview-compatible calls and the

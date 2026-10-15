@@ -20,6 +20,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
+	$(BUILD)/MAXVDVP.EXE \
 	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES))
@@ -86,6 +87,15 @@ $(BUILD)/maxvfile.obj: src/maxvfile.c include/mvui.h | $(BUILD)
 
 $(BUILD)/MAXVFILE.EXE: $(BUILD)/maxvfile.obj $(BUILD)/mvui.obj
 	cd $(BUILD) && $(JWLINK) format dos name MAXVFILE.EXE option quiet option map=MAXVFILE.MAP option stack=8192 option nofarcalls file maxvfile.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+
+$(BUILD)/dvp.obj: src/dvp.c include/dvp.h include/catalog.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
+$(BUILD)/maxvdvp.obj: src/maxvdvp.c include/dvp.h include/catalog.h include/mvui.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
+$(BUILD)/MAXVDVP.EXE: $(BUILD)/maxvdvp.obj $(BUILD)/dvp.obj $(BUILD)/catalog.obj $(BUILD)/mvui.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVDVP.EXE option quiet option map=MAXVDVP.MAP option stack=8192 option nofarcalls file maxvdvp.obj,dvp.obj,catalog.obj,mvui.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 $(BUILD)/maxvansi.obj: kernel/maxvansi.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
@@ -174,6 +184,7 @@ package: all
 	cp $(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVTSR.COM \
 		$(BUILD)/MAXVAPP.EXE $(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE \
 		$(BUILD)/MAXVAUTO.EXE $(BUILD)/MAXVFILE.EXE $(BUILD)/DVPROBE.EXE \
+		$(BUILD)/MAXVDVP.EXE \
 		$(BUILD)/MAXVANSI.COM $(BUILD)/MAXVIEW.CFG \
 		$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 		$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES)) $(PACKAGE)/
@@ -187,17 +198,23 @@ $(BUILD)/test_settings: tests/test_settings.c src/settings.c include/settings.h 
 $(BUILD)/test_autodetect: tests/test_autodetect.c src/autodetect.c src/catalog.c include/autodetect.h include/catalog.h | $(BUILD)
 	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_autodetect.c src/autodetect.c src/catalog.c
 
-test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect
+$(BUILD)/test_dvp: tests/test_dvp.c src/dvp.c src/catalog.c include/dvp.h include/catalog.h | $(BUILD)
+	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_dvp.c src/dvp.c src/catalog.c
+
+test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BUILD)/test_dvp
 	$(BUILD)/test_catalog
 	$(BUILD)/test_settings
 	$(BUILD)/test_autodetect
+	$(BUILD)/test_dvp
 	python3 -m unittest discover -s tests -p 'test_*.py'
 
-test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
+test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/test_dvp
 	rm -rf $(BUILD)/INSTTEST
 	rm -rf $(BUILD)/AUTOTEST
 	rm -rf $(BUILD)/FILETEST
 	rm -f $(BUILD)/AUTOCFG $(BUILD)/AUTOCFG.BAK $(BUILD)/AUTOCFG.NEW
+	rm -f $(BUILD)/DVPCFG $(BUILD)/DVPCFG.BAK $(BUILD)/DVPCFG.NEW $(BUILD)/test.dvp
+	$(BUILD)/test_dvp --keep
 	mkdir -p $(BUILD)/AUTOTEST
 	mkdir -p $(BUILD)/FILETEST
 	cp $(BUILD)/MAXVTSR.COM $(BUILD)/AUTOTEST/EDIT.COM
@@ -219,6 +236,15 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
 		-c 'echo INIKEEP> C:\BUILD\INSTTEST\MAXVSET.INI' \
 		-c 'echo DATKEEP> C:\BUILD\INSTTEST\MAXVAUTO.DAT' \
 		-c 'SETUP.EXE /S /D:C:\BUILD\INSTTEST > INSTALL2.TXT' \
+		-c 'exit' >/dev/null 2>&1
+	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
+		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
+		-c 'MAXVDVP.EXE /CHECK TEST.DVP > DVPCHK.TXT' \
+		-c 'MAXVDVP.EXE /LIST TEST.DVP > DVPLIST.TXT' \
+		-c 'COPY MAXVIEW.CFG DVPCFG > NUL' \
+		-c 'MAXVDVP.EXE /IMPORT TEST.DVP /F:DVPCFG /K:Q > DVPIMP.TXT' \
+		-c 'MAXVAPP.EXE /CHECK /F:DVPCFG > DVPCAT.TXT' \
+		-c 'MAXVAPP.EXE /LIST /F:DVPCFG > DVPREC.TXT' \
 		-c 'exit' >/dev/null 2>&1
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
@@ -274,6 +300,11 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
 	rg -q 'file copied' $(BUILD)/FILECOPY.TXT
 	rg -q 'copy failed' $(BUILD)/FILESAME.TXT
 	rg -q 'file copied' $(BUILD)/FILEOVER.TXT
+	rg -q 'valid DVP for Sample editor' $(BUILD)/DVPCHK.TXT
+	rg -q 'PATH=C:\\DOS\\EDIT.COM' $(BUILD)/DVPLIST.TXT
+	rg -q 'imported Sample editor as hotkey Q' $(BUILD)/DVPIMP.TXT
+	rg -q 'valid program' $(BUILD)/DVPCAT.TXT
+	rg -q 'Q|Sample editor|C:\\DOS\\EDIT.COM NOTES.TXT|C:\\WORK|192|640' $(BUILD)/DVPREC.TXT
 	cmp $(BUILD)/FILETEST/OTHER.BIN $(BUILD)/FILETEST/COPY.BIN
 	test ! -f '$(BUILD)/FILETEST/COPY.$$MV'
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
@@ -290,6 +321,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.EXE
 	test -f $(BUILD)/INSTTEST/MAXVFILE.EXE
 	test -f $(BUILD)/INSTTEST/MAXVANSI.COM
+	test -f $(BUILD)/INSTTEST/MAXVDVP.EXE
 	test -f $(BUILD)/INSTTEST/MAXVIEW.CFG
 	test -f $(BUILD)/INSTTEST/MAXVSET.INI
 	test -f $(BUILD)/INSTTEST/MAXVAUTO.DAT
