@@ -27,20 +27,29 @@ $(BUILD)/odqtsr.obj: kernel/odqtsr.asm | $(BUILD)
 $(BUILD)/MAXVTSR.COM: $(BUILD)/odqtsr.obj
 	cd $(BUILD) && $(JWLINK) format dos com name MAXVTSR.COM option quiet option map=MAXVTSR.MAP file odqtsr.obj
 
-$(BUILD)/opendesq.obj: src/opendesq.c include/catalog.h include/odqapi.h | $(BUILD)
+$(BUILD)/opendesq.obj: src/opendesq.c include/catalog.h include/maxbackend.h include/odqapi.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
 $(BUILD)/catalog.obj: src/catalog.c include/catalog.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
-$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj
-	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=8192 option nofarcalls file opendesq.obj,catalog.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+$(BUILD)/maxbackend.obj: kernel/maxbackend.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 
-$(BUILD)/dvprobe.obj: examples/dvprobe.c include/odqapi.h | $(BUILD)
+$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/maxbackend.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=8192 option nofarcalls file opendesq.obj,catalog.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+
+$(BUILD)/dvprobe.obj: examples/dvprobe.c include/maxbackend.h include/odqapi.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
-$(BUILD)/DVPROBE.EXE: $(BUILD)/dvprobe.obj
-	cd $(BUILD) && $(JWLINK) format dos name DVPROBE.EXE option quiet option map=DVPROBE.MAP option stack=2048 option nofarcalls file dvprobe.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+$(BUILD)/DVPROBE.EXE: $(BUILD)/dvprobe.obj $(BUILD)/maxbackend.obj
+	cd $(BUILD) && $(JWLINK) format dos name DVPROBE.EXE option quiet option map=DVPROBE.MAP option stack=2048 option nofarcalls file dvprobe.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+
+$(BUILD)/maxstub.obj: tests/maxstub.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/MAXSTUB.COM: $(BUILD)/maxstub.obj
+	cd $(BUILD) && $(JWLINK) format dos com name MAXSTUB.COM option quiet option map=MAXSTUB.MAP file maxstub.obj
 
 $(BUILD)/setup.obj: src/setup.c | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
@@ -71,18 +80,27 @@ test: $(BUILD)/test_catalog
 	$(BUILD)/test_catalog
 	python3 -m unittest discover -s tests -p 'test_*.py'
 
-test-dos: all
+test-dos: all $(BUILD)/MAXSTUB.COM
 	rm -rf $(BUILD)/INSTTEST
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
-		-c 'MAXVTSR.COM > MVTSR.TXT' -c 'DVPROBE.EXE > MVPROBE.TXT' \
+		-c 'MAXVTSR.COM > MVTSR.TXT' -c 'MAXVTSR.COM > MVTSR2.TXT' \
+		-c 'DVPROBE.EXE > MVPROBE.TXT' -c 'MAXSTUB.COM' \
+		-c 'DVPROBE.EXE > MVPROBE2.TXT' -c 'exit' >/dev/null 2>&1
+	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
+		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'SETUP.EXE /S /D:C:\BUILD\INSTTEST > INSTALL.TXT' \
 		-c 'echo PRESERVED> C:\BUILD\INSTTEST\MAXVIEW.CFG' \
 		-c 'SETUP.EXE /S /D:C:\BUILD\INSTTEST > INSTALL2.TXT' \
 		-c 'exit' >/dev/null 2>&1
-	rg -q 'resident API 0.1 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'resident API 0.2 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'PAUSE call returned successfully' $(BUILD)/MVPROBE.TXT
+	rg -q 'Nested critical-section state passed' $(BUILD)/MVPROBE.TXT
+	rg -q 'Alternate video-buffer API passed' $(BUILD)/MVPROBE.TXT
+	rg -q 'Open 386MAX backend not detected' $(BUILD)/MVPROBE.TXT
+	rg -q 'Open 386MAX backend ABI 1.0, 2/4 contexts' $(BUILD)/MVPROBE2.TXT
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	test -f $(BUILD)/INSTTEST/MAXVIEW.EXE
 	test -f $(BUILD)/INSTTEST/MAXVTSR.COM

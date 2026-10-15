@@ -10,14 +10,15 @@ The repository does **not** contain files from Quarterdeck's DESQview media.
 Those files are useful as behavioural reference material, but are neither a
 build dependency nor redistributed.
 
-## Current milestone: 0.1
+## Current milestone: 0.2
 
 This first runnable milestone provides:
 
 * `MAXVIEW.EXE`, an 80x25 DOS program launcher with a DESQview-style menu;
 * `MAXVTSR.COM`, a resident compatibility service which implements the
-  documented DESQview presence query and cooperative `PAUSE` call;
-* Open 386MAX/VCPI detection and a diagnostic screen;
+  documented DESQview presence query, cooperative `PAUSE`, nested critical
+  sections and the alternate text-video-buffer calls;
+* Open 386MAX backend ABI discovery/status validation and a diagnostic screen;
 * the Open 386MAX QUILIB look: two-pane layout, palette, shadows, hotkeys and
   bottom command buttons;
 * `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
@@ -25,7 +26,7 @@ This first runnable milestone provides:
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
 
-The 0.1 launcher runs one ordinary DOS child at a time.  It is not yet a
+The 0.2 launcher runs one ordinary DOS child at a time.  It is not yet a
 drop-in replacement for DESQview's concurrent virtual DOS machines.  That
 requires VM creation, per-VM conventional-memory mappings, DOS-state
 virtualisation, timer scheduling, and video/I/O trapping in Open 386MAX.  The
@@ -81,8 +82,10 @@ The workflow and visual design are adapted from the GPL-licensed Open 386MAX
 DOS installer, without its registration, compressed-media, CONFIG.SYS or
 memory-manager-specific code.
 
-For the eventual 386 backend, boot DOS with Open 386MAX first.  Version 0.1
-only detects VCPI and reports it; it does not yet request private VM services.
+For the eventual 386 backend, boot DOS with the `9x` branch of Open 386MAX.
+Version 0.2 validates its private ABI and reports the root-context status.  It
+does not claim or request multiple VM services until Open 386MAX advertises
+the corresponding capability.
 
 ## Program catalogue
 

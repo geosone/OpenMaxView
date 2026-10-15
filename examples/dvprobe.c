@@ -2,11 +2,28 @@
 #include <dos.h>
 #include <stdio.h>
 
+#include "maxbackend.h"
 #include "odqapi.h"
+
+static int query_state(unsigned expected_depth, unsigned *video_segment)
+{
+    union REGS inregs, outregs;
+
+    inregs.x.ax = ODQ_MUX_INFO;
+    int86(0x2f, &inregs, &outregs);
+    if (outregs.x.bx != ODQ_CAPABILITIES ||
+        outregs.x.cx != expected_depth)
+        return 0;
+    *video_segment = outregs.x.dx;
+    return 1;
+}
 
 int main(void)
 {
     union REGS inregs, outregs;
+    struct SREGS segreg;
+    unsigned video_segment = 0;
+    odq_max_backend_info backend;
 
     inregs.x.ax = 0x2b01;
     inregs.x.cx = 0x4445;
@@ -22,6 +39,49 @@ int main(void)
     inregs.x.ax = ODQ_DVC_PAUSE;
     int86(0x15, &inregs, &outregs);
     puts("PAUSE call returned successfully.");
+
+    if (!query_state(0, &video_segment)) {
+        puts("Private capability query failed.");
+        return 2;
+    }
+    inregs.x.ax = ODQ_DVC_BEGIN_CRITICAL;
+    int86(0x15, &inregs, &outregs);
+    int86(0x15, &inregs, &outregs);
+    inregs.x.ax = ODQ_DVC_PAUSE;
+    int86(0x15, &inregs, &outregs);
+    if (!query_state(2, &video_segment)) {
+        puts("Nested critical-section state failed.");
+        return 3;
+    }
+    inregs.x.ax = ODQ_DVC_END_CRITICAL;
+    int86(0x15, &inregs, &outregs);
+    int86(0x15, &inregs, &outregs);
+    int86(0x15, &inregs, &outregs);
+    if (!query_state(0, &video_segment)) {
+        puts("Critical-section underflow protection failed.");
+        return 4;
+    }
+    puts("Nested critical-section state passed.");
+
+    segread(&segreg);
+    segreg.es = video_segment;
+    inregs.h.ah = 0xfe;
+    inregs.x.di = 0xffff;
+    int86x(0x10, &inregs, &outregs, &segreg);
+    if (segreg.es != video_segment || outregs.x.di != 0) {
+        puts("Alternate video-buffer query failed.");
+        return 5;
+    }
+    inregs.h.ah = 0xff;
+    int86(0x10, &inregs, &outregs);
+    puts("Alternate video-buffer API passed.");
+
+    if (odq_max_backend_query(&backend))
+        printf("Open 386MAX backend ABI %u.%u, %u/%u contexts.\n",
+               backend.abi_version >> 8, backend.abi_version & 0xff,
+               backend.active_contexts, backend.context_limit);
+    else
+        puts("Open 386MAX backend not detected (foreground mode).");
     return 0;
 }
 

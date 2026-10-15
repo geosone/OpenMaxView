@@ -14,6 +14,13 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
+The 0.2 resident API tracks nested critical sections and implements the
+documented `INT 10h/AH=FEh` alternate-buffer query.  In foreground-only mode
+the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
+change notifications are accepted.  MAXVIEW resets per-child critical state
+on both sides of DOS `EXEC`, so an unbalanced child cannot leak state into the
+next launch.
+
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.1 it launches a child through DOS and
 regains control when that child exits.
@@ -30,10 +37,10 @@ red triggers, cyan selection, shadows, double dialog borders and bottom
 buttons.  The renderer stays local so future builds can run without copying or
 installing the full 386MAX user-interface library.
 
-Open 386MAX is the intended 386 VMM.  Its existing public build supplies EMS,
-XMS, VCPI and a small QPI I/O-trapping subset.  Open MaxView will need a separately
-versioned extension for creating and scheduling multiple V86 contexts; the
-current QPI subset cannot do that.
+Open 386MAX is the intended 386 VMM.  Its `9x` branch supplies EMS, XMS, VCPI,
+a small QPI I/O-trapping subset, and an Open-MaxView-specific ABI query.  The
+launcher validates that query and reports its root-context status.  The
+current capability mask intentionally exposes no multi-context service.
 
 ## Compatibility levels
 
@@ -41,7 +48,8 @@ current QPI subset cannot do that.
 |---|---|---|
 | Presence query | implemented | `INT 21h AX=2B01h CX=4445h DX=5351h` |
 | Cooperative pause | implemented | `INT 15h AX=1000h` returns safely |
-| Critical markers | implemented as no-op | Calls are accepted; scheduling is not active |
+| Critical markers | implemented | Saturating nested depth; reset around each child |
+| Alternate video buffer | implemented for foreground | B000h/B800h alias plus change notification |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
 | Concurrent V86 tasks | planned | Requires Open 386MAX extension |
@@ -67,8 +75,9 @@ legacy QEMM service until its observable behaviour has conformance tests.
 
 ## Roadmap
 
-1. Expand the resident API with object handles, timers, keyboard queues and
-   mailboxes; provide tiny conformance programs for every call.
+1. Expand the resident API from the 0.2 pause/critical/video baseline with
+   object handles, timers, keyboard queues and mailboxes; provide tiny
+   conformance programs for every call.
 2. Parse documented `.DVP` fields and translate them into an internal process
    descriptor.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.

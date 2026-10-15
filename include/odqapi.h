@@ -10,8 +10,16 @@
 
 /* Open MaxView-private INT 2Fh service.  "OD" is returned in BX. */
 #define ODQ_MUX_STATUS          0xd700
+#define ODQ_MUX_INFO            0xd701
+#define ODQ_MUX_RESET           0xd702
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0001
+#define ODQ_MUX_VERSION         0x0002
+
+#define ODQ_CAP_PRESENCE        0x0001
+#define ODQ_CAP_PAUSE           0x0002
+#define ODQ_CAP_CRITICAL        0x0004
+#define ODQ_CAP_VIDEO_BUFFER    0x0008
+#define ODQ_CAPABILITIES        0x000f
 
 #endif
 

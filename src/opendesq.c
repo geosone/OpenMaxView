@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "catalog.h"
+#include "maxbackend.h"
 #include "odqapi.h"
 
 #define SCREEN_COLS 80
@@ -133,6 +134,13 @@ static int odq_resident(void)
     return outregs.x.bx == ODQ_MUX_SIGNATURE;
 }
 
+static void reset_resident_state(void)
+{
+    union REGS inregs, outregs;
+    inregs.x.ax = ODQ_MUX_RESET;
+    int86(0x2f, &inregs, &outregs);
+}
+
 static int desqview_api_present(unsigned *version)
 {
     union REGS inregs, outregs;
@@ -198,7 +206,7 @@ static void show_desktop(const odq_catalog *catalog, unsigned selected,
     write_at(0, 25, "Help", ATTR_MENU);
     put_cell(0, 25, 'H', ATTR_MENU_TRIGGER);
     fill(0, 60, 0, 79, ' ', ATTR_DATA);
-    write_at(0, 62, "Open MaxView 0.1", ATTR_DATA);
+    write_at(0, 62, "Open MaxView 0.2", ATTR_DATA);
     shadow(0, 60, 0, 79);
 
     fill(2, 1, 21, 52, ' ', ATTR_DATA);
@@ -247,6 +255,8 @@ static void show_diagnostics(void)
     unsigned dv_version = 0, vcpi_version = 0;
     int api = desqview_api_present(&dv_version);
     int vcpi = vcpi_present(&vcpi_version);
+    odq_max_backend_info backend;
+    int backend_present = odq_max_backend_query(&backend);
     char line[70];
 
     frame(3, 8, 19, 71, "Diagnostics");
@@ -264,9 +274,21 @@ static void show_diagnostics(void)
                 vcpi_version & 0xff);
         write_at(11, 12, line, ATTR_ACTIVE);
     }
-    write_at(14, 12, "0.1 backend: foreground EXEC compatibility mode",
+    if (backend_present) {
+        sprintf(line, "Open 386MAX backend ABI %u.%u, caps %04X",
+                backend.abi_version >> 8, backend.abi_version & 0xff,
+                backend.capabilities);
+        write_at(13, 12, line, ATTR_ACTIVE);
+        sprintf(line, "Backend contexts: %u active, limit %u",
+                backend.active_contexts, backend.context_limit);
+        write_at(14, 12, line, ATTR_ACTIVE);
+    } else {
+        write_at(13, 12, "Open 386MAX MaxView backend: not detected",
+                 ATTR_ACTIVE);
+    }
+    write_at(16, 12, "0.2 mode: foreground EXEC, cooperative API",
              ATTR_ACTIVE);
-    write_at(16, 12, "Press any key to return.", ATTR_ACTIVE);
+    write_at(18, 12, "Press any key to return.", ATTR_ACTIVE);
     getch();
 }
 
@@ -292,8 +314,10 @@ static int launch(const odq_program *program, char *status)
         sprintf(status, "Cannot change to %.52s", program->directory);
         return -1;
     }
+    reset_resident_state();
     prepare_child_screen();
     result = system(program->command);
+    reset_resident_state();
     if (old_directory[0] != '\0')
         chdir(old_directory);
     initialise_video();
