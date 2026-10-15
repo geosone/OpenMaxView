@@ -18,6 +18,12 @@ while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 contains no memory-manager logic.  In 0.1 it launches a child through DOS and
 regains control when that child exits.
 
+`SETUP.EXE` installs the runnable files from one directory into a chosen DOS
+directory.  Its workflow and screen vocabulary follow Open 386MAX's
+GPL-licensed INSTALL/QUILIB code, while omitting 386MAX-specific archive,
+registration and CONFIG.SYS handling.  `/S /D:path` provides a testable
+unattended path, and upgrades preserve the user's program catalogue.
+
 Its 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,
 red triggers, cyan selection, shadows, double dialog borders and bottom

@@ -20,6 +20,7 @@ This first runnable milestone provides:
 * Open 386MAX/VCPI detection and a diagnostic screen;
 * the Open 386MAX QUILIB look: two-pane layout, palette, shadows, hotkeys and
   bottom command buttons;
+* `SETUP.EXE`, a QUILIB-style interactive and unattended DOS installer;
 * a plain-text, versioned program-description format (`MAXVIEW.CFG`);
 * a read-only host tool for inventorying Quarterdeck QIP installation media;
 * host-side parser tests and a DOS API probe.
@@ -43,22 +44,42 @@ locations with `WATCOM=/path/to/watcom MAXROOT=/path/to/386MAX`.
 
 ```sh
 make
+make package
 make test
 make test-dos
 ```
 
-The DOS binaries are written to `build/`.  Copy these files into one DOS
-directory:
+The DOS binaries are written to `build/`. `make package` creates the clean
+installation-media directory `build/OpenMaxView/` containing:
 
 ```text
-build/MAXVIEW.EXE
-build/MAXVTSR.COM
-build/DVPROBE.EXE
-MAXVIEW.CFG
+SETUP.EXE       MAXVIEW.EXE     MAXVTSR.COM
+DVPROBE.EXE     MAXVIEW.CFG     README.TXT     LICENSE.TXT
 ```
 
 Run `MAXVIEW`.  The launcher installs `MAXVTSR.COM` automatically when it is
 available in the current directory or on `PATH`.
+
+## DOS installation
+
+Copy the complete contents of `build/OpenMaxView/` to installation media and
+run:
+
+```text
+SETUP
+```
+
+The default destination is `C:\MAXVIEW`.  Setup checks all required source
+files before changing the destination and preserves an existing
+`MAXVIEW.CFG` during upgrades.  Automated installations use:
+
+```text
+SETUP /S /D:C:\MAXVIEW
+```
+
+The workflow and visual design are adapted from the GPL-licensed Open 386MAX
+DOS installer, without its registration, compressed-media, CONFIG.SYS or
+memory-manager-specific code.
 
 For the eventual 386 backend, boot DOS with Open 386MAX first.  Version 0.1
 only detects VCPI and reports it; it does not yet request private VM services.
