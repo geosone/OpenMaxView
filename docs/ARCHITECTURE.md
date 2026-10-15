@@ -135,9 +135,13 @@ quick-help panes, cyan dialogs, red hotkeys, shadows and bottom buttons remain
 consistent across the suite.
 
 Open 386MAX is the intended 386 VMM.  Its `9x` branch supplies EMS, XMS, VCPI,
-a small QPI I/O-trapping subset, and an Open-MaxView-specific ABI query.  The
-launcher validates that query and reports its root-context status.  The
-current capability mask intentionally exposes no multi-context service.
+the QEMM programming interface (QPI) as QEMM 97 behaves (mapping contexts,
+port trapping, IRQ calldowns, timer and video virtualization; every group is
+checked against QEMM 97 by a conformance test, see Open 386MAX `docs/qpi.md`)
+and an Open-MaxView-specific ABI query.  The launcher validates that query and
+reports its root-context status.  The current capability mask of the
+Open-MaxView ABI intentionally exposes no multi-context service; the QPI
+functions below are the documented way to build one.
 
 Open 386MAX remains the memory manager/VM foundation. Even for the optional
 2.x Remote View design, NDIS, ODI, Packet Driver, TCP, TLS and application
@@ -166,14 +170,13 @@ network-specific ABI is to be added to Open 386MAX.
 | Window location and buffer | foreground implementation | Full-screen `LOCATE`; `GETBUF` aliases the active text page |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Panels, mailboxes, objects | planned | DESQview-specific object API |
-| Concurrent V86 tasks | planned | Requires Open 386MAX extension |
-| Per-task video and I/O | planned | Requires page mapping and port traps |
+| Concurrent V86 tasks | planned | Backend primitives available through QPI (contexts, IRQ calldowns); scheduler pending |
+| Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
 | `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
 
-## VM-backend contract (planned)
+## VM-backend contract
 
-The interface must be implemented on both sides rather than guessed through
-existing QPI calls:
+The interface must be implemented on both sides rather than guessed:
 
 1. feature negotiation and ABI version;
 2. create/destroy a V86 context;
@@ -184,6 +187,28 @@ existing QPI calls:
 7. account for foreground/background priority;
 8. return to the Open MaxView scheduler without exposing 386MAX internals.
 
+### Available today through QPI
+
+Open 386MAX answers QEMM's detection (`INT 2Fh AX=D200h/D201h`) and offers
+the QPI functions DESQview uses on QEMM.  DESQview 2.80 itself detects QEMM
+on Open 386MAX and makes exactly the QPI calls it makes on QEMM 97.  Points
+of the contract covered by documented, conformance-tested QPI functions:
+
+| Contract point | QPI functions |
+|---|---|
+| 2. create/destroy a V86 context | `04h` allocate a page, `06h` clone the active 0-4 MB page table into it, `05h` free it |
+| 3. map private and shared pages | `0Ah` set a PTE, `1F00h`/`1F01h` raw PTEs (MMIO with PCD/PWT), `0Bh` map an EMS handle, `0Fh` restore defaults (dirty flag) |
+| switch the context | `07h` get, `08h` set the active page table |
+| 5. trap video and I/O ports | `1A06h`-`1A0Ah` port traps with a V86 callback, `1A00h`-`1A05h` I/O past the traps, `0Dh`/`0Eh` CRTC/DAC trapping with cursor callbacks, `1301h` dirty video pages, `1308h` all video ports, `130Ah` DAC buffer |
+| 6. virtual interrupts and timer ticks | `1C01h`/`1C03h` IRQ calldowns (IRQ0 for the scheduler), `1C04h` inject an interrupt, `15h` record a task's PIT divisor |
+
+Points 1, 4, 7 and 8 stay with Open MaxView (the scheduler runs in V86, as
+DESQview's does on QEMM: it saves and restores a task's registers itself)
+or need the Open-MaxView ABI.  Not available: the graphics virtualization
+of `13h` (`1302h`-`1310h`) and enforced protection levels (`14h` is
+accepted but does not write-protect); the EMS mapping state is kept once,
+not per context, so EMS memory is mapped into a task with `0Bh`.
+
 ### Windows startup invariant
 
 When MaxView private-address-space mode `08h` is active, the scheduler must
@@ -192,11 +217,15 @@ restore the Open 386MAX standard/root context before launching Windows. The
 Windows startup; allowing it to start in a private MaxView context would make
 the wrong mapping its baseline. The launcher must verify the context switch
 and fail the Windows launch if the standard context cannot be established.
+Open 386MAX enforces the invariant as well: its `INT 2Fh AX=1605h` handler
+refuses the Windows start (`CX` non-zero) while a QPI context other than the
+root one is active.
 This transition requires a backend conformance test before multi-context
 Windows support can be declared compatible.
 
-The extension belongs behind a new function range and must not identify as a
-legacy QEMM service until its observable behaviour has conformance tests.
+Services beyond QPI belong behind the Open-MaxView function range (`4Dxxh`).
+Open 386MAX identifies as QEMM only for the functions whose observable
+behaviour has conformance tests against QEMM 97.
 
 ## Roadmap
 
