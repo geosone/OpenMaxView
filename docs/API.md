@@ -22,6 +22,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AH=12h BH=00h BL=selector`, object DWORD on caller stack | Replaces or validates the DWORD | `HANDLE`; selector 00h validates task/timer handles, selector 01h returns the foreground window |
 | `INT 15h AH=12h BH=01h BL=0Bh`, reserved DWORD on caller stack | Replaces the DWORD with a timer handle or null | `NEW`; bounded four-object timer pool |
+| `INT 15h AH=12h BH=01h BL=09h`, reserved DWORD on caller stack | Replaces the DWORD with a mailbox handle or null | `NEW`; bounded two-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, timer DWORD on caller stack | Releases a live timer and pops the DWORD; invalid handles are ignored | `FREE`; timer lifecycle only |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
 | `INT 15h AH=12h BH=08h BL=00h`, timer DWORD on caller stack | Replaces handle with elapsed hundredths | Timer `SIZEOF` |
@@ -93,9 +94,9 @@ bottom row of the active physical text page, and wraps at the BIOS column
 count. Existing attributes are preserved. Calls in graphics or unknown video
 modes are harmless no-ops.
 
-The foreground task and four timer slots have paragraph-aligned,
+The foreground task, four timer slots and two mailbox slots have paragraph-aligned,
 pointer-compatible object handles with the documented `FEDCh` signature. The
-task reports type `08h`; allocated timers report type `0Bh`. `GETFOREGROUND`,
+task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
 `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore
 operate on real resident identities, not placeholder numbers. Starting
 `OBJNEXT` at `0000:0000` returns the task, followed by allocated timers in
@@ -104,14 +105,20 @@ stable pool order and then the null end marker. The version-1.00 `WININFO` recor
 The `HANDLE` message implements the original caller-stack ABI. Selector `00h`
 validates and returns a live task or timer pointer already in the DWORD;
 selector `01h` returns the current task's window. Selectors `02h` through
-`07h` return `0000:0000` because mailbox, keyboard and OBJECTQ objects do not
-exist yet. `NEW` class `0Bh` allocates one of four timers and `FREE` class
+`07h` return `0000:0000` because task-default mailbox, keyboard and OBJECTQ
+objects do not exist yet. `NEW` classes `09h` and `0Bh` allocate one of two
+mailboxes or four timers, and `FREE` class
 `00h` releases it. A fifth allocation returns null, released handles stop
 passing `ISOBJ`, and task reset reclaims every timer. `OPEN`, `CLOSE`, absolute
 `WRITE` and relative `ADDTO` control timers; `SIZEOF`, `LEN` and `STATUS` query
 them using the BIOS clock without a resident DOS call. Deadlines and durations
 are bounded to one midnight wrap. Blocking `READ` remains unimplemented until
 its scheduling and task-wakeup rules have conformance coverage.
+
+Mailbox objects currently provide lifetime, validation, enumeration and
+`OPEN`/`CLOSE`. `STATUS` returns the retained last-message status, initially
+zero. Message storage, task-default selectors, writes and blocking reads are
+the next mailbox layer; this milestone does not claim that empty reads work.
 
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
@@ -146,12 +153,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0015h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0016h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
-| `D702h` | Reset critical depth, API level and task modes; release task memory and timers |
+| `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=0007h` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=000Fh` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -163,6 +170,7 @@ For `D705h`, bit 0 advertises the bounded `HANDLE` message subset, bit 1
 advertises timer `NEW`/`FREE`, and bit 2 advertises nonblocking timer control
 and queries. Later message classes receive separate bits rather than being
 inferred from API version 2.80.
+Bit 3 advertises the bounded mailbox lifecycle and nonblocking status subset.
 
 ## Open 386MAX QPI wrapper
 

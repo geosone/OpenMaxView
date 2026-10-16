@@ -56,10 +56,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0015h
+MUX_VERSION    equ 0016h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 0007h             ; HANDLE and timer lifecycle/control
+CAPABILITIES3  equ 000Fh             ; HANDLE, timer control, mailbox lifetime
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -67,6 +67,8 @@ COMMON_SLOT_COUNT  equ 4
 COMMON_TOTAL       equ COMMON_SLOT_COUNT * MEM_SLOT_SIZE
 TIMER_SLOT_COUNT   equ 4
 TIMER_OBJECT_SIZE  equ 32
+MAILBOX_SLOT_COUNT equ 2
+MAILBOX_OBJECT_SIZE equ 32
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -102,6 +104,7 @@ install:
         mov     word ptr task_object+0Ah,ax
         mov     word ptr task_object+0Eh,ax
         call    initialize_timer_objects
+        call    initialize_mailbox_objects
 
         mov     ah,0Fh
         int     10h
@@ -536,6 +539,8 @@ int15_isobj:
         cmp     ax,word ptr cs:task_handle_segment
         je      short int15_isobj_valid
         call    timer_validate
+        jnc     short int15_isobj_valid
+        call    mailbox_validate
         jc      short int15_isobj_invalid
 int15_isobj_valid:
         mov     bx,0FFFFh
@@ -560,8 +565,13 @@ int15_object_type:
         jmp     short int15_object_type_done
 int15_object_type_timer:
         call    timer_validate
-        jc      short int15_object_type_invalid
+        jc      short int15_object_type_mailbox
         mov     bl,0Bh                ; timer object
+        jmp     short int15_object_type_done
+int15_object_type_mailbox:
+        call    mailbox_validate
+        jc      short int15_object_type_invalid
+        mov     bl,09h                ; mailbox object
         jmp     short int15_object_type_done
 int15_object_type_invalid:
         xor     bx,bx
@@ -593,6 +603,8 @@ message_handle_stacked:
         cmp     ax,word ptr cs:task_handle_segment
         je      short message_handle_done
         call    timer_validate
+        jnc     short message_handle_done
+        call    mailbox_validate
         jc      short message_handle_null
         jmp     short message_handle_done
 message_handle_current:
@@ -609,9 +621,9 @@ message_handle_done:
         pop     bp
         jmp     int15_handled
 
-; NEW allocates one of four resident timer objects. The caller reserves the
-; same DWORD used by HANDLE; unsupported object classes and pool exhaustion
-; return a null pointer. Timer read/write semantics belong to a later slice.
+; NEW allocates a resident timer or mailbox object. The caller reserves the
+; same DWORD used by HANDLE; unsupported classes and pool exhaustion return a
+; null pointer.
 int15_message_new:
         push    bp
         mov     bp,sp
@@ -621,7 +633,11 @@ int15_message_new:
         mov     word ptr ss:[bp+10],0
         mov     word ptr ss:[bp+12],0
         cmp     bl,0Bh                ; TIMER object class
-        jne     short message_new_done
+        je      short message_new_timer
+        cmp     bl,09h                ; MAILBOX object class
+        je      short message_new_mailbox
+        jmp     short message_new_done
+message_new_timer:
         xor     si,si
         mov     cx,TIMER_SLOT_COUNT
 message_new_scan:
@@ -635,6 +651,22 @@ message_new_found:
         mov     word ptr cs:timer_open[si],0
         mov     word ptr cs:timer_state[si],0
         mov     ax,word ptr cs:timer_handle_segments[si]
+        mov     word ptr ss:[bp+12],ax
+        jmp     short message_new_done
+message_new_mailbox:
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+message_new_mailbox_scan:
+        cmp     word ptr cs:mailbox_used[si],0
+        je      short message_new_mailbox_found
+        add     si,2
+        loop    message_new_mailbox_scan
+        jmp     short message_new_done
+message_new_mailbox_found:
+        mov     word ptr cs:mailbox_used[si],1
+        mov     word ptr cs:mailbox_open[si],0
+        mov     word ptr cs:mailbox_status[si],0
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
         mov     word ptr ss:[bp+12],ax
 message_new_done:
         pop     si
@@ -657,10 +689,17 @@ int15_message_free:
         jne     short message_free_done
         mov     ax,word ptr ss:[bp+12]
         call    timer_validate
-        jc      short message_free_done
+        jc      short message_free_mailbox
         mov     word ptr cs:timer_used[si],0
         mov     word ptr cs:timer_open[si],0
         mov     word ptr cs:timer_state[si],0
+        jmp     short message_free_done
+message_free_mailbox:
+        call    mailbox_validate
+        jc      short message_free_done
+        mov     word ptr cs:mailbox_used[si],0
+        mov     word ptr cs:mailbox_open[si],0
+        mov     word ptr cs:mailbox_status[si],0
 message_free_done:
         pop     si
         pop     ax
@@ -683,7 +722,7 @@ int15_message_timer_query:
         jne     short timer_query_invalid
         mov     ax,word ptr ss:[bp+12]
         call    timer_validate
-        jc      short timer_query_invalid
+        jc      short timer_query_mailbox
         call    timer_elapsed
         cmp     bh,08h
         je      short timer_query_store
@@ -699,6 +738,14 @@ timer_query_status_open:
         cmp     word ptr cs:timer_state[si],1
         jne     short timer_query_store
         mov     dx,4000h              ; open and running
+        jmp     short timer_query_store
+timer_query_mailbox:
+        cmp     bh,0Fh
+        jne     short timer_query_invalid
+        call    mailbox_validate
+        jc      short timer_query_invalid
+        mov     ax,word ptr cs:mailbox_status[si]
+        xor     dx,dx
         jmp     short timer_query_store
 timer_query_length:
         cmp     word ptr cs:timer_state[si],1
@@ -735,7 +782,7 @@ int15_message_timer_open_close:
         jne     short timer_open_close_done
         mov     ax,word ptr ss:[bp+12]
         call    timer_validate
-        jc      short timer_open_close_done
+        jc      short timer_open_close_mailbox
         mov     word ptr cs:timer_state[si],0
         cmp     bh,0Ch
         jne     short timer_close
@@ -743,6 +790,17 @@ int15_message_timer_open_close:
         jmp     short timer_open_close_done
 timer_close:
         mov     word ptr cs:timer_open[si],0
+        jmp     short timer_open_close_done
+timer_open_close_mailbox:
+        call    mailbox_validate
+        jc      short timer_open_close_done
+        mov     word ptr cs:mailbox_status[si],0
+        cmp     bh,0Ch
+        jne     short mailbox_close
+        mov     word ptr cs:mailbox_open[si],1
+        jmp     short timer_open_close_done
+mailbox_close:
+        mov     word ptr cs:mailbox_open[si],0
 timer_open_close_done:
         pop     si
         pop     ax
@@ -1027,17 +1085,37 @@ objnext_existing:
         jmp     short objnext_scan
 objnext_timer:
         call    timer_validate
-        jc      short objnext_invalid
+        jc      short objnext_mailbox
         add     si,2
 objnext_scan:
         cmp     si,TIMER_SLOT_COUNT * 2
-        jae     short objnext_end
+        jae     short objnext_mailbox_first
         cmp     word ptr cs:timer_used[si],0
         jne     short objnext_found
         add     si,2
         jmp     short objnext_scan
 objnext_found:
         mov     ax,word ptr cs:timer_handle_segments[si]
+        mov     es,ax
+        xor     di,di
+        xor     ax,ax
+        jmp     short objnext_done
+objnext_mailbox:
+        call    mailbox_validate
+        jc      short objnext_invalid
+        add     si,2
+        jmp     short objnext_mailbox_scan
+objnext_mailbox_first:
+        xor     si,si
+objnext_mailbox_scan:
+        cmp     si,MAILBOX_SLOT_COUNT * 2
+        jae     short objnext_end
+        cmp     word ptr cs:mailbox_used[si],0
+        jne     short objnext_mailbox_found
+        add     si,2
+        jmp     short objnext_mailbox_scan
+objnext_mailbox_found:
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
         mov     es,ax
         xor     di,di
         xor     ax,ax
@@ -1377,6 +1455,28 @@ timer_validate_done:
         pop     bx
         ret
 
+mailbox_validate:
+        push    bx
+        push    cx
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+mailbox_validate_scan:
+        cmp     ax,word ptr cs:mailbox_handle_segments[si]
+        jne     short mailbox_validate_next
+        cmp     word ptr cs:mailbox_used[si],1
+        jne     short mailbox_validate_invalid
+        clc
+        jmp     short mailbox_validate_done
+mailbox_validate_next:
+        add     si,2
+        loop    mailbox_validate_scan
+mailbox_validate_invalid:
+        stc
+mailbox_validate_done:
+        pop     cx
+        pop     bx
+        ret
+
 ; Return hundredths since midnight in DX:AX using the BIOS tick counter.
 ; Multiplication by 500/91 tracks the 18.2 Hz clock to within about one tick
 ; while avoiding DOS calls from the resident INT 15h handler.
@@ -1516,6 +1616,40 @@ initialize_timer_loop:
         pop     ax
         ret
 
+initialize_mailbox_objects:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        mov     bx,offset mailbox_objects
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+initialize_mailbox_loop:
+        push    cx
+        mov     ax,bx
+        mov     cl,4
+        shr     ax,cl
+        pop     cx
+        mov     dx,cs
+        add     ax,dx
+        mov     word ptr mailbox_handle_segments[si],ax
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],09h
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        add     bx,MAILBOX_OBJECT_SIZE
+        add     si,2
+        loop    initialize_mailbox_loop
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; Capture the COM program's fully-qualified environment tail before becoming
 ; resident, then strip MAXVTSR.COM. DOS 3+ places the executable pathname
 ; after the environment's double NUL and following count word.
@@ -1599,9 +1733,13 @@ int2f_handler:
         cmp     ax,MUX_TASK_INFO
         je      short int2f_task_info
         cmp     ax,MUX_CAPS2
-        je      short int2f_caps2
+        jne     short int2f_not_caps2
+        jmp     int2f_caps2
+int2f_not_caps2:
         cmp     ax,MUX_CAPS3
-        je      short int2f_caps3
+        jne     short int2f_not_caps3
+        jmp     int2f_caps3
+int2f_not_caps3:
         jmp     int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
@@ -1635,6 +1773,9 @@ int2f_reset:
         rep     stosb
         mov     di,offset timer_used
         mov     cx,TIMER_SLOT_COUNT
+        rep     stosw
+        mov     di,offset mailbox_used
+        mov     cx,MAILBOX_SLOT_COUNT
         rep     stosw
         pop     es
         pop     di
@@ -1687,6 +1828,10 @@ timer_start_lo dw TIMER_SLOT_COUNT dup(0)
 timer_start_hi dw TIMER_SLOT_COUNT dup(0)
 timer_duration_lo dw TIMER_SLOT_COUNT dup(0)
 timer_duration_hi dw TIMER_SLOT_COUNT dup(0)
+mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
@@ -1709,7 +1854,11 @@ TIMER_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      TIMER_OBJECT_PAD dup (0)
 timer_objects  db (TIMER_SLOT_COUNT * TIMER_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.21 installed.',13,10,'$'
+MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      MAILBOX_OBJECT_PAD dup (0)
+mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
+
+installed_msg  db 'Open MaxView resident API 0.22 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

@@ -34,7 +34,9 @@ checks:
   `PROCESSMEM`, the `HANDLE` message stack ABI with valid/foreign/unavailable
   selectors, four-slot timer `NEW`/`FREE` exhaustion, identity, type,
   enumeration, reuse, stack popping, open/close, relative/absolute countdown and
-  elapsed/remaining/state queries, foreground `PUSHKEY` and
+  elapsed/remaining/state queries, foreground `PUSHKEY`,
+  a two-slot mailbox lifecycle with exhaustion, type/identity checks,
+  enumeration, open/close/status, reuse and reset reclamation, and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone

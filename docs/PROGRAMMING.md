@@ -235,6 +235,12 @@ earlier than the current BIOS-clock time means the next midnight occurrence.
 Blocking `READ` is not yet available; polling clients can use `STATUS` or
 `LEN` and yield with `PAUSE` between checks.
 
+`NEW` class `09h` similarly allocates one of two mailbox identities. They work
+with `IS_OBJECT`, `OBJECT_TYPE`, `OBJNEXT`, `HANDLE` selector `00h`, `FREE`,
+`OPEN`, `CLOSE` and `STATUS`. The mailbox queue and task-default selectors are
+not implemented yet, so applications must not issue `READ` or write messages
+until the mailbox-message capability is separately advertised.
+
 ## Text video
 
 `INT 10h/AH=FEh` returns the active logical text buffer in `ES:DI`; in the
