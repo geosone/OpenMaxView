@@ -14,6 +14,7 @@
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
 ;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
 ;   INT 15h AH=12h, BH=00h           HANDLE object-message subset
+;   INT 15h AH=12h, BH=11h/12h       mailbox SETNAME/GETNAME
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE05h                 conventional-memory availability
 ;   INT 15h AX=DE06h                 expanded-memory availability
@@ -21,6 +22,7 @@
 ;   INT 15h AX=DE0Ah, BL=character   physical status-line debug output
 ;   INT 15h AX=DE0Bh, BX=level       minimum API level selection
 ;   INT 15h AX=DE0Ch/DE0Dh           system-memory allocate/release
+;   INT 15h AX=DE0Eh                 FINDMAIL named-mailbox lookup
 ;   INT 15h AX=DE10h, BX=scan/char   foreground keyboard PUSHKEY
 ;   INT 15h AX=DE11h, BL=mode        viewport justification mode
 ;   INT 15h AX=DE12h, BX=mode        C-style linefeed mode
@@ -56,10 +58,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0019h
+MUX_VERSION    equ 001Ah
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 007Fh             ; HANDLE, timers, mailbox services
+CAPABILITIES3  equ 00FFh             ; HANDLE, timers, mailbox services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -72,6 +74,7 @@ MAILBOX_OBJECT_SIZE equ 32
 MAILBOX_QUEUE_DEPTH equ 4
 MAILBOX_MESSAGE_SIZE equ 128
 MAILBOX_ENTRY_COUNT equ MAILBOX_SLOT_COUNT * MAILBOX_QUEUE_DEPTH
+MAILBOX_NAME_SIZE  equ 32
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -219,6 +222,10 @@ int15_handler:
         je      short int15_dispatch_erase
         cmp     bh,0Fh                ; STATUS
         je      short int15_dispatch_timer_query
+        cmp     bh,11h                ; SETNAME
+        je      short int15_dispatch_mailbox_setname
+        cmp     bh,12h                ; GETNAME
+        je      short int15_dispatch_mailbox_getname
         cmp     bh,13h                ; READINTO
         je      short int15_dispatch_mailbox_readinto
         cmp     bh,15h                ; SETFLAGS
@@ -240,6 +247,10 @@ int15_dispatch_timer_open_close:
         jmp     int15_message_timer_open_close
 int15_dispatch_erase:
         jmp     int15_message_erase
+int15_dispatch_mailbox_setname:
+        jmp     int15_message_mailbox_setname
+int15_dispatch_mailbox_getname:
+        jmp     int15_message_mailbox_getname
 int15_dispatch_mailbox_readinto:
         jmp     int15_message_mailbox_readinto
 int15_dispatch_mailbox_setflags:
@@ -312,6 +323,10 @@ int15_not_getmem:
         jne     short int15_not_putmem
         jmp     int15_putmem
 int15_not_putmem:
+        cmp     ax,0DE0Eh             ; FINDMAIL
+        jne     short int15_not_findmail
+        jmp     int15_findmail
+int15_not_findmail:
         cmp     ax,0DE10h             ; PUSHKEY
         je      int15_pushkey
         cmp     ax,0DE11h             ; JUSTIFY
@@ -405,6 +420,64 @@ int15_end_done:
         jmp     int15_handled
 int15_appnum:
         mov     ax,1                   ; sole foreground program
+        jmp     int15_handled
+
+; Find the first live mailbox whose bounded name exactly matches ES:DI,CX.
+; A successful lookup returns BX=1 and the mailbox handle in DS:SI; failure
+; returns BX=0 and preserves the caller's DS:SI.
+int15_findmail:
+        push    ax
+        push    cx
+        push    dx
+        push    di
+        push    es
+        push    bp
+        push    ds
+        push    si
+        xor     bx,bx
+        jcxz    short findmail_not_found
+        cmp     cx,MAILBOX_NAME_SIZE
+        ja      short findmail_not_found
+        mov     dx,di
+        xor     bp,bp
+findmail_scan:
+        cmp     word ptr cs:mailbox_used[bp],1
+        jne     short findmail_next
+        cmp     word ptr cs:mailbox_name_length[bp],cx
+        jne     short findmail_next
+        push    cx
+        mov     si,bp
+        mov     cl,4
+        shl     si,cl
+        add     si,offset mailbox_names
+        mov     di,dx
+        push    cs
+        pop     ds
+        cld
+        repe    cmpsb
+        pop     cx
+        je      short findmail_found
+findmail_next:
+        add     bp,2
+        cmp     bp,MAILBOX_SLOT_COUNT * 2
+        jb      short findmail_scan
+findmail_not_found:
+        pop     si
+        pop     ds
+        jmp     short findmail_done
+findmail_found:
+        add     sp,4                  ; discard saved SI and DS
+        mov     ax,word ptr cs:mailbox_handle_segments[bp]
+        mov     ds,ax
+        xor     si,si
+        mov     bx,1
+findmail_done:
+        pop     bp
+        pop     es
+        pop     di
+        pop     dx
+        pop     cx
+        pop     ax
         jmp     int15_handled
 
 ; Write one character on the bottom row of the active physical text page.
@@ -684,6 +757,7 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
         mov     ax,word ptr cs:mailbox_handle_segments[si]
         mov     word ptr ss:[bp+12],ax
@@ -720,6 +794,7 @@ message_free_mailbox:
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
 message_free_done:
         pop     si
@@ -947,6 +1022,134 @@ message_erase_done:
         call    message_shift4
         pop     bp
         add     sp,4
+        jmp     int15_handled
+
+; SETNAME copies a bounded, non-NUL-terminated mailbox name into resident
+; storage. The public stack contains length, address and finally the mailbox
+; handle; all three DWORDs are consumed. A zero length clears the name.
+int15_message_mailbox_setname:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        cmp     bl,0
+        jne     short mailbox_setname_done
+        cmp     word ptr ss:[bp+10],0
+        jne     short mailbox_setname_done
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short mailbox_setname_done
+        cmp     word ptr ss:[bp+20],0
+        jne     short mailbox_setname_done
+        mov     cx,word ptr ss:[bp+18]
+        cmp     cx,MAILBOX_NAME_SIZE
+        ja      short mailbox_setname_done
+        jcxz    short mailbox_setname_store_length
+        cmp     word ptr ss:[bp+16],0
+        je      short mailbox_setname_done
+        mov     dx,si
+        mov     bx,si
+        push    cx
+        mov     cl,4
+        shl     bx,cl
+        pop     cx
+        add     bx,offset mailbox_names
+        mov     ax,word ptr ss:[bp+16]
+        mov     ds,ax
+        mov     si,word ptr ss:[bp+14]
+        push    cs
+        pop     es
+        mov     di,bx
+        cld
+        rep     movsb
+        mov     si,dx
+mailbox_setname_store_length:
+        mov     ax,word ptr ss:[bp+18]
+        mov     word ptr cs:mailbox_name_length[si],ax
+mailbox_setname_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        call    message_shift12
+        pop     bp
+        add     sp,12
+        jmp     int15_handled
+
+; GETNAME copies at most the caller's buffer size and returns that byte count
+; in the original length DWORD. Names are deliberately not NUL-terminated.
+int15_message_mailbox_getname:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     cx,word ptr ss:[bp+18]
+        mov     dx,word ptr ss:[bp+20]
+        mov     word ptr ss:[bp+18],0
+        mov     word ptr ss:[bp+20],0
+        cmp     bl,0
+        jne     short mailbox_getname_done
+        cmp     word ptr ss:[bp+10],0
+        jne     short mailbox_getname_done
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short mailbox_getname_done
+        or      dx,dx
+        jne     short mailbox_getname_done
+        mov     ax,word ptr cs:mailbox_name_length[si]
+        cmp     cx,ax
+        jbe     short mailbox_getname_count_ready
+        mov     cx,ax
+mailbox_getname_count_ready:
+        mov     word ptr ss:[bp+18],cx
+        jcxz    short mailbox_getname_done
+        cmp     word ptr ss:[bp+16],0
+        je      short mailbox_getname_zero_result
+        mov     bx,si
+        push    cx
+        mov     cl,4
+        shl     bx,cl
+        pop     cx
+        add     bx,offset mailbox_names
+        push    cs
+        pop     ds
+        mov     si,bx
+        mov     ax,word ptr ss:[bp+16]
+        mov     es,ax
+        mov     di,word ptr ss:[bp+14]
+        cld
+        rep     movsb
+        jmp     short mailbox_getname_done
+mailbox_getname_zero_result:
+        mov     word ptr ss:[bp+18],0
+mailbox_getname_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        call    message_shift8
+        pop     bp
+        add     sp,8
         jmp     int15_handled
 
 ; READINTO copies and removes the oldest queued mailbox message. The original
@@ -1884,6 +2087,20 @@ message_shift8:
         pop     ax
         ret
 
+; Relocate the frame over a mailbox handle, address and length.
+message_shift12:
+        push    ax
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+20],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+18],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp+16],ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp+14],ax
+        pop     ax
+        ret
+
 ; Relocate the frame over a mailbox handle plus address, length and status.
 message_shift16:
         push    ax
@@ -2151,6 +2368,7 @@ mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_flags  dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_name_length dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_head   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_tail   dw MAILBOX_SLOT_COUNT dup(0)
@@ -2158,6 +2376,7 @@ mailbox_bytes  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_message_status db MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_length dw MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_data db (MAILBOX_ENTRY_COUNT * MAILBOX_MESSAGE_SIZE) dup(0)
+mailbox_names  db (MAILBOX_SLOT_COUNT * MAILBOX_NAME_SIZE) dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
@@ -2184,7 +2403,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.25 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.26 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

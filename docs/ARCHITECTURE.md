@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.25 resident API tracks foreground task compatibility state and nested
+The 0.26 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -81,6 +81,9 @@ storage; an empty queue returns Carry instead of blocking. Scheduler-backed
 waits and wakeups remain outside this layer. The three non-DV/X mailbox flag
 bits are retained: common-memory placement is advisory for the fixed resident
 pool, while closed writes and close-time queue preservation are enforced.
+Each live mailbox also owns a copied name of up to 32 bytes. `SETNAME`,
+`GETNAME` and `FINDMAIL` share that resident table; names contain explicit
+lengths and are never treated as NUL-terminated strings.
 
 The same foreground object now backs `LOCATE` and `GETBUF`: coordinates in the
 physical text screen resolve to the one full-screen window, and its virtual

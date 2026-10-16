@@ -27,14 +27,15 @@ Install-once resident compatibility service. It exposes API version 2.80 and
 the implemented pause, foreground task-state, nested critical-section,
 foreground keyboard `PUSHKEY` and alternate-video-buffer calls. Running it
 again is harmless and reports that it is installed. `API.TXT` documents the
-register interface. Resident API 0.25 implements the `HANDLE` caller-stack ABI
+register interface. Resident API 0.26 implements the `HANDLE` caller-stack ABI
 for the foreground window and live timers, a bounded four-timer `NEW`/`FREE`
 lifecycle, and nonblocking relative/absolute countdown control/query messages.
 It also provides two mailbox objects with four copied messages of at most 128
 bytes each, nonblocking count/byte queries, queue erasure and `READINTO` for a
 ready record. Empty mailbox waits, task-default mailboxes and panels remain
 pending. Base mailbox flags control closed writes and close-time preservation;
-DV/X stream and expanded-memory modes are not implemented.
+32-byte explicit-handle names support `FINDMAIL`. DV/X stream and
+expanded-memory modes are not implemented.
 
 ## MAXVANSI.COM
 

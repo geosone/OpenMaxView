@@ -61,7 +61,7 @@ releases are useful only for version-qualified scheduler, communications and
 | `ERASE` | Timer and mailbox subset | Windows, input queues, pointers and OBJECTQs |
 | `STATUS` | Timer/mailbox subset | Keyboard, pointer, panel and OBJECTQ status contracts |
 | `EOF` | Missing | Window and mailbox results |
-| `SETNAME`/`GETNAME` | Missing | Named mailboxes and lookup interoperability |
+| `SETNAME`/`GETNAME` | Bounded explicit-handle implementation | Task-default selectors and names over 32 bytes |
 | `READN` | Missing | Bounded window/object reads |
 | `READINTO` | Ready mailbox records | True blocking/wakeup behavior when empty |
 | `REDRAW` | Missing | Damage tracking and repaint ordering |
@@ -74,8 +74,8 @@ releases are useful only for version-qualified scheduler, communications and
 
 The implemented `DEh` group covers memory status, foreground identity,
 task-state modes, keyboard injection, screen information, process memory,
-installation path, object traversal and versioned window information. The
-next public-API probes must cover named-mailbox lookup, second-level interrupt
+installation path, named-mailbox lookup, object traversal and versioned window
+information. The next public-API probes must cover second-level interrupt
 services, task/process creation and control, additional window metadata,
 mouse/pointer delivery and version-qualified error behavior. DESQview/X socket
 and X-server calls are not part of the local 1.x completion gate.

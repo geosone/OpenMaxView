@@ -289,6 +289,20 @@ query layout and replaces the handle DWORD with the result. The common-memory
 bit is retained but has no placement effect in the fixed resident pool. Do
 not request DV/X stream or expanded-memory flags: they are masked out.
 
+Capability `ODQ_CAP3_MAILBOX_NAMES` enables bounded mailbox naming. Names are
+explicit byte strings of at most `ODQ_MAILBOX_NAME_MAX` bytes, not C strings.
+For `SETNAME` (`BH=11h`), push the length DWORD, far source pointer and mailbox
+handle in that order; the call consumes all three. For `GETNAME` (`BH=12h`),
+push the destination capacity, far destination pointer and handle. The call
+consumes the pointer and handle and replaces the capacity DWORD with the
+number of bytes copied; it does not append a NUL.
+
+To locate a named mailbox, pass its address in `ES:DI`, byte length in `CX`
+and call `INT 15h` with `AX=DE0Eh`. `BX=1` returns the handle in `DS:SI`;
+`BX=0` means no exact match. Current 0.x matching is case-sensitive and scans
+the two live mailbox slots in stable order. A zero-length name clears a
+mailbox through `SETNAME` but is not a searchable name.
+
 ## Text video
 
 `INT 10h/AH=FEh` returns the active logical text buffer in `ES:DI`; in the

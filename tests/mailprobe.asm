@@ -29,6 +29,61 @@ start:
         or      dx,dx
         jnz     failed
 
+        ; Names are copied by SETNAME, returned without a terminator by
+        ; GETNAME, and discoverable through DESQview FINDMAIL.
+        mov     ax,word ptr mailbox_one
+        mov     cx,8
+        mov     si,offset mailbox_name
+        call    mailbox_setname
+        mov     ax,word ptr mailbox_two
+        mov     cx,4
+        mov     si,offset second_name
+        call    mailbox_setname
+        push    ds
+        push    ds
+        pop     es
+        mov     di,offset mailbox_name
+        mov     cx,8
+        mov     ax,0DE0Eh
+        int     15h
+        mov     ax,ds
+        mov     dx,si
+        pop     ds
+        cmp     bx,1
+        jne     failed
+        cmp     ax,word ptr mailbox_one
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        push    ds
+        pop     es
+        mov     di,offset name_buffer
+        mov     ax,word ptr mailbox_one
+        mov     cx,4
+        call    mailbox_getname
+        cmp     ax,4
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        cmp     word ptr name_buffer,'VM'
+        jne     failed
+        cmp     word ptr name_buffer+2,'ET'
+        jne     failed
+        mov     ax,word ptr mailbox_two
+        xor     cx,cx
+        xor     si,si
+        call    mailbox_setname
+        push    ds
+        push    ds
+        pop     es
+        mov     di,offset second_name
+        mov     cx,4
+        mov     ax,0DE0Eh
+        int     15h
+        pop     ds
+        or      bx,bx
+        jnz     failed
+
         mov     ax,word ptr mailbox_one
         mov     es,ax
         xor     di,di
@@ -442,10 +497,55 @@ mailbox_setflags:
         pop     bx
         ret
 
+; AX is the mailbox segment, CX the name length and DS:SI the name. SETNAME
+; consumes the length, pointer and mailbox DWORDs.
+mailbox_setname:
+        push    bx
+        push    di
+        mov     di,ax
+        xor     ax,ax
+        push    ax                    ; length high word
+        push    cx                    ; length low word
+        push    ds                    ; name segment
+        push    si                    ; name offset
+        push    di                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,1100h
+        int     15h
+        pop     di
+        pop     bx
+        ret
+
+; AX is the mailbox segment, CX the capacity and ES:DI the destination.
+; GETNAME consumes pointer and handle, leaving the returned length DWORD.
+mailbox_getname:
+        push    bx
+        push    si
+        mov     si,ax
+        xor     ax,ax
+        push    ax                    ; capacity high word
+        push    cx                    ; capacity low word / result storage
+        push    es                    ; destination segment
+        push    di                    ; destination offset
+        push    si                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,1200h
+        int     15h
+        pop     ax
+        pop     dx
+        pop     si
+        pop     bx
+        ret
+
 mailbox_one dw 0
 mailbox_two dw 0
 sample_message db 'HELLO'
 later_message db 'LATER'
+mailbox_name db 'MVTEST01'
+second_name db 'NODE'
+name_buffer db 32 dup(0)
 read_buffer db 128 dup(0)
 passed_msg db 'MAXVTSR mailbox queue lifecycle passed.',13,10,'$'
 failed_msg db 'MAXVTSR mailbox queue lifecycle failed.',13,10,'$'

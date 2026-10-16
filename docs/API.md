@@ -32,6 +32,8 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=0Ch/0Dh BL=00h`, object DWORD on caller stack | Opens/closes timer or mailbox and pops handle | `OPEN`/`CLOSE`; mailbox close discards queued mail |
 | `INT 15h AH=12h BH=0Eh BL=00h`, object DWORD on caller stack | Cancels a timer or empties a mailbox and pops handle | `ERASE` |
 | `INT 15h AH=12h BH=0Fh BL=00h`, object DWORD on caller stack | Replaces handle with state/status DWORD | Timer state or retained mailbox last-read status |
+| `INT 15h AH=12h BH=11h BL=00h`, length, address and mailbox DWORDs on caller stack | Copies up to 32 name bytes and pops all three DWORDs | Mailbox `SETNAME`; zero length clears |
+| `INT 15h AH=12h BH=12h BL=00h`, capacity, destination and mailbox DWORDs on caller stack | Copies a non-terminated name and leaves a DWORD byte count | Mailbox `GETNAME`; bounded explicit handle |
 | `INT 15h AH=12h BH=13h BL=00h`, size, destination and mailbox DWORDs on caller stack | Copies and consumes the oldest message; leaves a DWORD byte count | Mailbox `READINTO`; Carry on empty/invalid instead of blocking |
 | `INT 15h AH=12h BH=15h BL=00h`, flags then mailbox DWORDs on caller stack | Stores supported low flag bits and pops both DWORDs | Mailbox `SETFLAGS`; bits 0-2 only |
 | `INT 15h AH=12h BH=16h BL=00h`, mailbox DWORD on caller stack | Replaces handle with current supported flags | Mailbox `GETFLAGS` |
@@ -43,6 +45,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0280h` | `APILEVEL` |
 | `INT 15h AX=DE0Ch BX=bytes` | `ES:DI=block`, null on failure; `AX=0/1` mirrors status | `GETMEM` |
 | `INT 15h AX=DE0Dh ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | `PUTMEM` |
+| `INT 15h AX=DE0Eh ES:DI=name CX=length` | `BX=1`, `DS:SI=mailbox` on exact match; `BX=0` otherwise | `FINDMAIL`; live bounded names |
 | `INT 15h AX=DE10h BH=scan BL=character` | Adds one BIOS-format keyboard entry | Foreground `PUSHKEY` |
 | `INT 15h AX=DE11h BL=mode` | Zero disables, nonzero enables cursor-follow mode | `JUSTIFY` state |
 | `INT 15h AX=DE12h BX=mode` | Zero selects normal, nonzero C-style linefeeds | `CSTYLE` state |
@@ -139,6 +142,14 @@ one storage class. Bit 1 permits `ADDTO` while the mailbox is closed. Bit 2
 prevents `CLOSE` from discarding pending messages. Unsupported DV/X stream,
 expanded-memory and non-owned modes are masked rather than advertised.
 
+Mailbox names have explicit lengths and a 32-byte implementation maximum.
+`SETNAME` copies the caller bytes, `GETNAME` copies the lesser of the stored
+length and caller capacity, and neither operation adds a NUL terminator.
+`FINDMAIL` performs an exact, case-sensitive byte comparison over live
+mailboxes and returns the first stable pool match. Zero-length names are
+treated as unnamed and are never found. Only explicit-handle selector `00h`
+is implemented; task-default mailbox selectors remain pending.
+
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
 requires the exact foreground task-handle segment and reports a full buffer.
@@ -172,12 +183,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0019h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=001Ah`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=007Fh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=00FFh` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -195,6 +206,7 @@ queue erasure; it does not advertise `READ`.
 Bit 5 advertises ready-record `READINTO`; it does not advertise a blocking
 empty-mailbox wait.
 Bit 6 advertises base mailbox `SETFLAGS`/`GETFLAGS` behavior for bits 0-2.
+Bit 7 advertises bounded explicit-handle mailbox names and `FINDMAIL`.
 
 ## Open 386MAX QPI wrapper
 
