@@ -19,6 +19,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1015h BX=mask` | Invokes allocated callbacks selected by the mask | TopView `SETBIT`; synchronous foreground dispatch |
 | `INT 15h AX=1016h ES:DI=handle` | `BX=FFFFh` if valid, otherwise zero | `ISOBJ` |
 | `INT 15h AX=1018h BH=column BL=row ES=window-below` | `ES=window` or zero | `LOCATE`; foreground full-screen window |
+| `INT 15h AX=1019h BX=hertz CX=ticks` | Queues a PC-speaker tone and returns immediately | TopView `SOUND`; 32-entry foreground queue |
 | `INT 15h AX=101Bh` | Increments a saturating nesting count | `BEGINC` |
 | `INT 15h AX=101Ch` | Decrements the count without underflow | `ENDC` |
 | `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
@@ -126,6 +127,14 @@ dispatcher finishes. In the foreground implementation callbacks run before
 `SETBIT` returns; true dispatch after return from a hardware interrupt awaits
 the scheduler/IRQ epilogue. Task reset releases the complete table.
 
+`SOUND` drives PIT channel 2 and expires queue entries from the BIOS `INT 1Ch`
+clock. Frequencies from 1 through 19 Hz are clamped to the DESQview 2.x floor
+of 20 Hz; zero queues silence. A zero duration cancels the current entry, and
+`BX=CX=0` clears the entire queue and silences the speaker. Up to 32 entries
+are retained. Unlike original DESQview, a full queue does not block the caller:
+the excess entry is ignored until task scheduling can provide a safe wait.
+Task reset clears the queue and disconnects the speaker.
+
 The foreground task, four timer slots and two mailbox slots have paragraph-aligned,
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
@@ -216,12 +225,13 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=001Fh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0020h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
 | `D705h` | `BX=07FFh` object-message capability bits, `CX=DX=0` |
+| `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise

@@ -49,6 +49,8 @@ checks:
   `BX=0` cursor synchronization;
 * all 16 second-level callback allocations, exhaustion, masked dispatch,
   foreground-task `ES`, release/reuse and reset cleanup;
+* PC-speaker `SOUND` normalization, queued silence, current/all cancellation,
+  32-entry saturation and task-reset cleanup;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone
   guards, verified clone/root switching, four-page private-pool exhaustion,

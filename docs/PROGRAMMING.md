@@ -357,6 +357,14 @@ current one-task implementation invokes callbacks synchronously before
 timing until a scheduler capability explicitly advertises it. Nested requests
 are safe and are drained after the active callback.
 
+`ODQ_DVC_SOUND` (`AX=1019h`) queues a PC-speaker entry with its frequency in
+`BX` and duration in `CX`, measured in 18.2-Hz BIOS clock ticks. A zero
+frequency is a timed silence. Use `CX=0` to cancel the current entry, or set
+both `BX` and `CX` to zero to discard the complete queue. The resident service
+accepts 32 entries and returns immediately. Until scheduler-backed waiting is
+implemented, an entry submitted to a full queue is ignored instead of
+blocking, so latency-sensitive clients should keep their own short queue.
+
 ## Keyboard input
 
 Use BIOS or DOS keyboard calls for ordinary input. `ODQ_DVC_PUSH_KEY` inserts

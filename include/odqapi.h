@@ -13,6 +13,7 @@
 #define ODQ_DVC_PUT_MEMORY_TV   0x1002
 #define ODQ_DVC_IS_OBJECT       0x1016
 #define ODQ_DVC_LOCATE          0x1018
+#define ODQ_DVC_SOUND           0x1019
 #define ODQ_DVC_BEGIN_CRITICAL  0x101b
 #define ODQ_DVC_END_CRITICAL    0x101c
 #define ODQ_DVC_GET_VERSION     0x1022
@@ -55,8 +56,9 @@
 #define ODQ_MUX_TASK_INFO       0xd703
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_CAPS3           0xd705
+#define ODQ_MUX_SOUND_INFO      0xd706
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x001f
+#define ODQ_MUX_VERSION         0x0020
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002

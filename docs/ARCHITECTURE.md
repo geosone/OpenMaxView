@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.31 resident API tracks foreground task compatibility state and nested
+The 0.32 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -99,6 +99,9 @@ The foreground task also owns a bounded table of sixteen TopView second-level
 callbacks. `SETBIT` drains requested live callbacks synchronously and defers
 nested requests to the outer drain loop. Moving that drain to the hardware-IRQ
 return path is intentionally coupled to the future scheduler.
+A resident `INT 1Ch` hook advances the bounded 32-entry TopView `SOUND` queue
+without DOS calls. It programs PIT channel 2 only when the active entry changes
+and always silences the PC speaker when the queue is cancelled or exhausted.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.8 it launches a child through DOS and

@@ -27,7 +27,7 @@ Install-once resident compatibility service. It exposes API version 2.80 and
 the implemented pause, foreground task-state, nested critical-section,
 foreground keyboard `PUSHKEY` and alternate-video-buffer calls. Running it
 again is harmless and reports that it is installed. `API.TXT` documents the
-register interface. Resident API 0.31 implements the `HANDLE` caller-stack ABI
+register interface. Resident API 0.32 implements the `HANDLE` caller-stack ABI
 for the foreground window and live timers, a bounded four-timer `NEW`/`FREE`
 lifecycle, and nonblocking relative/absolute countdown control/query messages.
 It also provides two mailbox objects with four copied `WRITE`/`ADDTO` or
@@ -42,6 +42,8 @@ multi-window clipping remains a 1.x virtual-console task.
 The TopView second-level callback service provides sixteen foreground-owned
 bits with masked allocation, dispatch and release. Callbacks currently run
 synchronously; IRQ-return scheduling depends on the future task scheduler.
+`SOUND` supplies a clock-driven 32-entry PIT/PC-speaker queue, including timed
+silence and cancellation. Queue saturation remains nonblocking in 0.x.
 
 ## MAXVANSI.COM
 

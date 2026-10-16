@@ -11,6 +11,7 @@
 ;   INT 15h AX=1013h/1014h/1015h     second-level callback services
 ;   INT 15h AX=1016h                 object-handle validation
 ;   INT 15h AX=1018h                 foreground window location
+;   INT 15h AX=1019h                 queued PC-speaker SOUND
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
@@ -53,6 +54,7 @@
 ;   INT 2Fh AX=D703h                 query per-foreground-task state
 ;   INT 2Fh AX=D704h                 extended capability query
 ;   INT 2Fh AX=D705h                 object-message capability query
+;   INT 2Fh AX=D706h                 sound-queue diagnostic query
 
 DV_VERSION     equ 0280h
 MUX_STATUS     equ 0D700h
@@ -61,8 +63,9 @@ MUX_RESET      equ 0D702h
 MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
+MUX_SOUND_INFO equ 0D706h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 001Fh
+MUX_VERSION    equ 0020h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
 CAPABILITIES3  equ 07FFh             ; HANDLE, timers, mailbox services
@@ -80,6 +83,7 @@ MAILBOX_MESSAGE_SIZE equ 128
 MAILBOX_ENTRY_COUNT equ MAILBOX_SLOT_COUNT * MAILBOX_QUEUE_DEPTH
 MAILBOX_NAME_SIZE  equ 32
 SECOND_LEVEL_COUNT equ 16
+SOUND_QUEUE_COUNT equ 32
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -134,6 +138,11 @@ video_known:
         mov     word ptr old15,bx
         mov     word ptr old15+2,es
 
+        mov     ax,351Ch
+        int     21h
+        mov     word ptr old1c,bx
+        mov     word ptr old1c+2,es
+
         mov     ax,3521h
         int     21h
         mov     word ptr old21,bx
@@ -149,6 +158,9 @@ video_known:
         int     21h
         mov     dx,offset int15_handler
         mov     ax,2515h
+        int     21h
+        mov     dx,offset int1c_handler
+        mov     ax,251Ch
         int     21h
         mov     dx,offset int21_handler
         mov     ax,2521h
@@ -200,6 +212,32 @@ int10_handled:
 int10_chain:
         popf
         jmp     dword ptr cs:old10
+
+; BIOS invokes INT 1Ch once per clock tick. Preserve the complete interrupted
+; register state, advance the bounded foreground sound queue, then chain.
+int1c_handler:
+        pushf
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        call    sound_tick
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        popf
+        jmp     dword ptr cs:old1c
 
 int15_handler:
         pushf
@@ -311,6 +349,10 @@ int15_not_isobj:
         jne     short int15_not_locate
         jmp     int15_locate
 int15_not_locate:
+        cmp     ax,1019h              ; SOUND
+        jne     short int15_not_sound
+        jmp     int15_sound
+int15_not_sound:
         cmp     ax,101Bh              ; BEGINC
         je      int15_begin
         cmp     ax,101Ch              ; ENDC
@@ -665,6 +707,138 @@ setbit_done:
         pop     bx
         pop     ax
         jmp     int15_handled
+
+; Queue one PC-speaker tone. CX is a BIOS-tick duration and BX is Hertz, with
+; zero selecting silence. A zero duration cancels the current entry; BX=0
+; additionally clears every queued entry. Queue saturation is a nonblocking
+; no-op in the foreground implementation.
+int15_sound:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        pushf
+        cli
+        or      cx,cx
+        jnz     short sound_enqueue
+        or      bx,bx
+        jz      short sound_cancel_all
+        call    sound_advance
+        jmp     short sound_call_done
+sound_cancel_all:
+        call    sound_clear
+        jmp     short sound_call_done
+sound_enqueue:
+        cmp     word ptr cs:sound_count,SOUND_QUEUE_COUNT
+        jae     short sound_call_done
+        mov     ax,bx
+        or      ax,ax
+        jz      short sound_frequency_ready
+        cmp     ax,20
+        jae     short sound_frequency_ready
+        mov     ax,20
+sound_frequency_ready:
+        mov     si,word ptr cs:sound_tail
+        mov     word ptr cs:sound_frequency[si],ax
+        mov     word ptr cs:sound_duration[si],cx
+        add     si,2
+        cmp     si,SOUND_QUEUE_COUNT * 2
+        jb      short sound_tail_ready
+        xor     si,si
+sound_tail_ready:
+        mov     word ptr cs:sound_tail,si
+        inc     word ptr cs:sound_count
+        cmp     word ptr cs:sound_count,1
+        jne     short sound_call_done
+        mov     word ptr cs:sound_remaining,cx
+        mov     bx,ax
+        call    sound_program
+sound_call_done:
+        popf
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     int15_handled
+
+; Consume one clock tick from the active queue entry.
+sound_tick:
+        cmp     word ptr cs:sound_count,0
+        je      short sound_tick_done
+        cmp     word ptr cs:sound_remaining,0
+        je      short sound_tick_advance
+        dec     word ptr cs:sound_remaining
+        jne     short sound_tick_done
+sound_tick_advance:
+        call    sound_advance
+sound_tick_done:
+        ret
+
+; Remove the active queue entry, then start the next entry or silence.
+sound_advance:
+        cmp     word ptr cs:sound_count,0
+        je      short sound_advance_silence
+        mov     si,word ptr cs:sound_head
+        add     si,2
+        cmp     si,SOUND_QUEUE_COUNT * 2
+        jb      short sound_head_ready
+        xor     si,si
+sound_head_ready:
+        mov     word ptr cs:sound_head,si
+        dec     word ptr cs:sound_count
+        jz      short sound_advance_empty
+        mov     bx,word ptr cs:sound_frequency[si]
+        mov     ax,word ptr cs:sound_duration[si]
+        mov     word ptr cs:sound_remaining,ax
+        call    sound_program
+        ret
+sound_advance_empty:
+        mov     word ptr cs:sound_head,0
+        mov     word ptr cs:sound_tail,0
+sound_advance_silence:
+        mov     word ptr cs:sound_remaining,0
+        xor     bx,bx
+        call    sound_program
+        ret
+
+sound_clear:
+        mov     word ptr cs:sound_head,0
+        mov     word ptr cs:sound_tail,0
+        mov     word ptr cs:sound_count,0
+        mov     word ptr cs:sound_remaining,0
+        xor     bx,bx
+        call    sound_program
+        ret
+
+; Program PIT channel 2 for BX Hertz, or disconnect the PC speaker for zero.
+sound_program:
+        push    ax
+        push    dx
+        or      bx,bx
+        jz      short sound_program_silence
+        mov     al,0B6h
+        out     43h,al
+        mov     dx,0012h
+        mov     ax,34DCh             ; 1,193,180 Hz PIT input clock
+        div     bx
+        mov     dx,ax
+        out     42h,al
+        mov     al,dh
+        out     42h,al
+        in      al,61h
+        or      al,03h
+        out     61h,al
+        jmp     short sound_program_done
+sound_program_silence:
+        in      al,61h
+        and     al,0FCh
+        out     61h,al
+sound_program_done:
+        pop     dx
+        pop     ax
+        ret
 
 ; Find the first live mailbox whose bounded name exactly matches ES:DI,CX.
 ; A successful lookup returns BX=1 and the mailbox handle in DS:SI; failure
@@ -2866,6 +3040,10 @@ int2f_not_caps2:
         jne     short int2f_not_caps3
         jmp     int2f_caps3
 int2f_not_caps3:
+        cmp     ax,MUX_SOUND_INFO
+        jne     short int2f_not_sound_info
+        jmp     int2f_sound_info
+int2f_not_sound_info:
         jmp     int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
@@ -2889,6 +3067,12 @@ int2f_reset:
         mov     word ptr cs:second_level_used,0
         mov     word ptr cs:second_level_pending,0
         mov     byte ptr cs:second_level_active,0
+        pushf
+        cli
+        push    bx
+        call    sound_clear
+        pop     bx
+        popf
         push    ax
         push    cx
         push    di
@@ -2930,12 +3114,27 @@ int2f_caps3:
         xor     dx,dx
         popf
         iret
+int2f_sound_info:
+        cli
+        push    si
+        xor     bx,bx
+        mov     si,word ptr cs:sound_head
+        cmp     word ptr cs:sound_count,0
+        je      short int2f_sound_empty
+        mov     bx,word ptr cs:sound_frequency[si]
+int2f_sound_empty:
+        mov     cx,word ptr cs:sound_remaining
+        mov     dx,word ptr cs:sound_count
+        pop     si
+        popf
+        iret
 int2f_chain:
         popf
         jmp     dword ptr cs:old2f
 
 old10          dd 0
 old15          dd 0
+old1c          dd 0
 old21          dd 0
 old2f          dd 0
 critical_depth dw 0
@@ -2948,6 +3147,12 @@ second_level_active db 0
 second_level_used dw 0
 second_level_pending dw 0
 second_level_handlers dd SECOND_LEVEL_COUNT dup(0)
+sound_head     dw 0
+sound_tail     dw 0
+sound_count    dw 0
+sound_remaining dw 0
+sound_frequency dw SOUND_QUEUE_COUNT dup(0)
+sound_duration dw SOUND_QUEUE_COUNT dup(0)
 video_segment  dw 0B800h
 printc_page    db 0
 printc_columns db 80
@@ -3013,7 +3218,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.31 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.32 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
