@@ -58,10 +58,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 001Ah
+MUX_VERSION    equ 001Bh
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 00FFh             ; HANDLE, timers, mailbox services
+CAPABILITIES3  equ 01FFh             ; HANDLE, timers, mailbox services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -982,6 +982,8 @@ timer_add_done:
 ; handle.  A closed/full mailbox or an invalid/oversize message sets Carry;
 ; the documented sixteen argument bytes are consumed in either case.
 timer_add_mailbox:
+        cmp     bh,05h
+        je      short timer_write_mailbox
         cmp     bh,0Ah
         jne     short timer_add_done
         call    mailbox_validate
@@ -994,6 +996,19 @@ timer_add_mailbox:
         call    message_shift16
         pop     bp
         add     sp,16
+        jmp     int15_handled
+timer_write_mailbox:
+        call    mailbox_validate
+        jc      short timer_write_mailbox_done
+        call    mailbox_write_value
+timer_write_mailbox_done:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        call    message_shift12
+        pop     bp
+        add     sp,12
         jmp     int15_handled
 
 ; ERASE cancels a live timer interval or discards every queued mailbox
@@ -1984,6 +1999,75 @@ mailbox_add_value_done:
         pop     ax
         ret
 
+; Copy a WRITE message into mailbox SI. WRITE omits the status DWORD used by
+; ADDTO and stores status zero. BP is the outer message frame.
+mailbox_write_value:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        or      word ptr ss:[bp+8],1
+        cmp     word ptr cs:mailbox_open[si],1
+        je      short mailbox_write_value_open
+        test    word ptr cs:mailbox_flags[si],0002h
+        jz      short mailbox_write_value_done
+mailbox_write_value_open:
+        cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
+        jae     short mailbox_write_value_done
+        cmp     word ptr ss:[bp+20],0
+        jne     short mailbox_write_value_done
+        mov     cx,word ptr ss:[bp+18]
+        cmp     cx,MAILBOX_MESSAGE_SIZE
+        ja      short mailbox_write_value_done
+        jcxz    short mailbox_write_pointer_ok
+        cmp     word ptr ss:[bp+16],0
+        je      short mailbox_write_value_done
+mailbox_write_pointer_ok:
+        mov     dx,si
+        mov     bx,si
+        shl     bx,1
+        add     bx,word ptr cs:mailbox_tail[si]
+        mov     byte ptr cs:mailbox_message_status[bx],0
+        mov     di,bx
+        shl     di,1
+        mov     word ptr cs:mailbox_message_length[di],cx
+        add     word ptr cs:mailbox_bytes[si],cx
+        inc     word ptr cs:mailbox_count[si]
+        inc     word ptr cs:mailbox_tail[si]
+        cmp     word ptr cs:mailbox_tail[si],MAILBOX_QUEUE_DEPTH
+        jb      short mailbox_write_tail_ready
+        mov     word ptr cs:mailbox_tail[si],0
+mailbox_write_tail_ready:
+        mov     di,bx
+        push    cx
+        mov     cl,7
+        shl     di,cl
+        pop     cx
+        add     di,offset mailbox_message_data
+        mov     ax,word ptr ss:[bp+16]
+        mov     ds,ax
+        mov     si,word ptr ss:[bp+14]
+        push    cs
+        pop     es
+        cld
+        rep     movsb
+        mov     si,dx
+        and     word ptr ss:[bp+8],0FFFEh
+mailbox_write_value_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; Return hundredths since midnight in DX:AX using the BIOS tick counter.
 ; Multiplication by 500/91 tracks the 18.2 Hz clock to within about one tick
 ; while avoiding DOS calls from the resident INT 15h handler.
@@ -2403,7 +2487,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.26 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.27 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

@@ -122,6 +122,35 @@ start:
         or      dx,dx
         jnz     failed
 
+        ; WRITE uses the shorter length/address/handle stack form and queues
+        ; a by-value message with status zero.
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     si,offset sample_message
+        call    mailbox_write_value
+        jc      failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        cmp     ax,1
+        jne     failed
+        push    ds
+        pop     es
+        mov     di,offset read_buffer
+        mov     ax,word ptr mailbox_one
+        mov     cx,128
+        call    mailbox_readinto
+        jc      failed
+        cmp     ax,5
+        jne     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0F00h
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+
         mov     ax,word ptr mailbox_one
         mov     bx,0800h              ; SIZEOF: queued message count
         call    mailbox_query
@@ -451,6 +480,26 @@ mailbox_add_value:
         pop     di
         pop     bx
         pop     bp
+        ret
+
+; AX is the mailbox segment, CX the byte length and DS:SI the source. WRITE
+; consumes length, address and handle and assigns status zero.
+mailbox_write_value:
+        push    bx
+        push    di
+        mov     di,ax
+        xor     ax,ax
+        push    ax                    ; length high word
+        push    cx                    ; length low word
+        push    ds                    ; message segment
+        push    si                    ; message offset
+        push    di                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,0500h
+        int     15h
+        pop     di
+        pop     bx
         ret
 
 ; AX is the mailbox segment, CX the destination capacity and ES:DI the

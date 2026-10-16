@@ -36,7 +36,8 @@ checks:
   enumeration, reuse, stack popping, open/close, relative/absolute countdown and
   elapsed/remaining/state queries, foreground `PUSHKEY`,
   a two-slot mailbox lifecycle with exhaustion, type/identity checks,
-  enumeration, four-entry by-value queues, count/length/status, full-queue
+  enumeration, `WRITE` status-zero delivery, four-entry by-value queues,
+  count/length/status, full-queue
   failure, FIFO `READINTO` data/status delivery, empty-read failure, erase,
   close-time discard/preservation, closed-write flags, bounded
   `SETNAME`/`GETNAME` and `FINDMAIL`, reuse and reset

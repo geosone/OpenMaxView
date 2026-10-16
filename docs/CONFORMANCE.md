@@ -52,7 +52,7 @@ releases are useful only for version-qualified scheduler, communications and
 | `NEW`/`FREE` | Bounded timer and mailbox pools | Window, keyboard, pointer, panel and OBJECTQ classes |
 | `ADDR` / window `CONNECT` | Missing | Sender identity and attached-window behavior |
 | `READ` | Missing | Pointer-return buffers and scheduler-backed empty waits |
-| `WRITE` | Absolute timers only | Window streams and other writable object classes |
+| `WRITE` | Absolute timers and status-zero mailbox records | Window streams and other writable object classes |
 | `SETPRI`/`GETPRI` | Missing | OBJECTQ ordering |
 | `SIZEOF`/`LEN` | Timer and mailbox subset | Window, keyboard, pointer, panel and OBJECTQ meanings |
 | `ADDTO` | Timers and by-value mailbox records | Window data/attribute writes and other object classes |

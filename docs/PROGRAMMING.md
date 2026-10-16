@@ -275,6 +275,11 @@ capacity DWORD replaced by the number of bytes copied. It consumes the oldest
 record and exposes that record's low-byte status through `STATUS`. If the
 buffer is short, the copy is truncated and the whole record is consumed.
 
+When `ODQ_CAP3_MAILBOX_WRITE` is set, `WRITE` (`BH=05h`) provides the shorter
+status-zero mailbox form. Push the length DWORD, source far pointer and
+mailbox handle in that order. It has the same copy, size, open/full and Carry
+rules as `ADDTO`, but consumes 12 stack bytes and records status zero.
+
 An empty `READINTO` currently returns a zero count with Carry set. Original
 DESQview blocks in that case; compatible waiting requires the future scheduler.
 Task-default selectors and pointer-return `READ` remain unavailable. Do not

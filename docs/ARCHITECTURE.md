@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.26 resident API tracks foreground task compatibility state and nested
+The 0.27 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -75,7 +75,8 @@ waits remain deferred.
 Two additional paragraph-aligned headers form a bounded mailbox pool. They
 participate in validation, type queries and object enumeration. Each owns a
 four-entry FIFO with 128 bytes of copied payload per entry. `ADDTO` enqueues by
-value, `SIZEOF` and `LEN` report queued records and bytes, and `ERASE` or
+value with a caller status; `WRITE` uses the shorter status-zero form.
+`SIZEOF` and `LEN` report queued records and bytes, and `ERASE` or
 `CLOSE` discards the queue. `READINTO` consumes a ready record into caller
 storage; an empty queue returns Carry instead of blocking. Scheduler-backed
 waits and wakeups remain outside this layer. The three non-DV/X mailbox flag

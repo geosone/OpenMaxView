@@ -25,6 +25,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=01h BL=09h`, reserved DWORD on caller stack | Replaces the DWORD with a mailbox handle or null | `NEW`; bounded two-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, object DWORD on caller stack | Releases a live timer or mailbox and pops the DWORD; invalid handles are ignored | `FREE`; bounded dynamic objects |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
+| `INT 15h AH=12h BH=05h BL=00h`, length, address and mailbox DWORDs on caller stack | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=08h BL=00h`, object DWORD on caller stack | Replaces handle with elapsed hundredths or queued-message count | Timer/mailbox `SIZEOF` |
 | `INT 15h AH=12h BH=09h BL=00h`, object DWORD on caller stack | Replaces handle with remaining hundredths or total queued bytes | Timer/mailbox `LEN` |
 | `INT 15h AH=12h BH=0Ah BL=00h`, timer then duration DWORDs on caller stack | Starts a relative timer and pops both DWORDs | Timer `ADDTO`; duration below handle |
@@ -124,7 +125,7 @@ are bounded to one midnight wrap. Blocking `READ` remains unimplemented until
 its scheduling and task-wakeup rules have conformance coverage.
 
 Mailbox objects additionally provide a bounded FIFO write layer. Each of two
-mailboxes stores four by-value `ADDTO` records with payloads of zero through
+mailboxes stores four by-value `WRITE` or `ADDTO` records with payloads of zero through
 128 bytes. `SIZEOF` returns the queued-record count and `LEN` the total queued
 bytes. `ERASE`, `CLOSE`, `FREE` and task reset discard pending records. A
 closed or full mailbox, a payload over 128 bytes or a nonzero high length word
@@ -183,12 +184,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=001Ah`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=001Bh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=00FFh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=01FFh` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -207,6 +208,7 @@ Bit 5 advertises ready-record `READINTO`; it does not advertise a blocking
 empty-mailbox wait.
 Bit 6 advertises base mailbox `SETFLAGS`/`GETFLAGS` behavior for bits 0-2.
 Bit 7 advertises bounded explicit-handle mailbox names and `FINDMAIL`.
+Bit 8 advertises by-value mailbox `WRITE` with implicit status zero.
 
 ## Open 386MAX QPI wrapper
 

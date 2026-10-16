@@ -52,7 +52,7 @@
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x001a
+#define ODQ_MUX_VERSION         0x001b
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -98,6 +98,7 @@
 #define ODQ_CAP3_MAILBOX_READINTO 0x0020
 #define ODQ_CAP3_MAILBOX_FLAGS  0x0040
 #define ODQ_CAP3_MAILBOX_NAMES  0x0080
+#define ODQ_CAP3_MAILBOX_WRITE  0x0100
 #define ODQ_CAPABILITIES3       (ODQ_CAP3_MESSAGE_HANDLE | \
                                  ODQ_CAP3_MESSAGE_NEW_FREE | \
                                  ODQ_CAP3_TIMER_CONTROL | \
@@ -105,7 +106,8 @@
                                  ODQ_CAP3_MAILBOX_QUEUE | \
                                  ODQ_CAP3_MAILBOX_READINTO | \
                                  ODQ_CAP3_MAILBOX_FLAGS | \
-                                 ODQ_CAP3_MAILBOX_NAMES)
+                                 ODQ_CAP3_MAILBOX_NAMES | \
+                                 ODQ_CAP3_MAILBOX_WRITE)
 
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_MESSAGE_NEW     0x1201
