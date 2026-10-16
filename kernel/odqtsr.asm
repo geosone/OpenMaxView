@@ -21,7 +21,8 @@
 ;   INT 15h AH=12h, BH=03h           mailbox ADDR sender query
 ;   INT 15h AH=12h, BH=04h           ready mailbox pointer READ
 ;   INT 15h AH=12h, BH=0Bh           mailbox SUBFROM by reference
-;   INT 15h AH=12h, BH=11h/12h       mailbox SETNAME/GETNAME
+;   INT 15h AH=12h, BH=11h           foreground window AT / mailbox SETNAME
+;   INT 15h AH=12h, BH=12h           mailbox GETNAME
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE05h                 conventional-memory availability
 ;   INT 15h AX=DE06h                 expanded-memory availability
@@ -67,10 +68,10 @@ MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0022h
+MUX_VERSION    equ 0023h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 0FFFh             ; HANDLE, timers, mailbox services
+CAPABILITIES3  equ 1FFFh             ; object and foreground-window messages
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -307,7 +308,7 @@ int15_dispatch_timer_open_close:
 int15_dispatch_erase:
         jmp     int15_message_erase
 int15_dispatch_mailbox_setname:
-        jmp     int15_message_mailbox_setname
+        jmp     int15_message_at_gateway
 int15_dispatch_mailbox_getname:
         jmp     int15_message_mailbox_getname
 int15_dispatch_mailbox_readinto:
@@ -1171,6 +1172,41 @@ message_ref_gateway_chain:
         pop     bp
         jmp     int15_chain
 
+; BH=11h is mailbox SETNAME for a mailbox handle and window AT for a window
+; handle or the current task's default window. Resolve the overloaded
+; selector before consuming either call's different stack layout.
+int15_message_at_gateway:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     bl,1
+        je      short message_at_gateway_window
+        cmp     bl,0
+        jne     short message_at_gateway_chain
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_at_gateway_chain
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jnc     short message_at_gateway_mailbox
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short message_at_gateway_chain
+message_at_gateway_window:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_window_at
+message_at_gateway_mailbox:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_mailbox_setname
+message_at_gateway_chain:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_chain
+
 ; Return a pointer to and consume the oldest ready mailbox record. The public
 ; READ ABI expands one input handle DWORD into a length DWORD followed by a
 ; pointer DWORD. Empty reads are nonblocking in API 0.x and return null/zero
@@ -1730,6 +1766,83 @@ mailbox_setname_done:
         call    message_shift12
         pop     bp
         add     sp,12
+        jmp     int15_handled
+
+; Position the logical cursor of the sole foreground window. Selector 00h
+; consumes column, row and an explicit window handle; selector 01h consumes
+; column and row for the task's default window. Coordinates are DWORDs but
+; valid foreground text coordinates fit in their low byte.
+int15_message_window_at:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    dx
+        push    si
+        push    es
+        cmp     bl,0
+        jne     short window_at_default
+        cmp     word ptr ss:[bp+16],0
+        jne     short window_at_done
+        cmp     word ptr ss:[bp+20],0
+        jne     short window_at_done
+        cmp     word ptr ss:[bp+14],00FFh
+        ja      short window_at_done
+        cmp     word ptr ss:[bp+18],00FFh
+        ja      short window_at_done
+        mov     dh,byte ptr ss:[bp+14]
+        mov     dl,byte ptr ss:[bp+18]
+        jmp     short window_at_apply
+window_at_default:
+        cmp     word ptr ss:[bp+12],0
+        jne     short window_at_done
+        cmp     word ptr ss:[bp+16],0
+        jne     short window_at_done
+        cmp     word ptr ss:[bp+10],00FFh
+        ja      short window_at_done
+        cmp     word ptr ss:[bp+14],00FFh
+        ja      short window_at_done
+        mov     dh,byte ptr ss:[bp+10]
+        mov     dl,byte ptr ss:[bp+14]
+window_at_apply:
+        mov     si,dx
+        mov     ah,0Fh
+        int     10h
+        cmp     al,3
+        jbe     short window_at_text_mode
+        cmp     al,7
+        jne     short window_at_done
+window_at_text_mode:
+        mov     dx,si
+        cmp     dl,ah
+        jae     short window_at_done
+        mov     ax,40h
+        mov     es,ax
+        mov     al,byte ptr es:[84h]
+        or      al,al
+        jnz     short window_at_rows_ready
+        mov     al,24
+window_at_rows_ready:
+        cmp     dh,al
+        ja      short window_at_done
+        mov     ah,02h
+        int     10h
+window_at_done:
+        pop     es
+        pop     si
+        pop     dx
+        pop     bx
+        pop     ax
+        cmp     bl,0
+        jne     short window_at_shift_default
+        call    message_shift12
+        pop     bp
+        add     sp,12
+        jmp     int15_handled
+window_at_shift_default:
+        call    message_shift8
+        pop     bp
+        add     sp,8
         jmp     int15_handled
 
 ; GETNAME copies at most the caller's buffer size and returns that byte count
@@ -3294,7 +3407,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.34 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.35 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

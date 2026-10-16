@@ -61,6 +61,7 @@ releases are useful only for version-qualified scheduler, communications and
 | `ERASE` | Timer and mailbox subset | Windows, input queues, pointers and OBJECTQs |
 | `STATUS` | Timer/mailbox subset | Keyboard, pointer, panel and OBJECTQ status contracts |
 | `EOF` | Missing | Window and mailbox results |
+| `AT` | Foreground window implemented | Private-window cursors, alternate stream modes and non-foreground selectors |
 | `SETNAME`/`GETNAME` | Bounded explicit-handle implementation | Task-default selectors and names over 32 bytes |
 | `READN` | Missing | Bounded window/object reads |
 | `READINTO` | Ready mailbox records | True blocking/wakeup behavior when empty |

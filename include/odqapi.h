@@ -59,7 +59,7 @@
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SOUND_INFO      0xd706
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0022
+#define ODQ_MUX_VERSION         0x0023
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -109,6 +109,7 @@
 #define ODQ_CAP3_MAILBOX_READ   0x0200
 #define ODQ_CAP3_MAILBOX_REFERENCE 0x0400
 #define ODQ_CAP3_MAILBOX_SENDER 0x0800
+#define ODQ_CAP3_WINDOW_CURSOR  0x1000
 #define ODQ_CAPABILITIES3       (ODQ_CAP3_MESSAGE_HANDLE | \
                                  ODQ_CAP3_MESSAGE_NEW_FREE | \
                                  ODQ_CAP3_TIMER_CONTROL | \
@@ -120,7 +121,8 @@
                                  ODQ_CAP3_MAILBOX_WRITE | \
                                  ODQ_CAP3_MAILBOX_READ | \
                                  ODQ_CAP3_MAILBOX_REFERENCE | \
-                                 ODQ_CAP3_MAILBOX_SENDER)
+                                 ODQ_CAP3_MAILBOX_SENDER | \
+                                 ODQ_CAP3_WINDOW_CURSOR)
 
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_MESSAGE_NEW     0x1201
@@ -136,6 +138,7 @@
 #define ODQ_DVC_MESSAGE_CLOSE   0x120d
 #define ODQ_DVC_MESSAGE_ERASE   0x120e
 #define ODQ_DVC_MESSAGE_STATUS  0x120f
+#define ODQ_DVC_MESSAGE_AT      0x1211
 #define ODQ_DVC_MESSAGE_SETNAME 0x1211
 #define ODQ_DVC_MESSAGE_GETNAME 0x1212
 #define ODQ_DVC_MESSAGE_READINTO 0x1213

@@ -42,6 +42,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=0Ch/0Dh BL=00h`, object DWORD on caller stack | Opens/closes timer or mailbox and pops handle | `OPEN`/`CLOSE`; mailbox close discards queued mail |
 | `INT 15h AH=12h BH=0Eh BL=00h`, object DWORD on caller stack | Cancels a timer or empties a mailbox and pops handle | `ERASE` |
 | `INT 15h AH=12h BH=0Fh BL=00h`, object DWORD on caller stack | Replaces handle with state/status DWORD | Timer state or retained mailbox last-read status |
+| `INT 15h AH=12h BH=11h BL=00h/01h`, column and row DWORDs, plus explicit window DWORD for selector 00h | Positions the foreground logical text cursor and pops the arguments | Window `AT`; explicit or task-default foreground window |
 | `INT 15h AH=12h BH=11h BL=00h`, length, address and mailbox DWORDs on caller stack | Copies up to 32 name bytes and pops all three DWORDs | Mailbox `SETNAME`; zero length clears |
 | `INT 15h AH=12h BH=12h BL=00h`, capacity, destination and mailbox DWORDs on caller stack | Copies a non-terminated name and leaves a DWORD byte count | Mailbox `GETNAME`; bounded explicit handle |
 | `INT 15h AH=12h BH=13h BL=00h`, size, destination and mailbox DWORDs on caller stack | Copies and consumes the oldest message; leaves a DWORD byte count | Mailbox `READINTO`; Carry on empty/invalid instead of blocking |
@@ -208,7 +209,9 @@ top of the window list (`ES=0`) returns its handle for coordinates inside the
 physical text screen; searching below that sole window or outside the screen
 returns zero. `GETBUF` accepts either zero for the default window or the exact
 foreground handle and returns the active B000h/B800h text buffer and its
-BIOS-reported size. An invalid handle returns a null, empty buffer.
+BIOS-reported size. An invalid handle returns a null, empty buffer. Window
+`AT` accepts the same explicit handle or selector `01h` for the default window
+and maps valid row/column coordinates to the active BIOS text cursor.
 
 `PROCESSMEM` accepts the exact foreground task handle. It reports the current
 DOS process allocation from its owning memory-control block and accounts for
@@ -230,12 +233,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0022h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0023h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=0FFFh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=1FFFh` object-message capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
@@ -261,6 +264,8 @@ advertise a blocking empty-mailbox wait or timer `READ`.
 Bit 10 advertises bounded mailbox `SUBFROM` records retained by far reference.
 Bit 11 advertises mailbox `ADDR` sender identity for the most recently
 consumed record.
+Bit 12 advertises foreground window `AT` cursor positioning for explicit and
+task-default selectors.
 
 ## Open 386MAX QPI wrapper
 

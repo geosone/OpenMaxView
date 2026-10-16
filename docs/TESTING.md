@@ -47,8 +47,8 @@ checks:
   `SETNAME`/`GETNAME` and `FINDMAIL`, reuse and reset
   reclamation, and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
-* foreground `PRINTC` character/attribute output, cursor advancement and
-  `BX=0` cursor synchronization;
+* foreground window `AT` with explicit/default selectors, plus `PRINTC`
+  character/attribute output, cursor advancement and `BX=0` synchronization;
 * all 16 second-level callback allocations, exhaustion, masked dispatch,
   foreground-task `ES`, release/reuse and reset cleanup;
 * PC-speaker `SOUND` normalization, queued silence, current/all cancellation,

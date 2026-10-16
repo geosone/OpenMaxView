@@ -334,6 +334,27 @@ mailbox through `SETNAME` but is not a searchable name.
 
 ## Text video
 
+Window `AT` (`AH=12h`, `BH=11h`) positions the logical text cursor. For the
+task-default window, push a column DWORD and then a row DWORD and use
+`BL=01h`; the call consumes eight bytes. For an explicit window, additionally
+push its handle last and use `BL=00h`; the call consumes twelve bytes. The
+current foreground implementation accepts valid coordinates on the active
+BIOS text page. Both high words must be zero.
+
+```asm
+        xor     ax,ax
+        push    ax                    ; column high
+        mov     ax,20
+        push    ax                    ; column low
+        xor     ax,ax
+        push    ax                    ; row high
+        mov     ax,5
+        push    ax                    ; row low
+        mov     ax,1200h
+        mov     bx,1101h              ; AT task-default window
+        int     15h
+```
+
 `INT 10h/AH=FEh` returns the active logical text buffer in `ES:DI`; in the
 current foreground implementation it aliases B000h or B800h. After modifying
 through the returned buffer, issue `INT 10h/AH=FFh` as the change

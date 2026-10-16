@@ -20,7 +20,7 @@
 | `HANDLE` object message | Foreground implementation | Original caller-stack ABI returns the window and validates live task/timer handles; unavailable selectors return null. |
 | Timer objects | Bounded nonblocking implementation | Four pointer-compatible timers support lifecycle, relative/absolute countdown, open/close and elapsed/remaining/state queries. |
 | Mailbox objects | Bounded nonblocking queue implementation | Two pointer-compatible mailboxes each hold four copied `WRITE`/`ADDTO` or referenced `SUBFROM` messages of up to 128 bytes; both read forms, last-read sender identity, lifecycle, queries, erase, base flags and 32-byte names/lookup are implemented. Empty reads return Carry instead of waiting. |
-| Window location and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; `GETBUF` exposes the active text page. |
+| Window location, cursor and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; window `AT` positions its logical cursor; `GETBUF` exposes the active text page. |
 | TopView character output | Foreground text implementation | `PRINTC` writes character/attribute cells with cursor advance, wrap and full-screen scroll; no graphics-window rendering. |
 | TopView second-level callbacks | Bounded foreground implementation | Sixteen `GETBIT` slots support masked `SETBIT`, `FREEBIT`, nested request queuing and reset cleanup; dispatch is synchronous until the scheduler owns IRQ returns. |
 | TopView sound | Bounded foreground implementation | `SOUND` queues 32 PIT/PC-speaker tone or silence entries with clock-tick expiry and cancellation; queue saturation is nonblocking. |

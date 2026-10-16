@@ -27,9 +27,45 @@ start:
         mov     ah,03h
         int     10h
         mov     word ptr saved_cursor,dx
-        mov     dx,0203h
-        mov     ah,02h
+
+        ; Selector 01h positions the current task's default window.
+        xor     ax,ax
+        push    ax                    ; column high word
+        mov     ax,2
+        push    ax                    ; column low word
+        xor     ax,ax
+        push    ax                    ; row high word
+        mov     ax,2
+        push    ax                    ; row low word
+        mov     ax,1200h
+        mov     bx,1101h
+        int     15h
+        xor     bh,bh
+        mov     ah,03h
         int     10h
+        cmp     dx,0202h
+        jne     restore_cursor_failed
+
+        ; Selector 00h accepts the explicit foreground-window handle.
+        xor     ax,ax
+        push    ax                    ; column high word
+        mov     ax,3
+        push    ax                    ; column low word
+        xor     ax,ax
+        push    ax                    ; row high word
+        mov     ax,2
+        push    ax                    ; row low word
+        push    word ptr window_segment
+        xor     ax,ax
+        push    ax                    ; window offset
+        mov     ax,1200h
+        mov     bx,1100h
+        int     15h
+        xor     bh,bh
+        mov     ah,03h
+        int     10h
+        cmp     dx,0203h
+        jne     restore_cursor_failed
 
         xor     ax,ax
         mov     al,byte ptr columns
@@ -78,6 +114,7 @@ start:
 restore_failed:
         mov     ax,word ptr saved_cell
         mov     word ptr es:[di],ax
+restore_cursor_failed:
         mov     dx,word ptr saved_cursor
         xor     bh,bh
         mov     ah,02h
