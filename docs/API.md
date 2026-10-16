@@ -33,6 +33,8 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=0Eh BL=00h`, object DWORD on caller stack | Cancels a timer or empties a mailbox and pops handle | `ERASE` |
 | `INT 15h AH=12h BH=0Fh BL=00h`, object DWORD on caller stack | Replaces handle with state/status DWORD | Timer state or retained mailbox last-read status |
 | `INT 15h AH=12h BH=13h BL=00h`, size, destination and mailbox DWORDs on caller stack | Copies and consumes the oldest message; leaves a DWORD byte count | Mailbox `READINTO`; Carry on empty/invalid instead of blocking |
+| `INT 15h AH=12h BH=15h BL=00h`, flags then mailbox DWORDs on caller stack | Stores supported low flag bits and pops both DWORDs | Mailbox `SETFLAGS`; bits 0-2 only |
+| `INT 15h AH=12h BH=16h BL=00h`, mailbox DWORD on caller stack | Replaces handle with current supported flags | Mailbox `GETFLAGS` |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
 | `INT 15h AX=DE05h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Conventional-memory status |
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
@@ -131,6 +133,12 @@ DESQview's scheduler-backed operation, an empty read returns a zero byte count
 with Carry set rather than blocking. Task-default selectors and pointer-return
 `READ` are not yet implemented.
 
+Mailbox flags `0001h`, `0002h` and `0004h` are retained. The first requests
+common-memory placement and is advisory because the bounded resident pool has
+one storage class. Bit 1 permits `ADDTO` while the mailbox is closed. Bit 2
+prevents `CLOSE` from discarding pending messages. Unsupported DV/X stream,
+expanded-memory and non-owned modes are masked rather than advertised.
+
 Both keyboard injection calls use the real BIOS-format foreground queue.
 `PUSHKEY` addresses the current task implicitly; `PUTKEY` additionally
 requires the exact foreground task-handle segment and reports a full buffer.
@@ -164,12 +172,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0018h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0019h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=003Fh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=007Fh` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -186,6 +194,7 @@ Bit 4 advertises the bounded by-value mailbox queue, count/length queries and
 queue erasure; it does not advertise `READ`.
 Bit 5 advertises ready-record `READINTO`; it does not advertise a blocking
 empty-mailbox wait.
+Bit 6 advertises base mailbox `SETFLAGS`/`GETFLAGS` behavior for bits 0-2.
 
 ## Open 386MAX QPI wrapper
 

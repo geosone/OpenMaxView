@@ -52,7 +52,7 @@
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0018
+#define ODQ_MUX_VERSION         0x0019
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -96,12 +96,14 @@
 #define ODQ_CAP3_MAILBOX_LIFECYCLE 0x0008
 #define ODQ_CAP3_MAILBOX_QUEUE  0x0010
 #define ODQ_CAP3_MAILBOX_READINTO 0x0020
+#define ODQ_CAP3_MAILBOX_FLAGS  0x0040
 #define ODQ_CAPABILITIES3       (ODQ_CAP3_MESSAGE_HANDLE | \
                                  ODQ_CAP3_MESSAGE_NEW_FREE | \
                                  ODQ_CAP3_TIMER_CONTROL | \
                                  ODQ_CAP3_MAILBOX_LIFECYCLE | \
                                  ODQ_CAP3_MAILBOX_QUEUE | \
-                                 ODQ_CAP3_MAILBOX_READINTO)
+                                 ODQ_CAP3_MAILBOX_READINTO | \
+                                 ODQ_CAP3_MAILBOX_FLAGS)
 
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_MESSAGE_NEW     0x1201
@@ -115,6 +117,13 @@
 #define ODQ_DVC_MESSAGE_ERASE   0x120e
 #define ODQ_DVC_MESSAGE_STATUS  0x120f
 #define ODQ_DVC_MESSAGE_READINTO 0x1213
+#define ODQ_DVC_MESSAGE_SETFLAGS 0x1215
+#define ODQ_DVC_MESSAGE_GETFLAGS 0x1216
+
+#define ODQ_MAILBOX_FLAG_COMMON 0x0001
+#define ODQ_MAILBOX_FLAG_WRITE_CLOSED 0x0002
+#define ODQ_MAILBOX_FLAG_KEEP_ON_CLOSE 0x0004
+#define ODQ_MAILBOX_FLAGS_SUPPORTED 0x0007
 
 #define ODQ_HANDLE_STACK        0x00
 #define ODQ_HANDLE_WINDOW       0x01

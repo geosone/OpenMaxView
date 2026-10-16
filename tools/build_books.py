@@ -20,6 +20,7 @@ DEVELOPER_CHAPTERS = (
     "ARCHITECTURE.md",
     "BUILDING.md",
     "TESTING.md",
+    "CONFORMANCE.md",
     "DEVELOPMENT.md",
     "SERIAL_BBS.md",
     "COMPATIBILITY.md",

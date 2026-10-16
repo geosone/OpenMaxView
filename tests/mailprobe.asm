@@ -229,6 +229,46 @@ mailbox_fill_loop:
         call    mailbox_add_value
         jnc     failed
 
+        ; Flags 1 and 2 allow closed writes and preserve the queue on CLOSE.
+        mov     ax,word ptr mailbox_one
+        mov     dx,0006h
+        call    mailbox_setflags
+        mov     ax,word ptr mailbox_one
+        mov     bx,1600h
+        call    mailbox_query
+        cmp     ax,0006h
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Eh
+        mov     si,offset sample_message
+        call    mailbox_add_value
+        jc      failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0C00h
+        call    mailbox_command
+        mov     ax,word ptr mailbox_one
+        mov     bx,0D00h
+        call    mailbox_command
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        cmp     ax,1
+        jne     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0E00h
+        call    mailbox_command
+        mov     ax,word ptr mailbox_one
+        xor     dx,dx
+        call    mailbox_setflags
+        mov     ax,word ptr mailbox_one
+        mov     bx,1600h
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+
         xor     ax,ax
         mov     es,ax
         xor     di,di
@@ -382,6 +422,24 @@ mailbox_readinto:
         pop     si
         pop     bx
         pop     bp
+        ret
+
+; AX is the mailbox segment and DX the low flags word. SETFLAGS consumes the
+; flags and handle DWORDs.
+mailbox_setflags:
+        push    bx
+        push    di
+        mov     di,ax
+        xor     ax,ax
+        push    ax                    ; flags high word
+        push    dx                    ; flags low word
+        push    di                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,1500h
+        int     15h
+        pop     di
+        pop     bx
         ret
 
 mailbox_one dw 0

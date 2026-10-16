@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.24 resident API tracks foreground task compatibility state and nested
+The 0.25 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -78,7 +78,9 @@ four-entry FIFO with 128 bytes of copied payload per entry. `ADDTO` enqueues by
 value, `SIZEOF` and `LEN` report queued records and bytes, and `ERASE` or
 `CLOSE` discards the queue. `READINTO` consumes a ready record into caller
 storage; an empty queue returns Carry instead of blocking. Scheduler-backed
-waits and wakeups remain outside this layer.
+waits and wakeups remain outside this layer. The three non-DV/X mailbox flag
+bits are retained: common-memory placement is advisory for the fixed resident
+pool, while closed writes and close-time queue preservation are enforced.
 
 The same foreground object now backs `LOCATE` and `GETBUF`: coordinates in the
 physical text screen resolve to the one full-screen window, and its virtual
@@ -192,7 +194,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Object messages | partial | `HANDLE` stack ABI plus bounded timer control and mailbox writes; blocking messages planned |
 | Timers | nonblocking subset implemented | Four identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
-| Mailboxes | bounded nonblocking queue subset implemented | Two identities, four copied messages each, open/close, count/length/status, erase and ready-record `READINTO`; empty blocking wait planned |
+| Mailboxes | bounded nonblocking queue subset implemented | Two identities, four copied messages each, lifecycle/query/read, erase and base `SETFLAGS`/`GETFLAGS`; empty blocking wait planned |
 | Panels and further mailbox operations | planned | DESQview-specific dynamic object API |
 | Concurrent V86 tasks | planned | Backend primitives available through QPI (contexts, IRQ calldowns); scheduler pending |
 | Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |

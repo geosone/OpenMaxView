@@ -30,6 +30,8 @@ apply to milestone 0.8.
   `build/books/OpenMaxView-User.epub`.
 * [Building](BUILDING.md) - Open Watcom/JWasm/JWlink build and packaging.
 * [Testing](TESTING.md) - host and DOSBox test suites.
+* [Conformance matrix](CONFORMANCE.md) - clean-room probe method and the
+  feature-by-feature 1.x gap inventory.
 * [Resident API](API.md) - implemented DESQview-compatible and private calls.
 * [Architecture](ARCHITECTURE.md) - components and the Open 386MAX boundary.
 * [Development guide](DEVELOPMENT.md) - clean-room rules, source layout and
@@ -47,7 +49,7 @@ manual text.
 
 `SETUP` installs this set as 8.3 text files: `DOCS.TXT`, `USERGUID.TXT`,
 `TOOLS.TXT`, `CONFIG.TXT`, `BUILDING.TXT`, `TESTING.TXT`, `API.TXT`,
-`COMPAT.TXT`, `DEVELOP.TXT`, `ROADMAP.TXT`, `REMOTE2.TXT`, `TROUBLE.TXT` and
-`ARCHITEC.TXT`, `HELP.TXT`, `BBSGUIDE.TXT`, `PROGDEV.TXT` and `QUICK.TXT`.
+`COMPAT.TXT`, `CONFORM.TXT`, `DEVELOP.TXT`, `ROADMAP.TXT`, `REMOTE2.TXT`,
+`TROUBLE.TXT`, `ARCHITEC.TXT`, `HELP.TXT`, `BBSGUIDE.TXT`, `PROGDEV.TXT` and `QUICK.TXT`.
 Start with `QUICK.TXT`; Markdown punctuation remains readable
 with `TYPE`, an editor or another DOS text viewer.

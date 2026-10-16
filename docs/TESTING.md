@@ -38,7 +38,8 @@ checks:
   a two-slot mailbox lifecycle with exhaustion, type/identity checks,
   enumeration, four-entry by-value queues, count/length/status, full-queue
   failure, FIFO `READINTO` data/status delivery, empty-read failure, erase,
-  close-time discard, reuse and reset reclamation, and
+  close-time discard/preservation, closed-write flags, reuse and reset
+  reclamation, and
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone

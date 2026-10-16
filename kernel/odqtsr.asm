@@ -56,10 +56,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0018h
+MUX_VERSION    equ 0019h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 003Fh             ; HANDLE, timers, mailbox queue/read
+CAPABILITIES3  equ 007Fh             ; HANDLE, timers, mailbox services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -221,6 +221,10 @@ int15_handler:
         je      short int15_dispatch_timer_query
         cmp     bh,13h                ; READINTO
         je      short int15_dispatch_mailbox_readinto
+        cmp     bh,15h                ; SETFLAGS
+        je      short int15_dispatch_mailbox_setflags
+        cmp     bh,16h                ; GETFLAGS
+        je      short int15_dispatch_timer_query
         jmp     short int15_unknown_message
 int15_dispatch_handle:
         jmp     int15_message_handle
@@ -238,6 +242,8 @@ int15_dispatch_erase:
         jmp     int15_message_erase
 int15_dispatch_mailbox_readinto:
         jmp     int15_message_mailbox_readinto
+int15_dispatch_mailbox_setflags:
+        jmp     int15_message_mailbox_setflags
 int15_unknown_message:
         jmp     int15_chain
 int15_not_message:
@@ -677,6 +683,7 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_used[si],1
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
+        mov     word ptr cs:mailbox_flags[si],0
         call    mailbox_clear_queue
         mov     ax,word ptr cs:mailbox_handle_segments[si]
         mov     word ptr ss:[bp+12],ax
@@ -712,6 +719,7 @@ message_free_mailbox:
         mov     word ptr cs:mailbox_used[si],0
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
+        mov     word ptr cs:mailbox_flags[si],0
         call    mailbox_clear_queue
 message_free_done:
         pop     si
@@ -740,9 +748,13 @@ timer_query_handle_ok:
         jc      short timer_query_mailbox
         call    timer_elapsed
         cmp     bh,08h
-        je      short timer_query_store
+        jne     short timer_query_not_sizeof
+        jmp     timer_query_store
+timer_query_not_sizeof:
         cmp     bh,09h
         je      short timer_query_length
+        cmp     bh,0Fh
+        jne     short timer_query_invalid
         xor     ax,ax                 ; STATUS
         xor     dx,dx
         cmp     word ptr cs:timer_open[si],0
@@ -762,7 +774,13 @@ timer_query_mailbox:
         cmp     bh,09h
         je      short mailbox_query_bytes
         cmp     bh,0Fh
+        je      short mailbox_query_status
+        cmp     bh,16h
         jne     short timer_query_invalid
+        mov     ax,word ptr cs:mailbox_flags[si]
+        xor     dx,dx
+        jmp     short timer_query_store
+mailbox_query_status:
         mov     ax,word ptr cs:mailbox_status[si]
         xor     dx,dx
         jmp     short timer_query_store
@@ -828,6 +846,8 @@ timer_open_close_mailbox:
         jmp     short timer_open_close_done
 mailbox_close:
         mov     word ptr cs:mailbox_open[si],0
+        test    word ptr cs:mailbox_flags[si],0004h
+        jnz     short timer_open_close_done
         call    mailbox_clear_queue
 timer_open_close_done:
         pop     si
@@ -1025,6 +1045,34 @@ mailbox_readinto_done:
         pop     dx
         pop     cx
         pop     bx
+        pop     ax
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
+
+; SETFLAGS retains the supported TopView mailbox-control bits: place messages
+; in common memory (advisory in this resident pool), allow writes while closed,
+; and preserve queued messages across CLOSE. DV/X stream/EMS flags are masked.
+int15_message_mailbox_setflags:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     bl,0
+        jne     short mailbox_setflags_done
+        cmp     word ptr ss:[bp+10],0
+        jne     short mailbox_setflags_done
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short mailbox_setflags_done
+        cmp     word ptr ss:[bp+16],0
+        jne     short mailbox_setflags_done
+        mov     ax,word ptr ss:[bp+14]
+        and     ax,0007h
+        mov     word ptr cs:mailbox_flags[si],ax
+mailbox_setflags_done:
+        pop     si
         pop     ax
         call    message_shift8
         pop     bp
@@ -1676,7 +1724,10 @@ mailbox_add_value:
         push    es
         or      word ptr ss:[bp+8],1
         cmp     word ptr cs:mailbox_open[si],1
-        jne     short mailbox_add_value_done
+        je      short mailbox_add_value_open
+        test    word ptr cs:mailbox_flags[si],0002h
+        jz      short mailbox_add_value_done
+mailbox_add_value_open:
         cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
         jae     short mailbox_add_value_done
         cmp     word ptr ss:[bp+20],0
@@ -2099,6 +2150,7 @@ mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_flags  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_head   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_tail   dw MAILBOX_SLOT_COUNT dup(0)
@@ -2132,7 +2184,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.24 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.25 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

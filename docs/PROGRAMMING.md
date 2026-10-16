@@ -280,6 +280,15 @@ DESQview blocks in that case; compatible waiting requires the future scheduler.
 Task-default selectors and pointer-return `READ` remain unavailable. Do not
 infer either feature from queue capability bit 4 or ready-read bit 5.
 
+Capability `ODQ_CAP3_MAILBOX_FLAGS` enables `SETFLAGS` (`BH=15h`) and
+`GETFLAGS` (`BH=16h`) for explicit mailbox handles. The supported bits are
+`ODQ_MAILBOX_FLAG_COMMON`, `ODQ_MAILBOX_FLAG_WRITE_CLOSED` and
+`ODQ_MAILBOX_FLAG_KEEP_ON_CLOSE`. Push the flags DWORD first and the mailbox
+handle last for `SETFLAGS`; both are consumed. `GETFLAGS` uses the normal
+query layout and replaces the handle DWORD with the result. The common-memory
+bit is retained but has no placement effect in the fixed resident pool. Do
+not request DV/X stream or expanded-memory flags: they are masked out.
+
 ## Text video
 
 `INT 10h/AH=FEh` returns the active logical text buffer in `ES:DI`; in the

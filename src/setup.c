@@ -60,6 +60,7 @@ static const install_file files[] = {
     { "TESTING.TXT", "TESTING.TXT", 1, 0 },
     { "API.TXT",     "API.TXT",     1, 0 },
     { "COMPAT.TXT",  "COMPAT.TXT",  1, 0 },
+    { "CONFORM.TXT", "CONFORM.TXT", 1, 0 },
     { "DEVELOP.TXT", "DEVELOP.TXT", 1, 0 },
     { "ROADMAP.TXT", "ROADMAP.TXT", 1, 0 },
     { "REMOTE2.TXT", "REMOTE2.TXT", 1, 0 },
