@@ -12,7 +12,7 @@
 | Physical screen queries | Foreground implementation | Reports BIOS rows, columns and mode; no direct-window switch or DV/X identity. |
 | DESQview keyboard injection | Foreground implementation | `PUSHKEY` and handle-validated `PUTKEY` add scan/character pairs to the BIOS buffer. |
 | Keyboard-mouse control | Foreground state implementation | Query, enable and disable are retained per child; event synthesis is not yet implemented. |
-| System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each. |
+| System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each; TopView `1001h`, DESQview 2.40 `102Eh` and `DE0Ch` allocation entries share the task pool. |
 | Process memory status | Foreground implementation | Validated current-process MCB size and bounded task-system pool accounting. |
 | Conventional/expanded status | Foreground implementation | DOS MCB and standard EMS queries reported in documented KB units. |
 | Physical debug status | Implemented | `DBGPOKE` appends characters on the bottom text row without replacing attributes. |

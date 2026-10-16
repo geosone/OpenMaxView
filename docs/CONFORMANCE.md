@@ -42,7 +42,7 @@ releases are useful only for version-qualified scheduler, communications and
 | `POSWIN` | Missing | Move/resize, clipping, redraw and focus behavior |
 | `NEWPROC` | Missing | Child process/task creation and failure cleanup |
 | `KMOUSE` | State implemented | Per-task event synthesis |
-| extended `102Eh` allocation | Missing | Version-qualified allocation semantics |
+| extended `102Eh` allocation | Bounded foreground implementation | Variable sizes beyond the fixed 256-byte slots |
 
 ## Object messages (`INT 15h/AH=12h`)
 

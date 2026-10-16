@@ -19,6 +19,7 @@
 #define ODQ_DVC_GET_VERSION     0x1022
 #define ODQ_DVC_GET_BUFFER      0x1024
 #define ODQ_DVC_KEYBOARD_MOUSE  0x102d
+#define ODQ_DVC_GET_MEMORY_EXT  0x102e
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_COMMON_STATUS   0xde04
 #define ODQ_DVC_CONVENTIONAL_STATUS 0xde05
@@ -58,7 +59,7 @@
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SOUND_INFO      0xd706
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0020
+#define ODQ_MUX_VERSION         0x0021
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002

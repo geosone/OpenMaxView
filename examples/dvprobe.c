@@ -238,6 +238,7 @@ int main(void)
 
     for (i = 0; i < ODQ_SYSTEM_SLOT_COUNT; ++i) {
         unsigned function = i == 0 ? ODQ_DVC_GET_MEMORY_TV :
+                            i == 1 ? ODQ_DVC_GET_MEMORY_EXT :
                                      ODQ_DVC_GET_MEMORY;
         if (!allocate_block(function, ODQ_MEMORY_SLOT_SIZE,
                             &system_blocks[i])) {
@@ -267,6 +268,7 @@ int main(void)
         }
     }
     puts("Resident system-memory APIs passed.");
+    puts("Extended system-memory allocation API passed.");
 
     if (!common_status(ODQ_COMMON_SLOT_COUNT * ODQ_MEMORY_SLOT_SIZE) ||
         !allocate_block(ODQ_DVC_GET_COMMON, 64, &common_block) ||

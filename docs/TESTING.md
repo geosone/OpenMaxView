@@ -28,6 +28,7 @@ checks:
 * first and repeated installation of `MAXVTSR` and `MAXVANSI`;
 * API version, pause, `APPNUM`, keyboard-mouse mode, `APILEVEL`, `JUSTIFY`,
   `CSTYLE`, error policy,
+  all three bounded system-memory allocation entry points,
   conventional/expanded-memory status and attribute-preserving physical
   `DBGPOKE` output,
   nested `BEGINC`/`ENTERC` sections, `GETCRIT`, foreground `LOCATE`/`GETBUF`,

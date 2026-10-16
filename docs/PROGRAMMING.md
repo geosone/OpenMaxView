@@ -104,6 +104,9 @@ The current allocator is deliberately bounded. `GET_MEMORY` accepts 1 to 256
 bytes and returns a zero-filled `ES:DI` block; eight task slots exist.
 `GET_COMMON` uses four global 256-byte slots. Common blocks survive a task
 reset and must be released explicitly.
+The TopView `ODQ_DVC_GET_MEMORY_TV` (`AX=1001h`) and DESQview 2.40
+`ODQ_DVC_GET_MEMORY_EXT` (`AX=102Eh`) entry points share the same task pool and
+failure contract; release their blocks with `ODQ_DVC_PUT_MEMORY_TV`.
 
 ```c
 union REGS inregs, outregs;

@@ -16,6 +16,7 @@
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
 ;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
+;   INT 15h AX=102Eh                 DESQview 2.40 system-memory allocation
 ;   INT 15h AH=12h, BH=00h           HANDLE object-message subset
 ;   INT 15h AH=12h, BH=04h           ready mailbox pointer READ
 ;   INT 15h AH=12h, BH=0Bh           mailbox SUBFROM by reference
@@ -65,7 +66,7 @@ MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0020h
+MUX_VERSION    equ 0021h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
 CAPABILITIES3  equ 07FFh             ; HANDLE, timers, mailbox services
@@ -372,6 +373,10 @@ int15_not_getbuf:
         jne     short int15_not_keyboard_mouse
         jmp     int15_keyboard_mouse
 int15_not_keyboard_mouse:
+        cmp     ax,102Eh              ; DESQview 2.40 extended GETMEM alias
+        jne     short int15_not_extended_getmem
+        jmp     int15_getmem
+int15_not_extended_getmem:
         cmp     ax,0DE04h             ; GET AVAILABLE COMMON MEMORY
         jne     short int15_not_common_status
         jmp     int15_common_status
@@ -3218,7 +3223,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.32 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.33 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
