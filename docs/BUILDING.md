@@ -19,6 +19,7 @@ Open 386MAX. NASM is not part of the build.
 ```sh
 make
 make package
+make setup-package
 make test
 make test-dos
 make books
@@ -38,6 +39,19 @@ JWasm's MASM-compatible mode and JWlink creates COM and DOS EXE images.
 `make package` rebuilds `build/OpenMaxView/` as installation media. It
 contains the installer, runtime programs, default data files, README and GPL
 license. Build objects, maps and test-only probes are not copied there.
+
+`make setup-package` additionally builds the three documentation books and
+creates a distributable set below `build/releases/<version>/`: a
+deterministic DOS ZIP containing the complete `OpenMaxView/`
+installation-media directory, the
+developer HTML book, the user PDF and EPUB, plus `SHA256SUMS.txt`. The archive
+name uses the single token in `VERSION`. Set `SOURCE_DATE_EPOCH` when a release
+needs a timestamp other than the deterministic 1980 default.
+
+`make release-check` starts from a clean build, runs host and DOSBox tests and
+then creates those release artifacts. It is the release-candidate command;
+the remaining real-machine and interactive checks are listed in
+`TESTING.TXT`.
 
 ## Documentation books
 

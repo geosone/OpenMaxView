@@ -9,6 +9,8 @@ JWLINK := $(MAXROOT)/linux/bin/jwlink
 CC     ?= cc
 BUILD  := build
 PACKAGE := $(BUILD)/OpenMaxView
+VERSION := $(strip $(shell sed -n '1p' VERSION))
+RELEASE_DIR := $(BUILD)/releases/$(VERSION)
 DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
 	TESTING.TXT API.TXT COMPAT.TXT DEVELOP.TXT ROADMAP.TXT REMOTE2.TXT \
 	TROUBLE.TXT ARCHITEC.TXT HELP.TXT BBSGUIDE.TXT PROGDEV.TXT QUICK.TXT \
@@ -16,7 +18,7 @@ DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
 
 DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
-.PHONY: all package test test-dos books book-html book-pdf book-epub clean
+.PHONY: all package setup-package release-check test test-dos books book-html book-pdf book-epub clean
 
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
@@ -260,6 +262,16 @@ package: all
 		$(BUILD)/MAXVANSI.COM $(BUILD)/MAXVIEW.CFG \
 		$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 		$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES)) $(PACKAGE)/
+
+setup-package: package books
+	python3 tools/build_release.py --package $(PACKAGE) \
+		--books $(BUILD)/books --output $(RELEASE_DIR) --version $(VERSION)
+
+release-check:
+	$(MAKE) clean
+	$(MAKE) test
+	$(MAKE) test-dos
+	$(MAKE) setup-package
 
 $(BUILD)/test_catalog: tests/test_catalog.c src/catalog.c include/catalog.h | $(BUILD)
 	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_catalog.c src/catalog.c

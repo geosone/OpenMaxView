@@ -74,19 +74,25 @@ real DOS installation or proprietary reference media.
 
 ## Before a release
 
-Run all four checks from a clean tree:
+Run the complete build and test sequence from a clean tree:
 
 ```sh
 make clean
 make package
 make test
 make test-dos
+make setup-package
 ```
 
 Also run `git diff --check`, inspect `build/OpenMaxView/`, install that exact
 directory into a fresh DOSBox machine and exercise the full-screen tools with
 a keyboard. The automated suite is strong on stable behaviour but does not
 replace visual inspection of an 80x25 interface.
+
+For a release candidate, `make release-check` performs the clean automated
+sequence and writes the DOS ZIP, HTML, PDF, EPUB and `SHA256SUMS.txt` below
+`build/releases/<version>/`. Verify the checksums, install from the extracted
+DOS ZIP, and retain the exact tested artifacts for the GitHub release.
 
 ## Adding compatibility work
 
