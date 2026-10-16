@@ -1,5 +1,5 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; DOSBox probe for the bounded mailbox object lifecycle.
+; DOSBox probe for the bounded mailbox queue lifecycle.
 
         .8086
         .model tiny
@@ -66,9 +66,96 @@ start:
         jnz     failed
         or      dx,dx
         jnz     failed
+
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h              ; SIZEOF: queued message count
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0900h              ; LEN: total queued bytes
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+
+        mov     di,4
+mailbox_fill_loop:
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Ah
+        mov     si,offset sample_message
+        call    mailbox_add_value
+        jc      failed
+        dec     di
+        jnz     short mailbox_fill_loop
+
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        cmp     ax,4
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0900h
+        call    mailbox_query
+        cmp     ax,20
+        jne     failed
+        or      dx,dx
+        jnz     failed
+
+        ; A fifth message exceeds the bounded queue and must fail without
+        ; changing its count or byte length.
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Bh
+        mov     si,offset sample_message
+        call    mailbox_add_value
+        jnc     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        cmp     ax,4
+        jne     failed
+
+        mov     ax,word ptr mailbox_one
+        mov     bx,0E00h              ; ERASE discards every queued message
+        call    mailbox_command
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0900h
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Ch
+        mov     si,offset sample_message
+        call    mailbox_add_value
+        jc      failed
         mov     ax,word ptr mailbox_one
         mov     bx,0D00h
         call    mailbox_command
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h              ; CLOSE also discards pending mail
+        call    mailbox_query
+        or      ax,ax
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Dh
+        mov     si,offset sample_message
+        call    mailbox_add_value
+        jnc     failed
 
         xor     ax,ax
         mov     es,ax
@@ -174,8 +261,34 @@ mailbox_query:
         pop     bx
         ret
 
+; AX is the mailbox segment, DX the status, CX the byte length and DS:SI the
+; message address. ADDTO consumes status, length, address and handle DWORDs.
+mailbox_add_value:
+        push    bp
+        mov     bp,sp
+        push    bx
+        push    di
+        mov     di,ax
+        xor     ax,ax
+        push    ax                    ; status high word
+        push    dx                    ; status low word
+        push    ax                    ; length high word
+        push    cx                    ; length low word
+        push    ds                    ; message segment
+        push    si                    ; message offset
+        push    di                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,0A00h
+        int     15h
+        pop     di
+        pop     bx
+        pop     bp
+        ret
+
 mailbox_one dw 0
 mailbox_two dw 0
-passed_msg db 'MAXVTSR mailbox object lifecycle passed.',13,10,'$'
-failed_msg db 'MAXVTSR mailbox object lifecycle failed.',13,10,'$'
+sample_message db 'HELLO'
+passed_msg db 'MAXVTSR mailbox queue lifecycle passed.',13,10,'$'
+failed_msg db 'MAXVTSR mailbox queue lifecycle failed.',13,10,'$'
         end start

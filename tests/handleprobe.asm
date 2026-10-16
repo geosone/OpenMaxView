@@ -63,7 +63,7 @@ start:
         or      ax,ax
         jnz     failed
 
-        ; Mailbox selector 03h remains null until that object is implemented.
+        ; Selector 03h remains null until a task-default mailbox exists.
         xor     ax,ax
         push    ax
         push    ax

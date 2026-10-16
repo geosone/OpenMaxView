@@ -167,10 +167,10 @@ there. The low word is the offset and the high word is the segment:
 ```
 
 Check for `0000:0000`, and keep the pushes and pops balanced. Selector `00h`
-accepts both the foreground task and live timer handles. Selectors for
-mailboxes, keyboards and OBJECTQs currently return null because those objects
-do not exist. Do not substitute private handles or assume that an integer is
-a valid object pointer.
+accepts the foreground task plus live timer and mailbox handles. Task-default
+mailbox, keyboard and OBJECTQ selectors currently return null because those
+objects do not exist. Do not substitute private handles or assume that an
+integer is a valid object pointer.
 
 The bounded timer lifecycle uses the same stack layout. `NEW` class `0Bh`
 returns one of four timer handles:
@@ -237,9 +237,40 @@ Blocking `READ` is not yet available; polling clients can use `STATUS` or
 
 `NEW` class `09h` similarly allocates one of two mailbox identities. They work
 with `IS_OBJECT`, `OBJECT_TYPE`, `OBJNEXT`, `HANDLE` selector `00h`, `FREE`,
-`OPEN`, `CLOSE` and `STATUS`. The mailbox queue and task-default selectors are
-not implemented yet, so applications must not issue `READ` or write messages
-until the mailbox-message capability is separately advertised.
+`OPEN`, `CLOSE`, `ERASE` and `STATUS`. Capability
+`ODQ_CAP3_MAILBOX_QUEUE` adds a bounded by-value `ADDTO` queue. Each mailbox
+holds four messages of at most 128 bytes. Push the status, length and source
+address first, followed by the mailbox handle so the handle is on top:
+
+```asm
+        xor     ax,ax
+        push    ax                    ; status high word
+        mov     ax,7
+        push    ax                    ; status low byte is significant
+        xor     ax,ax
+        push    ax                    ; length high word must be zero
+        mov     ax,message_end-message
+        push    ax                    ; length low word
+        push    ds                    ; source segment
+        mov     ax,offset message
+        push    ax                    ; source offset
+        push    es                    ; mailbox segment
+        push    di                    ; mailbox offset (currently zero)
+        mov     ax,1200h
+        mov     bx,0A00h              ; mailbox ADDTO by value
+        int     15h                   ; all 16 argument bytes are consumed
+        jc      queue_full_or_closed
+```
+
+`SIZEOF` replaces the handle with the queued-message count; `LEN` replaces it
+with the total queued bytes. `ERASE` consumes the handle and empties the queue.
+`CLOSE` also discards queued mail. A closed/full mailbox, a null source for a
+nonempty record, or a length above 128 bytes returns Carry set without
+changing the queue.
+`STATUS` is reserved for the status of the last message read and remains zero
+until reads are implemented. Task-default selectors and blocking `READ` are
+still unavailable; do not issue `READ` merely because write-queue capability
+bit 4 is present.
 
 ## Text video
 

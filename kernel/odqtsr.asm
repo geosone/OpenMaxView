@@ -56,10 +56,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0016h
+MUX_VERSION    equ 0017h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 000Fh             ; HANDLE, timer control, mailbox lifetime
+CAPABILITIES3  equ 001Fh             ; HANDLE, timers, mailbox queue
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -69,6 +69,9 @@ TIMER_SLOT_COUNT   equ 4
 TIMER_OBJECT_SIZE  equ 32
 MAILBOX_SLOT_COUNT equ 2
 MAILBOX_OBJECT_SIZE equ 32
+MAILBOX_QUEUE_DEPTH equ 4
+MAILBOX_MESSAGE_SIZE equ 128
+MAILBOX_ENTRY_COUNT equ MAILBOX_SLOT_COUNT * MAILBOX_QUEUE_DEPTH
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -212,6 +215,8 @@ int15_handler:
         je      short int15_dispatch_timer_open_close
         cmp     bh,0Dh                ; CLOSE
         je      short int15_dispatch_timer_open_close
+        cmp     bh,0Eh                ; ERASE
+        je      short int15_dispatch_erase
         cmp     bh,0Fh                ; STATUS
         je      short int15_dispatch_timer_query
         jmp     short int15_unknown_message
@@ -227,6 +232,8 @@ int15_dispatch_timer_add:
         jmp     int15_message_timer_add
 int15_dispatch_timer_open_close:
         jmp     int15_message_timer_open_close
+int15_dispatch_erase:
+        jmp     int15_message_erase
 int15_unknown_message:
         jmp     int15_chain
 int15_not_message:
@@ -666,6 +673,7 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_used[si],1
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
+        call    mailbox_clear_queue
         mov     ax,word ptr cs:mailbox_handle_segments[si]
         mov     word ptr ss:[bp+12],ax
 message_new_done:
@@ -700,6 +708,7 @@ message_free_mailbox:
         mov     word ptr cs:mailbox_used[si],0
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
+        call    mailbox_clear_queue
 message_free_done:
         pop     si
         pop     ax
@@ -719,7 +728,9 @@ int15_message_timer_query:
         push    dx
         push    si
         cmp     word ptr ss:[bp+10],0
-        jne     short timer_query_invalid
+        je      short timer_query_handle_ok
+        jmp     timer_query_invalid
+timer_query_handle_ok:
         mov     ax,word ptr ss:[bp+12]
         call    timer_validate
         jc      short timer_query_mailbox
@@ -740,11 +751,23 @@ timer_query_status_open:
         mov     dx,4000h              ; open and running
         jmp     short timer_query_store
 timer_query_mailbox:
-        cmp     bh,0Fh
-        jne     short timer_query_invalid
         call    mailbox_validate
         jc      short timer_query_invalid
+        cmp     bh,08h
+        je      short mailbox_query_count
+        cmp     bh,09h
+        je      short mailbox_query_bytes
+        cmp     bh,0Fh
+        jne     short timer_query_invalid
         mov     ax,word ptr cs:mailbox_status[si]
+        xor     dx,dx
+        jmp     short timer_query_store
+mailbox_query_count:
+        mov     ax,word ptr cs:mailbox_count[si]
+        xor     dx,dx
+        jmp     short timer_query_store
+mailbox_query_bytes:
+        mov     ax,word ptr cs:mailbox_bytes[si]
         xor     dx,dx
         jmp     short timer_query_store
 timer_query_length:
@@ -801,6 +824,7 @@ timer_open_close_mailbox:
         jmp     short timer_open_close_done
 mailbox_close:
         mov     word ptr cs:mailbox_open[si],0
+        call    mailbox_clear_queue
 timer_open_close_done:
         pop     si
         pop     ax
@@ -820,7 +844,7 @@ int15_message_timer_add:
         jne     short timer_add_done
         mov     ax,word ptr ss:[bp+12]
         call    timer_validate
-        jc      short timer_add_done
+        jc      short timer_add_mailbox
         call    timer_now
         mov     word ptr cs:timer_start_lo[si],ax
         mov     word ptr cs:timer_start_hi[si],dx
@@ -852,6 +876,53 @@ timer_add_done:
         call    message_shift8
         pop     bp
         add     sp,8
+        jmp     int15_handled
+
+; ADDTO on a mailbox copies one bounded message into resident storage.  The
+; public stack contains status, length, address and finally the mailbox
+; handle.  A closed/full mailbox or an invalid/oversize message sets Carry;
+; the documented sixteen argument bytes are consumed in either case.
+timer_add_mailbox:
+        cmp     bh,0Ah
+        jne     short timer_add_done
+        call    mailbox_validate
+        jc      short timer_add_done
+        call    mailbox_add_value
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        call    message_shift16
+        pop     bp
+        add     sp,16
+        jmp     int15_handled
+
+; ERASE cancels a live timer interval or discards every queued mailbox
+; message.  It consumes one explicit handle DWORD.
+int15_message_erase:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     bl,0
+        jne     short message_erase_done
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_erase_done
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+        jc      short message_erase_mailbox
+        mov     word ptr cs:timer_state[si],0
+        jmp     short message_erase_done
+message_erase_mailbox:
+        call    mailbox_validate
+        jc      short message_erase_done
+        call    mailbox_clear_queue
+message_erase_done:
+        pop     si
+        pop     ax
+        call    message_shift4
+        pop     bp
+        add     sp,4
         jmp     int15_handled
 
 ; Locate the sole full-screen foreground window.  A search below that window
@@ -1477,6 +1548,81 @@ mailbox_validate_done:
         pop     bx
         ret
 
+; Clear queue metadata for mailbox table word index SI.  Payload bytes need
+; not be scrubbed because no public pointer exposes resident queue storage.
+mailbox_clear_queue:
+        mov     word ptr cs:mailbox_count[si],0
+        mov     word ptr cs:mailbox_tail[si],0
+        mov     word ptr cs:mailbox_bytes[si],0
+        ret
+
+; Copy an ADDTO-by-value message into the mailbox selected by SI. BP is the
+; outer message frame.  Carry is returned through the caller's saved FLAGS.
+mailbox_add_value:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        or      word ptr ss:[bp+8],1
+        cmp     word ptr cs:mailbox_open[si],1
+        jne     short mailbox_add_value_done
+        cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
+        jae     short mailbox_add_value_done
+        cmp     word ptr ss:[bp+20],0
+        jne     short mailbox_add_value_done
+        mov     cx,word ptr ss:[bp+18]
+        cmp     cx,MAILBOX_MESSAGE_SIZE
+        ja      short mailbox_add_value_done
+        jcxz    short mailbox_add_pointer_ok
+        cmp     word ptr ss:[bp+16],0
+        je      short mailbox_add_value_done
+mailbox_add_pointer_ok:
+        mov     dx,si                 ; retain mailbox table word index
+        mov     bx,si
+        shl     bx,1                  ; four entries per mailbox
+        add     bx,word ptr cs:mailbox_tail[si]
+        mov     al,byte ptr ss:[bp+22]
+        mov     byte ptr cs:mailbox_message_status[bx],al
+        mov     di,bx
+        shl     di,1
+        mov     word ptr cs:mailbox_message_length[di],cx
+        add     word ptr cs:mailbox_bytes[si],cx
+        inc     word ptr cs:mailbox_count[si]
+        inc     word ptr cs:mailbox_tail[si]
+        cmp     word ptr cs:mailbox_tail[si],MAILBOX_QUEUE_DEPTH
+        jb      short mailbox_add_tail_ready
+        mov     word ptr cs:mailbox_tail[si],0
+mailbox_add_tail_ready:
+        mov     di,bx
+        push    cx
+        mov     cl,7
+        shl     di,cl
+        pop     cx
+        add     di,offset mailbox_message_data
+        mov     ax,word ptr ss:[bp+16]
+        mov     ds,ax
+        mov     si,word ptr ss:[bp+14]
+        push    cs
+        pop     es
+        cld
+        rep     movsb
+        mov     si,dx
+        and     word ptr ss:[bp+8],0FFFEh
+mailbox_add_value_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; Return hundredths since midnight in DX:AX using the BIOS tick counter.
 ; Multiplication by 500/91 tracks the 18.2 Hz clock to within about one tick
 ; while avoiding DOS calls from the resident INT 15h handler.
@@ -1577,6 +1723,20 @@ message_shift8:
         mov     word ptr ss:[bp+12],ax
         mov     ax,word ptr ss:[bp+2]
         mov     word ptr ss:[bp+10],ax
+        pop     ax
+        ret
+
+; Relocate the frame over a mailbox handle plus address, length and status.
+message_shift16:
+        push    ax
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+24],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+22],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp+20],ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp+18],ax
         pop     ax
         ret
 
@@ -1832,6 +1992,12 @@ mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_tail   dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_bytes  dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_message_status db MAILBOX_ENTRY_COUNT dup(0)
+mailbox_message_length dw MAILBOX_ENTRY_COUNT dup(0)
+mailbox_message_data db (MAILBOX_ENTRY_COUNT * MAILBOX_MESSAGE_SIZE) dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
@@ -1858,7 +2024,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.22 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.23 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

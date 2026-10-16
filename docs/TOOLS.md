@@ -27,12 +27,12 @@ Install-once resident compatibility service. It exposes API version 2.80 and
 the implemented pause, foreground task-state, nested critical-section,
 foreground keyboard `PUSHKEY` and alternate-video-buffer calls. Running it
 again is harmless and reports that it is installed. `API.TXT` documents the
-register interface. Resident API 0.22 implements the `HANDLE` caller-stack ABI
+register interface. Resident API 0.23 implements the `HANDLE` caller-stack ABI
 for the foreground window and live timers, a bounded four-timer `NEW`/`FREE`
 lifecycle, and nonblocking relative/absolute countdown control/query messages.
-Blocking waits, mailboxes and panels are not yet implemented.
-It also provides two lifecycle-only mailbox objects; queued messages and
-blocking mailbox reads remain pending.
+It also provides two mailbox objects with four copied messages of at most 128
+bytes each, nonblocking count/byte queries and queue erasure. Blocking waits,
+mailbox reads, task-default mailboxes and panels remain pending.
 
 ## MAXVANSI.COM
 

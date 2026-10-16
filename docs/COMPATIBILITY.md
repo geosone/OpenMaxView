@@ -19,7 +19,7 @@
 | Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
 | `HANDLE` object message | Foreground implementation | Original caller-stack ABI returns the window and validates live task/timer handles; unavailable selectors return null. |
 | Timer objects | Bounded nonblocking implementation | Four pointer-compatible timers support lifecycle, relative/absolute countdown, open/close and elapsed/remaining/state queries. |
-| Mailbox objects | Bounded lifecycle implementation | Two pointer-compatible mailboxes support allocation, validation, enumeration and open/close/status; queues are pending. |
+| Mailbox objects | Bounded write-queue implementation | Two pointer-compatible mailboxes each hold four copied messages of up to 128 bytes; allocation, validation, enumeration, open/close, count/length/status and erase are implemented. |
 | Window location and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; `GETBUF` exposes the active text page. |
 | Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
@@ -29,7 +29,7 @@
 | ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
 | Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one clone, a four-page private pool and four-entry mapping table have ordered allocation, activation, full-table commit across a root/clone switch, restoration and release. |
 | `.DVP` compatibility | Versioned import implemented | Launch and advanced task fields persist; advanced enforcement awaits backend support. |
-| Panels, mailboxes and blocking timer operations | Planned for 1.x | Timer wait and further dynamic object classes require scheduler-backed conformance tests. |
+| Panels, blocking mailbox reads and blocking timer operations | Planned for 1.x | Wait/wakeup behavior and further dynamic object classes require scheduler-backed conformance tests. |
 | Concurrent V86 tasks and scheduler | Planned for 1.x | QPI context/IRQ primitives exist; MaxView register, DOS-state and scheduling code is still required. |
 | Per-task video, keyboard and I/O | Planned for 1.x | A guarded owned-private-page QPI mapping exists; complete task memory maps and trap integration are still required. |
 | Remote viewing | Deferred to 2.x | No remote code is present in 0.8 or the 1.x goal. |

@@ -19,7 +19,7 @@ This first runnable milestone provides:
   documented DESQview presence query, cooperative `PAUSE`, nested critical
   sections, foreground task-state calls, the `HANDLE` object-message stack
   ABI, bounded nonblocking timer lifecycle/countdown messages, `LOCATE`,
-  `GETBUF`, `PUSHKEY`, a bounded mailbox lifecycle and alternate
+  `GETBUF`, `PUSHKEY`, bounded four-entry mailbox queues and alternate
   text-video-buffer calls;
 * Open 386MAX backend ABI discovery/status validation and a diagnostic screen;
 * the Open 386MAX QUILIB look: two-pane layout, palette, shadows, hotkeys and
