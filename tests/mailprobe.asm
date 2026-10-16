@@ -134,14 +134,19 @@ start:
         call    mailbox_query
         cmp     ax,1
         jne     failed
-        push    ds
-        pop     es
-        mov     di,offset read_buffer
         mov     ax,word ptr mailbox_one
-        mov     cx,128
-        call    mailbox_readinto
+        call    mailbox_read
         jc      failed
         cmp     ax,5
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        mov     bx,es
+        or      bx,bx
+        jz      failed
+        cmp     byte ptr es:[di],'H'
+        jne     failed
+        cmp     byte ptr es:[di+4],'O'
         jne     failed
         mov     ax,word ptr mailbox_one
         mov     bx,0F00h
@@ -149,6 +154,18 @@ start:
         or      ax,ax
         jnz     failed
         or      dx,dx
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        call    mailbox_read
+        jnc     failed
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+        mov     bx,es
+        or      bx,bx
+        jnz     failed
+        or      di,di
         jnz     failed
 
         mov     ax,word ptr mailbox_one
@@ -500,6 +517,29 @@ mailbox_write_value:
         int     15h
         pop     di
         pop     bx
+        ret
+
+; AX is the mailbox segment. READ expands the handle DWORD into a returned
+; byte count in DX:AX and a resident message pointer in ES:DI.
+mailbox_read:
+        push    bp
+        mov     bp,sp
+        push    bx
+        push    si
+        mov     si,ax
+        push    si                    ; mailbox segment
+        xor     ax,ax
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,0400h
+        int     15h
+        pop     ax                    ; length low
+        pop     dx                    ; length high
+        pop     di                    ; pointer offset
+        pop     es                    ; pointer segment
+        pop     si
+        pop     bx
+        pop     bp
         ret
 
 ; AX is the mailbox segment, CX the destination capacity and ES:DI the

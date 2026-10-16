@@ -38,7 +38,8 @@ checks:
   a two-slot mailbox lifecycle with exhaustion, type/identity checks,
   enumeration, `WRITE` status-zero delivery, four-entry by-value queues,
   count/length/status, full-queue
-  failure, FIFO `READINTO` data/status delivery, empty-read failure, erase,
+  failure, FIFO pointer-return `READ` and `READINTO` data/status delivery,
+  empty-read failure, erase,
   close-time discard/preservation, closed-write flags, bounded
   `SETNAME`/`GETNAME` and `FINDMAIL`, reuse and reset
   reclamation, and

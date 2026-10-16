@@ -24,6 +24,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=01h BL=0Bh`, reserved DWORD on caller stack | Replaces the DWORD with a timer handle or null | `NEW`; bounded four-object timer pool |
 | `INT 15h AH=12h BH=01h BL=09h`, reserved DWORD on caller stack | Replaces the DWORD with a mailbox handle or null | `NEW`; bounded two-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, object DWORD on caller stack | Releases a live timer or mailbox and pops the DWORD; invalid handles are ignored | `FREE`; bounded dynamic objects |
+| `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length followed by a resident pointer DWORD | Mailbox `READ`; Carry on empty instead of blocking |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
 | `INT 15h AH=12h BH=05h BL=00h`, length, address and mailbox DWORDs on caller stack | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=08h BL=00h`, object DWORD on caller stack | Replaces handle with elapsed hundredths or queued-message count | Timer/mailbox `SIZEOF` |
@@ -130,12 +131,14 @@ mailboxes stores four by-value `WRITE` or `ADDTO` records with payloads of zero 
 bytes. `ERASE`, `CLOSE`, `FREE` and task reset discard pending records. A
 closed or full mailbox, a payload over 128 bytes or a nonzero high length word
 sets Carry and leaves the queue unchanged. `STATUS` remains the last-read
-status and is initially zero. `READINTO` copies the oldest ready record to the
-caller's buffer, updates `STATUS`, and consumes the record. A short buffer
-receives a truncated record and the complete record is still consumed. Unlike
-DESQview's scheduler-backed operation, an empty read returns a zero byte count
-with Carry set rather than blocking. Task-default selectors and pointer-return
-`READ` are not yet implemented.
+status and is initially zero. `READ` returns the oldest record's length and a
+resident pointer, updates `STATUS`, and consumes the record. That pointer may
+be invalidated by the next write or destructive operation on the mailbox.
+`READINTO` instead copies the oldest ready record to the caller's buffer. A
+short buffer receives a truncated record and the complete record is still
+consumed. Unlike DESQview's scheduler-backed operation, an empty read returns
+a zero length and null pointer with Carry set rather than blocking.
+Task-default selectors are not yet implemented.
 
 Mailbox flags `0001h`, `0002h` and `0004h` are retained. The first requests
 common-memory placement and is advisory because the bounded resident pool has
@@ -184,12 +187,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=001Bh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=001Ch`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=01FFh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=03FFh` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -209,6 +212,8 @@ empty-mailbox wait.
 Bit 6 advertises base mailbox `SETFLAGS`/`GETFLAGS` behavior for bits 0-2.
 Bit 7 advertises bounded explicit-handle mailbox names and `FINDMAIL`.
 Bit 8 advertises by-value mailbox `WRITE` with implicit status zero.
+Bit 9 advertises pointer-return mailbox `READ` for ready records; it does not
+advertise a blocking empty-mailbox wait or timer `READ`.
 
 ## Open 386MAX QPI wrapper
 

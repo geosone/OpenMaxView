@@ -280,10 +280,16 @@ status-zero mailbox form. Push the length DWORD, source far pointer and
 mailbox handle in that order. It has the same copy, size, open/full and Carry
 rules as `ADDTO`, but consumes 12 stack bytes and records status zero.
 
-An empty `READINTO` currently returns a zero count with Carry set. Original
-DESQview blocks in that case; compatible waiting requires the future scheduler.
-Task-default selectors and pointer-return `READ` remain unavailable. Do not
-infer either feature from queue capability bit 4 or ready-read bit 5.
+Capability `ODQ_CAP3_MAILBOX_READ` enables pointer-return `READ` (`BH=04h`).
+Push only the explicit mailbox handle. On return, the stack contains the
+message length DWORD on top followed by its resident far pointer. The record
+has already been removed from the queue; consume or copy the returned bytes
+before another write, erase, close or free can invalidate the pointer.
+
+An empty `READ` or `READINTO` currently returns zero/null with Carry set.
+Original DESQview blocks in that case; compatible waiting requires the future
+scheduler. Task-default selectors remain unavailable. Do not infer blocking
+behavior from queue capability bit 4, ready-copy bit 5 or pointer-read bit 9.
 
 Capability `ODQ_CAP3_MAILBOX_FLAGS` enables `SETFLAGS` (`BH=15h`) and
 `GETFLAGS` (`BH=16h`) for explicit mailbox handles. The supported bits are

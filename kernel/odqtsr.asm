@@ -14,6 +14,7 @@
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
 ;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
 ;   INT 15h AH=12h, BH=00h           HANDLE object-message subset
+;   INT 15h AH=12h, BH=04h           ready mailbox pointer READ
 ;   INT 15h AH=12h, BH=11h/12h       mailbox SETNAME/GETNAME
 ;   INT 15h AX=DE04h                 common-memory availability
 ;   INT 15h AX=DE05h                 conventional-memory availability
@@ -58,10 +59,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 001Bh
+MUX_VERSION    equ 001Ch
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 01FFh             ; HANDLE, timers, mailbox services
+CAPABILITIES3  equ 03FFh             ; HANDLE, timers, mailbox services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -206,6 +207,8 @@ int15_handler:
         je      short int15_dispatch_new
         cmp     bh,2                  ; FREE
         je      short int15_dispatch_free
+        cmp     bh,4                  ; READ mailbox record
+        je      short int15_dispatch_read
         cmp     bh,5                  ; WRITE absolute timer deadline
         je      short int15_dispatch_timer_add
         cmp     bh,8                  ; SIZEOF
@@ -239,6 +242,8 @@ int15_dispatch_new:
         jmp     int15_message_new
 int15_dispatch_free:
         jmp     int15_message_free
+int15_dispatch_read:
+        jmp     int15_message_read_gateway
 int15_dispatch_timer_query:
         jmp     int15_message_timer_query
 int15_dispatch_timer_add:
@@ -669,6 +674,95 @@ int15_object_type_done:
         pop     si
         pop     ax
         jmp     int15_handled
+
+; READ is overloaded for timers, keyboards, windows and mailboxes. Intercept
+; only an explicit live mailbox handle; every other class remains available
+; to the previous INT 15h provider.
+int15_message_read_gateway:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     bl,0
+        jne     short message_read_gateway_chain
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_read_gateway_chain
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short message_read_gateway_chain
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_mailbox_read
+message_read_gateway_chain:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_chain
+
+; Return a pointer to and consume the oldest ready mailbox record. The public
+; READ ABI expands one input handle DWORD into a length DWORD followed by a
+; pointer DWORD. Empty reads are nonblocking in API 0.x and return null/zero
+; with Carry set until scheduler-backed waits exist.
+int15_message_mailbox_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        mov     word ptr cs:message_result_len_lo,0
+        mov     word ptr cs:message_result_len_hi,0
+        mov     word ptr cs:message_result_ptr_off,0
+        mov     word ptr cs:message_result_ptr_seg,0
+        or      word ptr ss:[bp+8],1
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short mailbox_read_done
+        cmp     word ptr cs:mailbox_open[si],1
+        jne     short mailbox_read_done
+        cmp     word ptr cs:mailbox_count[si],0
+        je      short mailbox_read_done
+        mov     dx,si
+        mov     bx,si
+        shl     bx,1
+        add     bx,word ptr cs:mailbox_head[si]
+        mov     di,bx
+        shl     di,1
+        mov     ax,word ptr cs:mailbox_message_length[di]
+        mov     word ptr cs:message_result_len_lo,ax
+        mov     di,bx
+        mov     cl,7
+        shl     di,cl
+        add     di,offset mailbox_message_data
+        mov     word ptr cs:message_result_ptr_off,di
+        mov     ax,cs
+        mov     word ptr cs:message_result_ptr_seg,ax
+        mov     si,dx
+        mov     di,bx
+        shl     di,1
+        mov     ax,word ptr cs:mailbox_message_length[di]
+        sub     word ptr cs:mailbox_bytes[si],ax
+        xor     ax,ax
+        mov     al,byte ptr cs:mailbox_message_status[bx]
+        mov     word ptr cs:mailbox_status[si],ax
+        dec     word ptr cs:mailbox_count[si]
+        inc     word ptr cs:mailbox_head[si]
+        cmp     word ptr cs:mailbox_head[si],MAILBOX_QUEUE_DEPTH
+        jb      short mailbox_read_head_ready
+        mov     word ptr cs:mailbox_head[si],0
+mailbox_read_head_ready:
+        and     word ptr ss:[bp+8],0FFFEh
+mailbox_read_done:
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     message_expand4
 
 ; HANDLE uses the TopView message ABI: the caller reserves a DWORD on its
 ; stack before INT 15h, and the service replaces it with an object pointer.
@@ -2157,6 +2251,36 @@ message_shift4:
         pop     ax
         ret
 
+; Expand an explicit handle DWORD into two result DWORDs. The mailbox READ
+; handler has already restored every public register and staged its length and
+; pointer below. Software INT keeps hardware interrupts disabled while this
+; small resident scratch frame is rewritten.
+message_expand4:
+        mov     word ptr cs:message_saved_ax,ax
+        mov     ax,word ptr ss:[bp]
+        mov     word ptr cs:message_saved_bp,ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp-2],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+2],ax
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+4],ax
+        mov     ax,word ptr cs:message_result_len_lo
+        mov     word ptr ss:[bp+6],ax
+        mov     ax,word ptr cs:message_result_len_hi
+        mov     word ptr ss:[bp+8],ax
+        mov     ax,word ptr cs:message_result_ptr_off
+        mov     word ptr ss:[bp+10],ax
+        mov     ax,word ptr cs:message_result_ptr_seg
+        mov     word ptr ss:[bp+12],ax
+        mov     sp,bp
+        sub     sp,2
+        mov     bp,word ptr cs:message_saved_bp
+        mov     ax,word ptr cs:message_saved_ax
+        jmp     int15_handled
+
 ; Relocate the frame over a handle plus one DWORD argument.
 message_shift8:
         push    ax
@@ -2437,6 +2561,12 @@ keyboard_mouse db 0
 video_segment  dw 0B800h
 task_handle_segment dw 0
 install_path   db 67 dup(0)
+message_saved_ax dw 0
+message_saved_bp dw 0
+message_result_len_lo dw 0
+message_result_len_hi dw 0
+message_result_ptr_off dw 0
+message_result_ptr_seg dw 0
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 common_used    db COMMON_SLOT_COUNT dup(0)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
@@ -2487,7 +2617,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.27 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.28 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
