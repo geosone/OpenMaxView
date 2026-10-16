@@ -53,6 +53,8 @@ checks:
   foreground-task `ES`, release/reuse and reset cleanup;
 * PC-speaker `SOUND` normalization, queued silence, current/all cancellation,
   32-entry saturation and task-reset cleanup;
+* `OSTACK`/`USTACK` segment switching, resident-stack data use, nested API
+  entry, exact user `SS:SP` restoration and stack reuse;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone
   guards, verified clone/root switching, four-page private-pool exhaustion,

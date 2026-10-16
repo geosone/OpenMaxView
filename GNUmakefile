@@ -158,6 +158,12 @@ $(BUILD)/soundprobe.obj: tests/soundprobe.asm | $(BUILD)
 $(BUILD)/SOUNDPR.COM: $(BUILD)/soundprobe.obj
 	cd $(BUILD) && $(JWLINK) format dos com name SOUNDPR.COM option quiet option map=SOUNDPR.MAP file soundprobe.obj
 
+$(BUILD)/stackprobe.obj: tests/stackprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/STACKPR.COM: $(BUILD)/stackprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name STACKPR.COM option quiet option map=STACKPR.MAP file stackprobe.obj
+
 $(BUILD)/setup.obj: src/setup.c | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
@@ -275,7 +281,7 @@ test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BU
 	python3 -m unittest discover -s tests -p 'test_*.py'
 	python3 tools/build_books.py --check
 
-test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(BUILD)/OBJPROBE.COM $(BUILD)/MAILPROB.COM $(BUILD)/PRINTPR.COM $(BUILD)/BITPROBE.COM $(BUILD)/SOUNDPR.COM $(BUILD)/test_dvp
+test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(BUILD)/OBJPROBE.COM $(BUILD)/MAILPROB.COM $(BUILD)/PRINTPR.COM $(BUILD)/BITPROBE.COM $(BUILD)/SOUNDPR.COM $(BUILD)/STACKPR.COM $(BUILD)/test_dvp
 	rm -rf $(BUILD)/INSTTEST
 	rm -rf $(BUILD)/AUTOTEST
 	rm -rf $(BUILD)/FILETEST
@@ -301,7 +307,8 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'MAXVTSR.COM > NUL' \
-		-c 'PRINTPR.COM > PRINTPR.TXT' -c 'exit' >/dev/null 2>&1
+		-c 'PRINTPR.COM > PRINTPR.TXT' \
+		-c 'STACKPR.COM > STACKPR.TXT' -c 'exit' >/dev/null 2>&1
 	env SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy dosbox -noconsole \
 		-c 'mount c $(CURDIR)' -c 'c:' -c 'cd build' \
 		-c 'MAXVTSR.COM > NUL' \
@@ -354,7 +361,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\INPUT.BIN C:\BUILD\FILETEST\INPUT.BIN /Y > FILESAME.TXT' \
 		-c 'MAXVFILE.EXE /COPY C:\BUILD\FILETEST\OTHER.BIN C:\BUILD\FILETEST\COPY.BIN /Y > FILEOVER.TXT' \
 		-c 'exit' >/dev/null 2>&1
-	rg -q 'resident API 0.35 installed' $(BUILD)/MVTSR.TXT
+	rg -q 'resident API 0.36 installed' $(BUILD)/MVTSR.TXT
 	rg -q 'already installed' $(BUILD)/MVTSR2.TXT
 	rg -q 'API version 2.80 detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'Resident installation-path API passed' $(BUILD)/MVPROBE.TXT
@@ -406,6 +413,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	rg -q 'MAXVTSR timer object lifecycle passed' $(BUILD)/OBJPROBE.TXT
 	rg -q 'MAXVTSR mailbox queue lifecycle passed' $(BUILD)/MAILPROB.TXT
 	rg -q 'MAXVTSR PRINTC foreground output passed' $(BUILD)/PRINTPR.TXT
+	rg -q 'MAXVTSR task stack switching passed' $(BUILD)/STACKPR.TXT
 	rg -q 'MAXVTSR second-level callback services passed' $(BUILD)/BITPROBE.TXT
 	rg -q 'MAXVTSR bounded SOUND queue passed' $(BUILD)/SOUNDPR.TXT
 	rg -q 'ANSI console 1.0 installed' $(BUILD)/ANSI1.TXT
@@ -414,7 +422,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	rg -q 'Open MaxView installed' $(BUILD)/INSTALL.TXT
 	rg -q 'valid program' $(BUILD)/CFGCHK.TXT
 	rg -q 'MAXVAPP.EXE' $(BUILD)/CFGLIST.TXT
-	rg -q 'MV_API=0.35' $(BUILD)/MEMSTAT.TXT
+	rg -q 'MV_API=0.36' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_TOTAL_BYTES=1024' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_AVAILABLE_BYTES=1024' $(BUILD)/MEMSTAT.TXT
 	rg -q 'MV_COMMON_LARGEST_BYTES=256' $(BUILD)/MEMSTAT.TXT

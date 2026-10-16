@@ -20,10 +20,12 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1016h ES:DI=handle` | `BX=FFFFh` if valid, otherwise zero | `ISOBJ` |
 | `INT 15h AX=1018h BH=column BL=row ES=window-below` | `ES=window` or zero | `LOCATE`; foreground full-screen window |
 | `INT 15h AX=1019h BX=hertz CX=ticks` | Queues a PC-speaker tone and returns immediately | TopView `SOUND`; 32-entry foreground queue |
+| `INT 15h AX=101Ah` | Returns on the foreground task's 512-byte resident stack | TopView `OSTACK`; not nestable |
 | `INT 15h AX=101Bh` | Increments a saturating nesting count | `BEGINC` |
 | `INT 15h AX=101Ch` | Decrements the count without underflow | `ENDC` |
 | `INT 15h AX=1022h BX=0000h` | `BX=0A01h` | TopView-compatible `GETVER` identity |
 | `INT 15h AX=1024h BX=window` | `ES:DI=buffer`, `CX=bytes`, `DL=0` | `GETBUF`; foreground text buffer |
+| `INT 15h AX=1025h` | Returns on the user stack saved by `OSTACK` | TopView `USTACK`; valid only after `OSTACK` |
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AX=102Eh BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | DESQview 2.40 extended `GETMEM` alias |
 | `INT 15h AH=12h BH=00h BL=selector`, object DWORD on caller stack | Replaces or validates the DWORD | `HANDLE`; selector 00h validates task/timer handles, selector 01h returns the foreground window |
@@ -138,6 +140,13 @@ are retained. Unlike original DESQview, a full queue does not block the caller:
 the excess entry is ignored until task scheduling can provide a safe wait.
 Task reset clears the queue and disconnects the speaker.
 
+`OSTACK` switches the foreground task from its caller stack to a bounded
+512-byte resident stack, preserving the return location and caller flags.
+`USTACK` restores the exact saved user `SS:SP`. The documented contract is
+not nestable: a second `OSTACK` must be preceded by `USTACK`. Open MaxView
+keeps invalid repeated `OSTACK` and unmatched `USTACK` calls as safe no-ops,
+but portable programs must not depend on that extension.
+
 The foreground task, four timer slots and two mailbox slots have paragraph-aligned,
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
@@ -233,12 +242,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0023h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0024h`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=1FFFh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=3FFFh` extended compatibility capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
@@ -266,6 +275,8 @@ Bit 11 advertises mailbox `ADDR` sender identity for the most recently
 consumed record.
 Bit 12 advertises foreground window `AT` cursor positioning for explicit and
 task-default selectors.
+Bit 13 advertises real foreground `OSTACK`/`USTACK` switching to a bounded
+resident task stack.
 
 ## Open 386MAX QPI wrapper
 

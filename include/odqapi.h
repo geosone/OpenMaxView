@@ -14,10 +14,12 @@
 #define ODQ_DVC_IS_OBJECT       0x1016
 #define ODQ_DVC_LOCATE          0x1018
 #define ODQ_DVC_SOUND           0x1019
+#define ODQ_DVC_OSTACK          0x101a
 #define ODQ_DVC_BEGIN_CRITICAL  0x101b
 #define ODQ_DVC_END_CRITICAL    0x101c
 #define ODQ_DVC_GET_VERSION     0x1022
 #define ODQ_DVC_GET_BUFFER      0x1024
+#define ODQ_DVC_USTACK          0x1025
 #define ODQ_DVC_KEYBOARD_MOUSE  0x102d
 #define ODQ_DVC_GET_MEMORY_EXT  0x102e
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
@@ -59,7 +61,7 @@
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SOUND_INFO      0xd706
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x0023
+#define ODQ_MUX_VERSION         0x0024
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002
@@ -110,6 +112,7 @@
 #define ODQ_CAP3_MAILBOX_REFERENCE 0x0400
 #define ODQ_CAP3_MAILBOX_SENDER 0x0800
 #define ODQ_CAP3_WINDOW_CURSOR  0x1000
+#define ODQ_CAP3_TASK_STACK     0x2000
 #define ODQ_CAPABILITIES3       (ODQ_CAP3_MESSAGE_HANDLE | \
                                  ODQ_CAP3_MESSAGE_NEW_FREE | \
                                  ODQ_CAP3_TIMER_CONTROL | \
@@ -122,7 +125,8 @@
                                  ODQ_CAP3_MAILBOX_READ | \
                                  ODQ_CAP3_MAILBOX_REFERENCE | \
                                  ODQ_CAP3_MAILBOX_SENDER | \
-                                 ODQ_CAP3_WINDOW_CURSOR)
+                                 ODQ_CAP3_WINDOW_CURSOR | \
+                                 ODQ_CAP3_TASK_STACK)
 
 #define ODQ_DVC_MESSAGE_HANDLE  0x1200
 #define ODQ_DVC_MESSAGE_NEW     0x1201
@@ -150,6 +154,7 @@
 #define ODQ_MAILBOX_FLAG_KEEP_ON_CLOSE 0x0004
 #define ODQ_MAILBOX_FLAGS_SUPPORTED 0x0007
 #define ODQ_MAILBOX_NAME_MAX    32
+#define ODQ_TASK_STACK_SIZE     512
 
 #define ODQ_DVC_FINDMAIL        0xde0e
 

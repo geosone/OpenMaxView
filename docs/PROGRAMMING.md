@@ -238,6 +238,26 @@ earlier than the current BIOS-clock time means the next midnight occurrence.
 Blocking `READ` is not yet available; polling clients can use `STATUS` or
 `LEN` and yield with `PAUSE` between checks.
 
+## Internal task stack
+
+`ODQ_DVC_OSTACK` (`AX=101Ah`) switches execution to a 512-byte resident stack
+owned by the foreground task. `ODQ_DVC_USTACK` (`AX=1025h`) returns to the
+exact user `SS:SP` saved by that call. Use the pair when a TopView-compatible
+sequence expects the task's private API stack:
+
+```asm
+        mov     ax,ODQ_DVC_OSTACK
+        int     15h
+        ; bounded API work; keep local stack use small
+        mov     ax,ODQ_DVC_USTACK
+        int     15h
+```
+
+Do not nest `OSTACK`, branch around the matching `USTACK`, terminate while on
+the private stack, or retain pointers to data placed there. The public API
+defines only one active switch. Open MaxView resets abandoned stack ownership
+at the normal child boundary, but that recovery is not a programming model.
+
 `NEW` class `09h` similarly allocates one of two mailbox identities. They work
 with `IS_OBJECT`, `OBJECT_TYPE`, `OBJNEXT`, `HANDLE` selector `00h`, `FREE`,
 `OPEN`, `CLOSE`, `ERASE` and `STATUS`. Capability

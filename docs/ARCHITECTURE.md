@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.35 resident API tracks foreground task compatibility state and nested
+The 0.36 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -106,6 +106,10 @@ return path is intentionally coupled to the future scheduler.
 A resident `INT 1Ch` hook advances the bounded 32-entry TopView `SOUND` queue
 without DOS calls. It programs PIT channel 2 only when the active entry changes
 and always silences the PC speaker when the queue is cancelled or exhausted.
+The foreground task also owns a bounded 512-byte API stack. `OSTACK` rebuilds
+the interrupt return frame on that resident stack, while `USTACK` rebuilds it
+on the saved user stack so execution resumes with the original `SS:SP`.
+Nested switches are excluded by the public contract and guarded as no-ops.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.8 it launches a child through DOS and
@@ -211,6 +215,7 @@ network-specific ABI is to be added to Open 386MAX.
 | Foreground task object | implemented | Pointer-compatible handle, validation and type query |
 | Task enumeration and metadata | foreground implementation | `DOSUSER`, task/timer/mailbox `OBJNEXT`, version-1.00 `WININFO` |
 | Window location and buffer | foreground implementation | Full-screen `LOCATE`; `GETBUF` aliases the active text page |
+| Task-private API stack | bounded foreground implementation | `OSTACK`/`USTACK` switch to 512 resident bytes and restore exact user `SS:SP` |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Object messages | partial | `HANDLE` stack ABI plus bounded timer control and mailbox writes; blocking messages planned |
 | Timers | nonblocking subset implemented | Four identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |

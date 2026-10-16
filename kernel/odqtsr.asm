@@ -12,6 +12,7 @@
 ;   INT 15h AX=1016h                 object-handle validation
 ;   INT 15h AX=1018h                 foreground window location
 ;   INT 15h AX=1019h                 queued PC-speaker SOUND
+;   INT 15h AX=101Ah/1025h           OSTACK/USTACK task-stack switching
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
@@ -56,7 +57,7 @@
 ;   INT 2Fh AX=D702h                 reset per-foreground-task state
 ;   INT 2Fh AX=D703h                 query per-foreground-task state
 ;   INT 2Fh AX=D704h                 extended capability query
-;   INT 2Fh AX=D705h                 object-message capability query
+;   INT 2Fh AX=D705h                 extended compatibility capabilities
 ;   INT 2Fh AX=D706h                 sound-queue diagnostic query
 
 DV_VERSION     equ 0280h
@@ -68,10 +69,10 @@ MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0023h
+MUX_VERSION    equ 0024h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 1FFFh             ; object and foreground-window messages
+CAPABILITIES3  equ 3FFFh             ; object/window and task-stack services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -87,6 +88,7 @@ MAILBOX_ENTRY_COUNT equ MAILBOX_SLOT_COUNT * MAILBOX_QUEUE_DEPTH
 MAILBOX_NAME_SIZE  equ 32
 SECOND_LEVEL_COUNT equ 16
 SOUND_QUEUE_COUNT equ 32
+TASK_STACK_SIZE equ 512
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -360,6 +362,10 @@ int15_not_locate:
         jne     short int15_not_sound
         jmp     int15_sound
 int15_not_sound:
+        cmp     ax,101Ah              ; OSTACK
+        jne     short int15_not_ostack
+        jmp     int15_ostack
+int15_not_ostack:
         cmp     ax,101Bh              ; BEGINC
         je      int15_begin
         cmp     ax,101Ch              ; ENDC
@@ -375,6 +381,10 @@ int15_not_getver:
         jne     short int15_not_getbuf
         jmp     int15_getbuf
 int15_not_getbuf:
+        cmp     ax,1025h              ; USTACK
+        jne     short int15_not_ustack
+        jmp     int15_ustack
+int15_not_ustack:
         cmp     ax,102Dh              ; keyboard mouse control
         jne     short int15_not_keyboard_mouse
         jmp     int15_keyboard_mouse
@@ -2627,6 +2637,70 @@ release_found:
         xor     ax,ax
         ret
 
+; Switch from the caller's stack to a bounded resident stack owned by the
+; foreground task. The INT frame is rebuilt on the new stack so IRET resumes
+; immediately after the OSTACK call. The public contract forbids nesting;
+; a repeated OSTACK is therefore left as a safe no-op.
+int15_ostack:
+        cmp     byte ptr cs:task_stack_active,0
+        jne     int15_handled
+        mov     word ptr cs:task_stack_saved_ax,ax
+        mov     word ptr cs:task_stack_saved_bp,bp
+        mov     ax,ss
+        mov     word ptr cs:task_stack_user_ss,ax
+        mov     word ptr cs:task_stack_user_sp,sp
+        add     word ptr cs:task_stack_user_sp,8
+        mov     bp,sp
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr cs:task_stack_return_ip,ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr cs:task_stack_return_cs,ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr cs:task_stack_return_flags,ax
+        mov     byte ptr cs:task_stack_active,1
+        cli
+        mov     ax,cs
+        mov     ss,ax
+        mov     sp,offset task_internal_stack_top
+        mov     ax,word ptr cs:task_stack_return_flags
+        push    ax
+        mov     ax,word ptr cs:task_stack_return_cs
+        push    ax
+        mov     ax,word ptr cs:task_stack_return_ip
+        push    ax
+        mov     bp,word ptr cs:task_stack_saved_bp
+        mov     ax,word ptr cs:task_stack_saved_ax
+        iret
+
+; Rebuild the USTACK return frame on the original user stack. Calls without a
+; preceding OSTACK are outside the public contract and remain safe no-ops.
+int15_ustack:
+        cmp     byte ptr cs:task_stack_active,1
+        jne     int15_handled
+        mov     word ptr cs:task_stack_saved_ax,ax
+        mov     word ptr cs:task_stack_saved_bp,bp
+        mov     bp,sp
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr cs:task_stack_return_ip,ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr cs:task_stack_return_cs,ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr cs:task_stack_return_flags,ax
+        mov     byte ptr cs:task_stack_active,0
+        cli
+        mov     ax,word ptr cs:task_stack_user_ss
+        mov     ss,ax
+        mov     sp,word ptr cs:task_stack_user_sp
+        mov     ax,word ptr cs:task_stack_return_flags
+        push    ax
+        mov     ax,word ptr cs:task_stack_return_cs
+        push    ax
+        mov     ax,word ptr cs:task_stack_return_ip
+        push    ax
+        mov     bp,word ptr cs:task_stack_saved_bp
+        mov     ax,word ptr cs:task_stack_saved_ax
+        iret
+
 int15_handled:
         popf
         iret
@@ -3254,6 +3328,9 @@ int2f_reset:
         mov     word ptr cs:second_level_used,0
         mov     word ptr cs:second_level_pending,0
         mov     byte ptr cs:second_level_active,0
+        mov     byte ptr cs:task_stack_active,0
+        mov     word ptr cs:task_stack_user_ss,0
+        mov     word ptr cs:task_stack_user_sp,0
         pushf
         cli
         push    bx
@@ -3334,6 +3411,14 @@ second_level_active db 0
 second_level_used dw 0
 second_level_pending dw 0
 second_level_handlers dd SECOND_LEVEL_COUNT dup(0)
+task_stack_active db 0
+task_stack_user_ss dw 0
+task_stack_user_sp dw 0
+task_stack_saved_ax dw 0
+task_stack_saved_bp dw 0
+task_stack_return_ip dw 0
+task_stack_return_cs dw 0
+task_stack_return_flags dw 0
 sound_head     dw 0
 sound_tail     dw 0
 sound_count    dw 0
@@ -3407,7 +3492,10 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.35 installed.',13,10,'$'
+task_internal_stack db TASK_STACK_SIZE dup(0)
+task_internal_stack_top label byte
+
+installed_msg  db 'Open MaxView resident API 0.36 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

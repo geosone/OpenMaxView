@@ -24,6 +24,7 @@
 | TopView character output | Foreground text implementation | `PRINTC` writes character/attribute cells with cursor advance, wrap and full-screen scroll; no graphics-window rendering. |
 | TopView second-level callbacks | Bounded foreground implementation | Sixteen `GETBIT` slots support masked `SETBIT`, `FREEBIT`, nested request queuing and reset cleanup; dispatch is synchronous until the scheduler owns IRQ returns. |
 | TopView sound | Bounded foreground implementation | `SOUND` queues 32 PIT/PC-speaker tone or silence entries with clock-tick expiry and cancellation; queue saturation is nonblocking. |
+| TopView task stack | Bounded foreground implementation | `OSTACK` switches to a 512-byte resident task stack and `USTACK` restores the exact saved user stack; nesting is unsupported by contract. |
 | Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
 | Add/change/delete programs | Implemented | Open text catalogue, atomic update and backup. |

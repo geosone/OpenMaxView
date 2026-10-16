@@ -34,7 +34,7 @@ releases are useful only for version-qualified scheduler, communications and
 | `GETBIT`/`FREEBIT`/`SETBIT` | Bounded foreground implementation | Deferred dispatch at the hardware-interrupt return boundary and multi-task `ES` selection |
 | `ISOBJ`, `LOCATE`, `GETBUF` | Foreground implementation | Multiple overlapping windows and private video buffers |
 | `SOUND` | Bounded foreground implementation | Blocking behavior on the 33rd entry and multi-task speaker ownership |
-| `OSTACK`/`USTACK` | Missing | Nested internal-stack switching and interrupt interaction |
+| `OSTACK`/`USTACK` | Bounded foreground implementation | Long-running interrupt interaction and future per-task stack ownership; nesting is forbidden by the public contract |
 | `BEGINC`/`ENDC` | State implemented | Scheduler exclusion across real task switches |
 | `STOP`/`START`, `POSTTASK` | Missing | Runnable/waiting transitions and wakeups |
 | `DISPEROR` | Missing | Error-window result and task interaction |
