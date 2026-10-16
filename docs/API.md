@@ -13,6 +13,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1000h` | Returns safely | Foreground `PAUSE`; no scheduler yet |
 | `INT 15h AX=1001h BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | TopView `GETMEM` alias |
 | `INT 15h AX=1002h ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | TopView `PUTMEM` alias |
+| `INT 15h AX=1003h BH=attribute BL=character DX=window` | Displays and advances one foreground text cell; `BX=0` synchronizes the cursor | TopView `PRINTC`; exact foreground handle |
 | `INT 15h AX=1016h ES:DI=handle` | `BX=FFFFh` if valid, otherwise zero | `ISOBJ` |
 | `INT 15h AX=1018h BH=column BL=row ES=window-below` | `ES=window` or zero | `LOCATE`; foreground full-screen window |
 | `INT 15h AX=101Bh` | Increments a saturating nesting count | `BEGINC` |
@@ -105,6 +106,13 @@ bottom row of the active physical text page, and wraps at the BIOS column
 count. Existing attributes are preserved. Calls in graphics or unknown video
 modes are harmless no-ops.
 
+`PRINTC` accepts the exact foreground task/window handle and uses the active
+BIOS text page and geometry. It writes the supplied character and attribute at
+the current cursor, advances with line wrapping, and scrolls the full-screen
+window at the bottom edge. `BX=0` is a cursor-synchronization request; because
+the foreground logical cursor is the BIOS cursor, it is a no-op. Graphics
+modes do not draw. Calls for foreign window handles remain chained.
+
 The foreground task, four timer slots and two mailbox slots have paragraph-aligned,
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
@@ -195,7 +203,7 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=001Dh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=001Eh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |

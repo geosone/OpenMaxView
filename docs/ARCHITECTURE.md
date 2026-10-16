@@ -14,7 +14,7 @@ reads only container metadata.
 these in a small resident component means DESQview-aware children see the API
 while `MAXVIEW.EXE` is waiting for DOS `EXEC` to return.
 
-The 0.29 resident API tracks foreground task compatibility state and nested
+The 0.30 resident API tracks foreground task compatibility state and nested
 critical sections, and implements the documented `INT 10h/AH=FEh`
 alternate-buffer query. In foreground-only mode
 the logical buffer aliases the active B000h/B800h text buffer; `AH=FFh`
@@ -92,6 +92,9 @@ The same foreground object now backs `LOCATE` and `GETBUF`: coordinates in the
 physical text screen resolve to the one full-screen window, and its virtual
 buffer aliases the active physical B000h/B800h page. This is deliberately a
 single-window contract until private video pages exist.
+TopView `PRINTC` writes through BIOS text services at that foreground cursor,
+including geometry-aware wrap and full-screen scroll; foreign windows remain
+available to an earlier provider in the interrupt chain.
 
 `MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
 contains no memory-manager logic.  In 0.8 it launches a child through DOS and

@@ -21,6 +21,7 @@
 | Timer objects | Bounded nonblocking implementation | Four pointer-compatible timers support lifecycle, relative/absolute countdown, open/close and elapsed/remaining/state queries. |
 | Mailbox objects | Bounded nonblocking queue implementation | Two pointer-compatible mailboxes each hold four copied `WRITE`/`ADDTO` or referenced `SUBFROM` messages of up to 128 bytes; both read forms, lifecycle, queries, erase, base flags and 32-byte names/lookup are implemented. Empty reads return Carry instead of waiting. |
 | Window location and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; `GETBUF` exposes the active text page. |
+| TopView character output | Foreground text implementation | `PRINTC` writes character/attribute cells with cursor advance, wrap and full-screen scroll; no graphics-window rendering. |
 | Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
 | Add/change/delete programs | Implemented | Open text catalogue, atomic update and backup. |

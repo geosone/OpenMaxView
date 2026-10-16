@@ -30,7 +30,7 @@ releases are useful only for version-qualified scheduler, communications and
 |---|---|---|
 | Presence, `PAUSE`, `GETVER` | Implemented | Multi-task scheduling effect of `PAUSE` |
 | `GETMEM`/`PUTMEM` | Bounded foreground implementation | Variable sizes, per-task ownership and exhaustion behavior |
-| `PRINTC` | Missing | Character/attribute rendering and clipping |
+| `PRINTC` | Foreground full-screen text implementation | Multiple windows, clipping and private cursor state |
 | `GETBIT`/`FREEBIT`/`SETBIT` | Missing | Second-level interrupt allocation, dispatch and release |
 | `ISOBJ`, `LOCATE`, `GETBUF` | Foreground implementation | Multiple overlapping windows and private video buffers |
 | `SOUND` | Missing | Ownership, duration and background scheduling |

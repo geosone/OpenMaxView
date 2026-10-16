@@ -7,6 +7,7 @@
 ;   INT 21h AX=2B01h CX='DE' DX='SQ'  presence/version query
 ;   INT 15h AX=1000h                 cooperative PAUSE
 ;   INT 15h AX=1001h/1002h           system-memory allocate/release aliases
+;   INT 15h AX=1003h                 foreground PRINTC text output
 ;   INT 15h AX=1016h                 object-handle validation
 ;   INT 15h AX=1018h                 foreground window location
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
@@ -60,7 +61,7 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 001Dh
+MUX_VERSION    equ 001Eh
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
 CAPABILITIES3  equ 07FFh             ; HANDLE, timers, mailbox services
@@ -280,6 +281,14 @@ int15_not_getmem_alias:
         jne     short int15_not_putmem_alias
         jmp     int15_putmem
 int15_not_putmem_alias:
+        cmp     ax,1003h              ; PRINTC
+        jne     short int15_not_printc
+        cmp     dx,word ptr cs:task_handle_segment
+        je      short int15_printc_ours
+        jmp     int15_chain
+int15_printc_ours:
+        jmp     int15_printc
+int15_not_printc:
         cmp     ax,1016h              ; ISOBJ
         jne     short int15_not_isobj
         jmp     int15_isobj
@@ -432,6 +441,80 @@ int15_end_done:
         jmp     int15_handled
 int15_appnum:
         mov     ax,1                   ; sole foreground program
+        jmp     int15_handled
+
+; Display one exact character/attribute at the foreground logical cursor.
+; The current foreground implementation aliases the BIOS hardware cursor.
+; BX=0 therefore needs no synchronization work. Text output advances, wraps,
+; and scrolls the full-screen window using BIOS services.
+int15_printc:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        or      bx,bx
+        jz      printc_done
+        mov     si,bx
+        mov     ah,0Fh
+        int     10h
+        cmp     al,3
+        jbe     short printc_text_mode
+        cmp     al,7
+        jne     short printc_done
+printc_text_mode:
+        mov     byte ptr cs:printc_page,bh
+        mov     byte ptr cs:printc_columns,ah
+        mov     bh,byte ptr cs:printc_page
+        mov     ah,03h
+        int     10h
+        mov     di,dx
+        mov     ax,si
+        mov     ah,09h
+        mov     bx,si
+        mov     bl,bh
+        mov     bh,byte ptr cs:printc_page
+        mov     cx,1
+        int     10h
+        mov     dx,di
+        inc     dl
+        cmp     dl,byte ptr cs:printc_columns
+        jb      short printc_set_cursor
+        xor     dl,dl
+        inc     dh
+        mov     ax,40h
+        mov     es,ax
+        mov     al,byte ptr es:[84h]
+        or      al,al
+        jnz     short printc_rows_ready
+        mov     al,24
+printc_rows_ready:
+        cmp     dh,al
+        jbe     short printc_set_cursor
+        mov     byte ptr cs:printc_last_row,al
+        mov     ax,0601h
+        mov     bx,si
+        xor     cx,cx
+        mov     dh,byte ptr cs:printc_last_row
+        mov     dl,byte ptr cs:printc_columns
+        dec     dl
+        int     10h
+        mov     dh,byte ptr cs:printc_last_row
+        xor     dl,dl
+printc_set_cursor:
+        mov     ah,02h
+        mov     bh,byte ptr cs:printc_page
+        int     10h
+printc_done:
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
         jmp     int15_handled
 
 ; Find the first live mailbox whose bounded name exactly matches ES:DI,CX.
@@ -2197,7 +2280,8 @@ mailbox_write_value:
         cmp     word ptr cs:mailbox_open[si],1
         je      short mailbox_write_value_open
         test    word ptr cs:mailbox_flags[si],0002h
-        jz      short mailbox_write_value_done
+        jnz     short mailbox_write_value_open
+        jmp     mailbox_write_value_done
 mailbox_write_value_open:
         cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
         jae     short mailbox_write_value_done
@@ -2707,6 +2791,9 @@ error_mode     db 0
 debug_column   db 0
 keyboard_mouse db 0
 video_segment  dw 0B800h
+printc_page    db 0
+printc_columns db 80
+printc_last_row db 24
 task_handle_segment dw 0
 install_path   db 67 dup(0)
 message_saved_ax dw 0
@@ -2768,7 +2855,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.29 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.30 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

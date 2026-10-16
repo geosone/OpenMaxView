@@ -5,6 +5,7 @@
 /* Documented DESQview-compatible calls. */
 #define ODQ_DV_VERSION          0x0280
 #define ODQ_DVC_PAUSE           0x1000
+#define ODQ_DVC_PRINTC          0x1003
 #define ODQ_DVC_GET_MEMORY_TV   0x1001
 #define ODQ_DVC_PUT_MEMORY_TV   0x1002
 #define ODQ_DVC_IS_OBJECT       0x1016
@@ -52,7 +53,7 @@
 #define ODQ_MUX_CAPS2           0xd704
 #define ODQ_MUX_CAPS3           0xd705
 #define ODQ_MUX_SIGNATURE       0x4f44
-#define ODQ_MUX_VERSION         0x001d
+#define ODQ_MUX_VERSION         0x001e
 
 #define ODQ_CAP_PRESENCE        0x0001
 #define ODQ_CAP_PAUSE           0x0002

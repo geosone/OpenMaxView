@@ -340,6 +340,12 @@ returns `ES:DI`, its byte size in `CX`, and text-screen type zero in `DL`.
 Always honor the returned size and reject a null pointer; later 1.x builds will
 return task-private buffers rather than a physical-page alias.
 
+For a single attributed character, `ODQ_DVC_PRINTC` (`AX=1003h`) accepts the
+character in `BL`, attribute in `BH`, and window-handle segment in `DX`. The
+foreground implementation advances the BIOS cursor, wraps and scrolls in text
+mode. `BX=0` only synchronizes the hardware cursor. Use the handle returned by
+`ODQ_DVC_GET_FOREGROUND`; do not pass a guessed video segment.
+
 ## Keyboard input
 
 Use BIOS or DOS keyboard calls for ordinary input. `ODQ_DVC_PUSH_KEY` inserts
