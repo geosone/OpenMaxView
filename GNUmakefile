@@ -49,6 +49,9 @@ $(BUILD)/settings.obj: src/settings.c include/settings.h | $(BUILD)
 $(BUILD)/scheduler.obj: src/scheduler.c include/scheduler.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
+$(BUILD)/mvprocess.obj: src/mvprocess.c include/mvprocess.h include/catalog.h include/scheduler.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
 $(BUILD)/vmtask.obj: src/vmtask.c include/vmtask.h include/maxbackend.h include/scheduler.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
@@ -61,8 +64,8 @@ $(BUILD)/mvui.obj: src/mvui.c include/mvui.h | $(BUILD)
 $(BUILD)/maxbackend.obj: kernel/maxbackend.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 
-$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/vmtask.obj $(BUILD)/vmbackend.obj $(BUILD)/maxbackend.obj
-	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,vmtask.obj,vmbackend.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/mvprocess.obj $(BUILD)/vmtask.obj $(BUILD)/vmbackend.obj $(BUILD)/maxbackend.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,mvprocess.obj,vmtask.obj,vmbackend.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
@@ -300,13 +303,17 @@ $(BUILD)/test_scheduler: tests/test_scheduler.c src/scheduler.c include/schedule
 $(BUILD)/test_vmtask: tests/test_vmtask.c src/vmtask.c src/scheduler.c include/vmtask.h include/maxbackend.h include/scheduler.h | $(BUILD)
 	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_vmtask.c src/vmtask.c src/scheduler.c
 
-test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BUILD)/test_dvp $(BUILD)/test_scheduler $(BUILD)/test_vmtask
+$(BUILD)/test_mvprocess: tests/test_mvprocess.c src/mvprocess.c src/catalog.c src/scheduler.c include/mvprocess.h include/catalog.h include/scheduler.h | $(BUILD)
+	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_mvprocess.c src/mvprocess.c src/catalog.c src/scheduler.c
+
+test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BUILD)/test_dvp $(BUILD)/test_scheduler $(BUILD)/test_vmtask $(BUILD)/test_mvprocess
 	$(BUILD)/test_catalog
 	$(BUILD)/test_settings
 	$(BUILD)/test_autodetect
 	$(BUILD)/test_dvp
 	$(BUILD)/test_scheduler
 	$(BUILD)/test_vmtask
+	$(BUILD)/test_mvprocess
 	python3 -m unittest discover -s tests -p 'test_*.py'
 	python3 tools/build_books.py --check
 

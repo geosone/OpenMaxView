@@ -9,6 +9,7 @@
 
 #include "catalog.h"
 #include "maxbackend.h"
+#include "mvprocess.h"
 #include "odqapi.h"
 #include "scheduler.h"
 #include "settings.h"
@@ -319,6 +320,7 @@ static void show_program_info(const odq_program *program)
 {
     char line[70];
     const odq_process_profile *profile;
+    mv_process_descriptor descriptor;
 
     frame(2, 5, 22, 74, "Program Information");
     if (program == NULL) {
@@ -340,6 +342,7 @@ static void show_program_info(const odq_program *program)
     write_at(11, 9, line, ATTR_ACTIVE);
 
     profile = &program->profile;
+    mv_process_build(program, &descriptor);
     if (profile->version == 0) {
         write_at(13, 9, "Process profile: none (six-field catalogue entry)",
                  ATTR_ACTIVE);
@@ -363,6 +366,9 @@ static void show_program_info(const odq_program *program)
         write_at(18, 9, "Profile retained; backend enforcement is pending.",
                  ATTR_DATA_HIGH);
     }
+    sprintf(line, "Resource contract %03X; pending %03X",
+            descriptor.requested, mv_process_pending(&descriptor));
+    write_at(19, 9, line, ATTR_ACTIVE);
     write_at(20, 9, "Press any key to return.", ATTR_ACTIVE);
     getch();
 }
@@ -436,11 +442,18 @@ static int launch(const odq_program *program, char *status,
     char old_directory[ODQ_DIR_LEN + 1];
     int result;
     unsigned child;
+    mv_process_descriptor descriptor;
 
     if (getcwd(old_directory, sizeof(old_directory)) == NULL)
         old_directory[0] = '\0';
     if (program->directory[0] != '\0' && chdir(program->directory) != 0) {
         sprintf(status, "Cannot change to %.52s", program->directory);
+        return -1;
+    }
+    if (!mv_process_build(program, &descriptor)) {
+        strcpy(status, "Invalid process profile.");
+        if (old_directory[0] != '\0')
+            chdir(old_directory);
         return -1;
     }
     if (!mv_scheduler_create(scheduler, &child)) {
@@ -449,8 +462,16 @@ static int launch(const odq_program *program, char *status,
             chdir(old_directory);
         return -1;
     }
+    if (!mv_process_bind(&descriptor, scheduler, child)) {
+        mv_scheduler_terminate(scheduler, child);
+        strcpy(status, "Cannot bind process profile.");
+        if (old_directory[0] != '\0')
+            chdir(old_directory);
+        return -1;
+    }
     if (!mv_scheduler_dispatch(scheduler, NULL) ||
         mv_scheduler_current(scheduler) != child) {
+        mv_process_unbind(&descriptor, child);
         mv_scheduler_terminate(scheduler, child);
         strcpy(status, "Cannot dispatch child task.");
         if (old_directory[0] != '\0')
@@ -461,6 +482,7 @@ static int launch(const odq_program *program, char *status,
     prepare_child_screen();
     result = system(program->command);
     reset_resident_state();
+    mv_process_unbind(&descriptor, child);
     mv_scheduler_terminate(scheduler, child);
     mv_scheduler_dispatch(scheduler, NULL);
     if (old_directory[0] != '\0')

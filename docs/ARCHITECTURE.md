@@ -185,8 +185,11 @@ TopView/DESQview program-information layout without using Quarterdeck code.
 The parser validates the base checksum and bounded ASCIZ fields. Import maps
 launch fields into the open catalogue and retains scheduler, video, EMS,
 serial, protection and raw flag values in a versioned process profile. The
-profile is durable but not treated as enforced until the corresponding
-backend capability exists.
+profile is durable. `mvprocess` converts it into a per-launch resource
+contract, binds that contract to the generation-tagged scheduler task and
+tracks requested versus enforced feature classes. The launcher currently
+leaves every class pending rather than treating stored metadata as enforced;
+future backends enable a class only after its resources have been acquired.
 
 The shared 80x25 renderer uses the Open 386MAX QUILIB colour roles and screen
 geometry: block-character background, blue data pane, gray quick-help pane,

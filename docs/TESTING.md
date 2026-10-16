@@ -17,8 +17,10 @@ reuse, stale-handle rejection, V86 register images and QPI-token attachment.
 The injected VM-backend test covers current-task-only activation, failed-root
 retention, mandatory Windows root verification, failed-release retention and
 ordered detach/release. Synthetic, freely generated DVP data tests
-checksum rejection, bounded field parsing and catalogue conversion. Python
-unit tests exercise the read-only QIP parser.
+checksum rejection, bounded field parsing and catalogue conversion. Process
+descriptor tests cover profile classification, scheduler binding, partial
+enforcement, unknown feature rejection and teardown reset. Python unit tests
+exercise the read-only QIP parser.
 
 ## DOS integration tests
 

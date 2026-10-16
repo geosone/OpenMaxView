@@ -39,10 +39,28 @@ The display above wraps the definition for readability; one catalogue record
 always occupies one physical line.
 
 These fields retain the decoded scheduler, video, EMS, serial and protection
-requirements even before every capability can be enforced. Profile version 1
-is currently defined. Six-field version-1 records remain valid and are saved
-unchanged unless a profile is attached. Unknown profile versions and values
-outside their byte-sized DVP ranges are rejected rather than guessed.
+requirements even before every capability can be enforced. On launch they are
+classified into a task-bound resource contract. F2 shows its requested and
+pending hexadecimal masks. The bits are:
+
+| Bit | Resource class |
+|---:|---|
+| `001h` | Conventional-memory limits |
+| `002h` | System-memory reservation |
+| `004h` | Script buffer |
+| `008h` | Idle detection |
+| `010h` | EMS limit |
+| `020h` | Text-video geometry/pages |
+| `040h` | Graphics pages |
+| `080h` | Serial ports |
+| `100h` | Protection mode |
+| `200h` | Raw profile flags awaiting field-level interpretation |
+
+Milestone 0.8 reports all requested classes as pending; it does not claim
+enforcement from successful parsing alone. Profile version 1 is currently
+defined. Six-field version-1 records remain valid and are saved unchanged
+unless a profile is attached. Unknown profile versions and values outside
+their byte-sized DVP ranges are rejected rather than guessed.
 
 ## MAXVSET.INI
 
@@ -95,7 +113,8 @@ catalogue record. The source file is opened read-only.
 DESQview-specific script-buffer, idle-poll, text/graphics-page, EMS,
 serial-port and protection fields are decoded for `/LIST` and retained in the
 catalogue's version-1 process profile during import. The foreground launcher
-does not yet enforce them; each field becomes active only with its matching
-1.x scheduler or VM capability. `MAXVAPP` preserves the profile while editing
-the basic launch fields. The serial fields and safe migration rules are
-specified in [Serial and BBS design guide](SERIAL_BBS.md).
+builds and binds their resource contract but does not yet enforce its pending
+classes; each class becomes active only with its matching 1.x scheduler or VM
+capability. `MAXVAPP` preserves the profile while editing the basic launch
+fields. The serial fields and safe migration rules are specified in
+[Serial and BBS design guide](SERIAL_BBS.md).

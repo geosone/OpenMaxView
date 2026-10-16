@@ -59,6 +59,9 @@ Watcom. Do not add NASM as an alternate hidden requirement.
 * Use the injectable `mv_vm_backend_ops` boundary for VM lifecycle policy.
   DOS binds it to `maxbackend.asm`; host tests use deterministic fakes and
   exercise every fail-closed transition.
+* Enable an `mv_process_descriptor` feature class only after its backing
+  resource is acquired and verified. Parsed DVP data is a request, not proof
+  of enforcement; raw flag bits remain grouped until independently specified.
 * Before starting Windows from private-address-space mode `08h`, restore and
   verify the Open 386MAX standard/root context. Windows snapshots the page
   table for the first 4 MiB at startup, so this transition must fail closed.

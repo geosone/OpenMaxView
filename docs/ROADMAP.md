@@ -15,9 +15,9 @@ Further 0.x work should land in independently testable slices:
 
 1. Extend the implemented `HANDLE`, timer and bounded mailbox messages with
    scheduler-backed empty-mailbox/timer waits, keyboard queues and panels.
-2. Connect the versioned process profile now retained by `.DVP` import to
-   scheduler, video, serial and protection enforcement as backend capabilities
-   land.
+2. Enable individual classes in the implemented task-bound process resource
+   contract only as scheduler, video, serial and protection backends acquire
+   and verify the corresponding resources.
 3. Add the V86 entry/exit assembly that consumes the implemented saved register
    image and VM-context ownership layer, beginning with cooperative execution
    primitives for Open MaxView-aware tasks.

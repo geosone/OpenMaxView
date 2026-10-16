@@ -32,7 +32,7 @@
 | Settings, file and memory tools | Implemented | Current foreground-safe features only. |
 | ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
 | Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one clone, a four-page private pool and four-entry mapping table have ordered allocation, activation, full-table commit across a root/clone switch, restoration and release. |
-| `.DVP` compatibility | Versioned import implemented | Launch and advanced task fields persist; advanced enforcement awaits backend support. |
+| `.DVP` compatibility | Versioned import and task binding implemented | Launch and advanced fields persist and become a requested/pending resource contract; advanced enforcement awaits matching backends. |
 | Panels, blocking mailbox reads and blocking timer operations | Planned for 1.x | Wait/wakeup behavior and further dynamic object classes require scheduler-backed conformance tests. |
 | Concurrent V86 tasks and scheduler | Foundation implemented; execution planned for 1.x | Scheduler policy, saved register/PIC images and guarded single-clone ownership exist; V86 register entry, DOS state, private maps and IRQ scheduling remain. |
 | Per-task video, keyboard and I/O | Planned for 1.x | A guarded owned-private-page QPI mapping exists; complete task memory maps and trap integration are still required. |

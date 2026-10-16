@@ -50,7 +50,10 @@ directly. The launcher returns after the DOS child exits. Esc requests exit;
 `CONFIRM_EXIT` controls whether confirmation is required.
 
 Press F2 to inspect the selected program's launch fields and retained DVP
-process profile. Press `D` for resident API, VCPI and Open 386MAX diagnostics.
+process profile. The resource-contract line distinguishes requested feature
+classes from those currently enforced; a pending bit is never silently
+treated as active. Press `D` for resident API, VCPI and Open 386MAX
+diagnostics.
 
 ## Add programs
 
