@@ -296,6 +296,14 @@ message length DWORD on top followed by its resident far pointer. The record
 has already been removed from the queue; consume or copy the returned bytes
 before another write, erase, close or free can invalidate the pointer.
 
+Capability `ODQ_CAP3_MAILBOX_SENDER` enables mailbox `ADDR` (`BH=03h`). Push
+the explicit mailbox handle DWORD; the service replaces it with the task
+handle of the producer whose record was most recently consumed by `READ` or
+`READINTO`. The result is `0000:0000` before the first successful read. The
+current single-task implementation records the foreground task, but callers
+should treat the returned value as an opaque task handle so they remain ready
+for multi-context senders.
+
 An empty `READ` or `READINTO` currently returns zero/null with Carry set.
 Original DESQview blocks in that case; compatible waiting requires the future
 scheduler. Task-default selectors remain unavailable. Do not infer blocking

@@ -41,6 +41,7 @@ checks:
   `SUBFROM` records, four-entry queues,
   count/length/status, full-queue
   failure, FIFO pointer-return `READ` and `READINTO` data/status delivery,
+  last-read `ADDR` sender identity, failed-read retention and lifecycle reset,
   empty-read failure, erase,
   close-time discard/preservation, closed-write flags, bounded
   `SETNAME`/`GETNAME` and `FINDMAIL`, reuse and reset

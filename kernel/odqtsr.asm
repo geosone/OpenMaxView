@@ -18,6 +18,7 @@
 ;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
 ;   INT 15h AX=102Eh                 DESQview 2.40 system-memory allocation
 ;   INT 15h AH=12h, BH=00h           HANDLE object-message subset
+;   INT 15h AH=12h, BH=03h           mailbox ADDR sender query
 ;   INT 15h AH=12h, BH=04h           ready mailbox pointer READ
 ;   INT 15h AH=12h, BH=0Bh           mailbox SUBFROM by reference
 ;   INT 15h AH=12h, BH=11h/12h       mailbox SETNAME/GETNAME
@@ -66,10 +67,10 @@ MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0021h
+MUX_VERSION    equ 0022h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 07FFh             ; HANDLE, timers, mailbox services
+CAPABILITIES3  equ 0FFFh             ; HANDLE, timers, mailbox services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -252,6 +253,8 @@ int15_message_dispatch:
         je      short int15_dispatch_new
         cmp     bh,2                  ; FREE
         je      short int15_dispatch_free
+        cmp     bh,3                  ; ADDR mailbox sender / window CONNECT
+        je      short int15_dispatch_addr
         cmp     bh,4                  ; READ mailbox record
         je      short int15_dispatch_read
         cmp     bh,5                  ; WRITE absolute timer deadline
@@ -289,6 +292,8 @@ int15_dispatch_new:
         jmp     int15_message_new
 int15_dispatch_free:
         jmp     int15_message_free
+int15_dispatch_addr:
+        jmp     int15_message_addr_gateway
 int15_dispatch_read:
         jmp     int15_message_read_gateway
 int15_dispatch_timer_query:
@@ -1118,6 +1123,30 @@ message_read_gateway_chain:
         pop     bp
         jmp     int15_chain
 
+; ADDR shares BH=03h with the later CONNECT window message. Claim only an
+; explicit live mailbox handle and leave every window use in the old chain.
+int15_message_addr_gateway:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     bl,0
+        jne     short message_addr_gateway_chain
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_addr_gateway_chain
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short message_addr_gateway_chain
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_mailbox_addr
+message_addr_gateway_chain:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_chain
+
 ; SUBFROM is also overloaded for windows, object queues and object flags.
 ; Claim only an explicit live mailbox and chain every other use unchanged.
 int15_message_ref_gateway:
@@ -1202,6 +1231,8 @@ mailbox_read_pointer_ready:
         mov     si,dx
         mov     di,bx
         shl     di,1
+        mov     ax,word ptr cs:mailbox_message_sender[di]
+        mov     word ptr cs:mailbox_sender[si],ax
         mov     ax,word ptr cs:mailbox_message_length[di]
         sub     word ptr cs:mailbox_bytes[si],ax
         xor     ax,ax
@@ -1222,6 +1253,27 @@ mailbox_read_done:
         pop     bx
         pop     ax
         jmp     message_expand4
+
+; Replace an explicit mailbox handle with the task handle of the sender of
+; the most recently consumed message. Before the first successful read the
+; result is the null handle.
+int15_message_mailbox_addr:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        mov     ax,word ptr ss:[bp+12]
+        mov     word ptr ss:[bp+10],0
+        mov     word ptr ss:[bp+12],0
+        call    mailbox_validate
+        jc      short mailbox_addr_done
+        mov     ax,word ptr cs:mailbox_sender[si]
+        mov     word ptr ss:[bp+12],ax
+mailbox_addr_done:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_handled
 
 ; HANDLE uses the TopView message ABI: the caller reserves a DWORD on its
 ; stack before INT 15h, and the service replaces it with an object pointer.
@@ -1309,6 +1361,7 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_used[si],1
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
+        mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
@@ -1346,6 +1399,7 @@ message_free_mailbox:
         mov     word ptr cs:mailbox_used[si],0
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
+        mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
@@ -1835,6 +1889,8 @@ mailbox_readinto_source_ready:
         mov     si,dx
         mov     di,bx
         shl     di,1
+        mov     ax,word ptr cs:mailbox_message_sender[di]
+        mov     word ptr cs:mailbox_sender[si],ax
         mov     ax,word ptr cs:mailbox_message_length[di]
         sub     word ptr cs:mailbox_bytes[si],ax
         xor     ax,ax
@@ -2540,7 +2596,9 @@ mailbox_add_value:
         jmp     mailbox_add_value_done
 mailbox_add_value_open:
         cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
-        jae     short mailbox_add_value_done
+        jb      short mailbox_add_value_room
+        jmp     mailbox_add_value_done
+mailbox_add_value_room:
         cmp     word ptr ss:[bp+20],0
         jne     short mailbox_add_value_done
         mov     cx,word ptr ss:[bp+18]
@@ -2560,6 +2618,8 @@ mailbox_add_pointer_ok:
         mov     di,bx
         shl     di,1
         mov     word ptr cs:mailbox_message_length[di],cx
+        mov     ax,word ptr cs:task_handle_segment
+        mov     word ptr cs:mailbox_message_sender[di],ax
         add     word ptr cs:mailbox_bytes[si],cx
         inc     word ptr cs:mailbox_count[si]
         inc     word ptr cs:mailbox_tail[si]
@@ -2612,7 +2672,9 @@ mailbox_write_value:
         jmp     mailbox_write_value_done
 mailbox_write_value_open:
         cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
-        jae     short mailbox_write_value_done
+        jb      short mailbox_write_value_room
+        jmp     mailbox_write_value_done
+mailbox_write_value_room:
         cmp     word ptr ss:[bp+20],0
         jne     short mailbox_write_value_done
         mov     cx,word ptr ss:[bp+18]
@@ -2631,6 +2693,8 @@ mailbox_write_pointer_ok:
         mov     di,bx
         shl     di,1
         mov     word ptr cs:mailbox_message_length[di],cx
+        mov     ax,word ptr cs:task_handle_segment
+        mov     word ptr cs:mailbox_message_sender[di],ax
         add     word ptr cs:mailbox_bytes[si],cx
         inc     word ptr cs:mailbox_count[si]
         inc     word ptr cs:mailbox_tail[si]
@@ -2677,10 +2741,13 @@ mailbox_add_reference:
         cmp     word ptr cs:mailbox_open[si],1
         je      short mailbox_add_reference_open
         test    word ptr cs:mailbox_flags[si],0002h
-        jz      short mailbox_add_reference_done
+        jnz     short mailbox_add_reference_open
+        jmp     mailbox_add_reference_done
 mailbox_add_reference_open:
         cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
-        jae     short mailbox_add_reference_done
+        jb      short mailbox_add_reference_room
+        jmp     mailbox_add_reference_done
+mailbox_add_reference_room:
         cmp     word ptr ss:[bp+20],0
         jne     short mailbox_add_reference_done
         mov     cx,word ptr ss:[bp+18]
@@ -2700,6 +2767,8 @@ mailbox_add_reference_pointer_ok:
         mov     di,bx
         shl     di,1
         mov     word ptr cs:mailbox_message_length[di],cx
+        mov     ax,word ptr cs:task_handle_segment
+        mov     word ptr cs:mailbox_message_sender[di],ax
         mov     ax,word ptr ss:[bp+14]
         mov     word ptr cs:mailbox_message_pointer_off[di],ax
         mov     ax,word ptr ss:[bp+16]
@@ -3184,6 +3253,7 @@ mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_sender dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_flags  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_name_length dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
@@ -3193,6 +3263,7 @@ mailbox_bytes  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_message_status db MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_reference db MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_length dw MAILBOX_ENTRY_COUNT dup(0)
+mailbox_message_sender dw MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_pointer_off dw MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_pointer_seg dw MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_data db (MAILBOX_ENTRY_COUNT * MAILBOX_MESSAGE_SIZE) dup(0)
@@ -3223,7 +3294,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.33 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.34 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

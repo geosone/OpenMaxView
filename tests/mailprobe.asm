@@ -9,6 +9,11 @@
 start:
         push    cs
         pop     ds
+        mov     ax,0DE26h
+        int     15h
+        or      bx,bx
+        jz      failed
+        mov     word ptr expected_sender,bx
         call    new_mailbox
         or      dx,dx
         jnz     failed
@@ -114,6 +119,15 @@ start:
         mov     ax,word ptr mailbox_one
         mov     bx,0C00h
         call    mailbox_command
+
+        ; ADDR is null until the mailbox has delivered its first message.
+        mov     ax,word ptr mailbox_one
+        call    mailbox_addr
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
+
         mov     ax,word ptr mailbox_one
         mov     bx,0F00h
         call    mailbox_query
@@ -149,6 +163,12 @@ start:
         cmp     byte ptr es:[di+4],'O'
         jne     failed
         mov     ax,word ptr mailbox_one
+        call    mailbox_addr
+        cmp     ax,word ptr expected_sender
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        mov     ax,word ptr mailbox_one
         mov     bx,0F00h
         call    mailbox_query
         or      ax,ax
@@ -166,6 +186,12 @@ start:
         or      bx,bx
         jnz     failed
         or      di,di
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        call    mailbox_addr          ; failed reads retain the last sender
+        cmp     ax,word ptr expected_sender
+        jne     failed
+        or      dx,dx
         jnz     failed
 
         ; SUBFROM keeps a far reference rather than copying. A producer-side
@@ -188,6 +214,12 @@ start:
         jne     failed
         cmp     byte ptr read_buffer,'X'
         jne     failed
+        mov     ax,word ptr mailbox_one
+        call    mailbox_addr
+        cmp     ax,word ptr expected_sender
+        jne     failed
+        or      dx,dx
+        jnz     failed
         mov     ax,word ptr mailbox_one
         mov     bx,0F00h
         call    mailbox_query
@@ -432,6 +464,11 @@ mailbox_fill_loop:
         call    new_mailbox
         cmp     ax,word ptr mailbox_one
         jne     failed
+        call    mailbox_addr          ; a reused object has no last sender
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
+        jnz     failed
 
         mov     ax,0D702h
         int     2Fh
@@ -498,6 +535,21 @@ mailbox_query:
         int     15h
         pop     ax
         pop     dx
+        pop     bx
+        ret
+
+; AX is the mailbox segment. ADDR replaces the handle DWORD with the task
+; handle of the producer whose message was most recently consumed.
+mailbox_addr:
+        push    bx
+        push    ax                    ; mailbox segment
+        xor     ax,ax
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,0300h
+        int     15h
+        pop     dx                    ; sender offset
+        pop     ax                    ; sender segment
         pop     bx
         ret
 
@@ -682,6 +734,7 @@ mailbox_getname:
 
 mailbox_one dw 0
 mailbox_two dw 0
+expected_sender dw 0
 sample_message db 'HELLO'
 later_message db 'LATER'
 mailbox_name db 'MVTEST01'

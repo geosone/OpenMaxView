@@ -50,7 +50,7 @@ releases are useful only for version-qualified scheduler, communications and
 |---|---|---|
 | `HANDLE` | Explicit task/timer/mailbox handles | Task-default mailbox, keyboard and OBJECTQ selectors |
 | `NEW`/`FREE` | Bounded timer and mailbox pools | Window, keyboard, pointer, panel and OBJECTQ classes |
-| `ADDR` / window `CONNECT` | Missing | Sender identity and attached-window behavior |
+| `ADDR` / window `CONNECT` | Mailbox `ADDR` implemented | Multi-task sender identity and attached-window behavior |
 | `READ` | Ready mailbox records | Scheduler-backed empty waits and other object classes |
 | `WRITE` | Absolute timers and status-zero mailbox records | Window streams and other writable object classes |
 | `SETPRI`/`GETPRI` | Missing | OBJECTQ ordering |
