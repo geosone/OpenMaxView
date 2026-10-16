@@ -13,7 +13,10 @@ are compiled as strict C89 with warnings as errors. Tests cover valid and
 invalid records, limits, duplicate handling, atomic-save behaviour and
 detection. Scheduler tests cover table exhaustion, deterministic round-robin
 selection, wait/wake transitions, nested critical exclusion, teardown, slot
-reuse and stale-handle rejection. Synthetic, freely generated DVP data tests
+reuse, stale-handle rejection, V86 register images and QPI-token attachment.
+The injected VM-backend test covers current-task-only activation, failed-root
+retention, mandatory Windows root verification, failed-release retention and
+ordered detach/release. Synthetic, freely generated DVP data tests
 checksum rejection, bounded field parsing and catalogue conversion. Python
 unit tests exercise the read-only QIP parser.
 

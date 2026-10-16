@@ -1,4 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+#include <string.h>
+
 #include "scheduler.h"
 
 static int slot_for_handle(const mv_scheduler *scheduler, unsigned handle,
@@ -34,10 +36,14 @@ void mv_scheduler_init(mv_scheduler *scheduler)
         scheduler->tasks[slot].handle = MV_TASK_NONE;
         scheduler->tasks[slot].generation = 0;
         scheduler->tasks[slot].state = MV_TASK_FREE;
+        scheduler->tasks[slot].page_table = 0;
+        memset(&scheduler->tasks[slot].registers, 0,
+               sizeof(scheduler->tasks[slot].registers));
     }
     scheduler->current = MV_TASK_NONE;
     scheduler->cursor = MV_SCHEDULER_TASKS - 1;
     scheduler->critical_depth = 0;
+    scheduler->active_context = MV_TASK_NONE;
 }
 
 int mv_scheduler_create(mv_scheduler *scheduler, unsigned *handle)
@@ -54,6 +60,9 @@ int mv_scheduler_create(mv_scheduler *scheduler, unsigned *handle)
         scheduler->tasks[slot].generation = generation;
         scheduler->tasks[slot].handle = (generation << 8) | (slot + 1);
         scheduler->tasks[slot].state = MV_TASK_READY;
+        scheduler->tasks[slot].page_table = 0;
+        memset(&scheduler->tasks[slot].registers, 0,
+               sizeof(scheduler->tasks[slot].registers));
         *handle = scheduler->tasks[slot].handle;
         return 1;
     }
@@ -67,6 +76,10 @@ int mv_scheduler_terminate(mv_scheduler *scheduler, unsigned handle)
     if (!slot_for_handle(scheduler, handle, &slot))
         return 0;
     if (handle == scheduler->current && scheduler->critical_depth != 0)
+        return 0;
+    if (scheduler->tasks[slot].page_table != 0)
+        return 0;
+    if (scheduler->active_context == handle)
         return 0;
     if (handle == scheduler->current)
         scheduler->current = MV_TASK_NONE;
@@ -85,6 +98,8 @@ int mv_scheduler_wait(mv_scheduler *scheduler, unsigned handle)
         scheduler->tasks[slot].state != MV_TASK_RUNNING)
         return 0;
     if (handle == scheduler->current && scheduler->critical_depth != 0)
+        return 0;
+    if (scheduler->active_context == handle)
         return 0;
     scheduler->tasks[slot].state = MV_TASK_WAITING;
     if (handle == scheduler->current)
@@ -108,6 +123,15 @@ int mv_scheduler_dispatch(mv_scheduler *scheduler, unsigned *handle)
     unsigned slot;
     unsigned offset;
 
+    if (scheduler->active_context != MV_TASK_NONE) {
+        if (scheduler->current != scheduler->active_context ||
+            !slot_for_handle(scheduler, scheduler->current, &slot) ||
+            scheduler->tasks[slot].state != MV_TASK_RUNNING)
+            return 0;
+        if (handle != 0)
+            *handle = scheduler->current;
+        return 1;
+    }
     if (scheduler->critical_depth != 0) {
         if (!slot_for_handle(scheduler, scheduler->current, &slot) ||
             scheduler->tasks[slot].state != MV_TASK_RUNNING)
@@ -182,4 +206,98 @@ unsigned mv_scheduler_runnable(const mv_scheduler *scheduler)
             scheduler->tasks[slot].state == MV_TASK_RUNNING)
             ++count;
     return count;
+}
+
+int mv_scheduler_save_registers(mv_scheduler *scheduler, unsigned handle,
+                                const mv_v86_registers *registers)
+{
+    unsigned slot;
+
+    if (registers == 0 || !slot_for_handle(scheduler, handle, &slot))
+        return 0;
+    scheduler->tasks[slot].registers = *registers;
+    return 1;
+}
+
+int mv_scheduler_load_registers(const mv_scheduler *scheduler,
+                                unsigned handle,
+                                mv_v86_registers *registers)
+{
+    unsigned slot;
+
+    if (registers == 0 || !slot_for_handle(scheduler, handle, &slot))
+        return 0;
+    *registers = scheduler->tasks[slot].registers;
+    return 1;
+}
+
+int mv_scheduler_attach_context(mv_scheduler *scheduler, unsigned handle,
+                                unsigned long page_table)
+{
+    unsigned slot;
+
+    if (page_table == 0 || !slot_for_handle(scheduler, handle, &slot) ||
+        scheduler->tasks[slot].page_table != 0)
+        return 0;
+    scheduler->tasks[slot].page_table = page_table;
+    return 1;
+}
+
+int mv_scheduler_detach_context(mv_scheduler *scheduler, unsigned handle,
+                                unsigned long page_table)
+{
+    unsigned slot;
+
+    if (page_table == 0 || !slot_for_handle(scheduler, handle, &slot) ||
+        scheduler->tasks[slot].page_table != page_table ||
+        scheduler->active_context == handle ||
+        handle == scheduler->current)
+        return 0;
+    scheduler->tasks[slot].page_table = 0;
+    return 1;
+}
+
+unsigned long mv_scheduler_context(const mv_scheduler *scheduler,
+                                   unsigned handle)
+{
+    unsigned slot;
+
+    if (!slot_for_handle(scheduler, handle, &slot))
+        return 0;
+    return scheduler->tasks[slot].page_table;
+}
+
+int mv_scheduler_mark_context_active(mv_scheduler *scheduler,
+                                     unsigned handle,
+                                     unsigned long page_table)
+{
+    unsigned slot;
+
+    if (page_table == 0 || scheduler->active_context != MV_TASK_NONE ||
+        scheduler->current != handle ||
+        !slot_for_handle(scheduler, handle, &slot) ||
+        scheduler->tasks[slot].state != MV_TASK_RUNNING ||
+        scheduler->tasks[slot].page_table != page_table)
+        return 0;
+    scheduler->active_context = handle;
+    return 1;
+}
+
+int mv_scheduler_mark_context_inactive(mv_scheduler *scheduler,
+                                       unsigned handle,
+                                       unsigned long page_table)
+{
+    unsigned slot;
+
+    if (page_table == 0 || scheduler->active_context != handle ||
+        !slot_for_handle(scheduler, handle, &slot) ||
+        scheduler->tasks[slot].page_table != page_table)
+        return 0;
+    scheduler->active_context = MV_TASK_NONE;
+    return 1;
+}
+
+unsigned mv_scheduler_active_context(const mv_scheduler *scheduler)
+{
+    return scheduler->active_context;
 }

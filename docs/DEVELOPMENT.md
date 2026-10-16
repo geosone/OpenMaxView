@@ -56,6 +56,9 @@ Watcom. Do not add NASM as an alternate hidden requirement.
 * Keep scheduler policy independent of QPI mechanics. A task becomes a real
   concurrent DOS task only after register state, DOS state and its verified
   private context are all owned by the same lifecycle.
+* Use the injectable `mv_vm_backend_ops` boundary for VM lifecycle policy.
+  DOS binds it to `maxbackend.asm`; host tests use deterministic fakes and
+  exercise every fail-closed transition.
 * Before starting Windows from private-address-space mode `08h`, restore and
   verify the Open 386MAX standard/root context. Windows snapshots the page
   table for the first 4 MiB at startup, so this transition must fail closed.

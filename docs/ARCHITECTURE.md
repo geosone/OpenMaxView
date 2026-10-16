@@ -118,8 +118,21 @@ tracks ready/running/waiting states, selects tasks in deterministic round-robin
 order and pins the running task across nested critical regions. The current
 launcher uses that lifecycle around DOS `EXEC`, then tears down the child and
 returns the desktop to running state. Execution remains foreground-only: the
-policy module does not save V86 registers, switch QPI contexts or claim that a
-child continues running while the desktop has control.
+policy module retains a complete 32-bit V86 register image, virtual-PIC mask,
+pending-interrupt word and one owned page-table token for every slot, but the
+current launcher does not yet enter those saved register images or claim that
+a child continues running while the desktop has control.
+
+The separate VM-task coordinator binds one scheduler task to the existing
+Open 386MAX QPI clone lifecycle. It permits activation only when that task is
+the scheduler's current task, refuses task teardown while a context remains
+attached, preserves ownership after backend failures and releases a clone only
+after a verified root transition. Its Windows-preparation operation always
+requests and verifies the root transition, even when the owned clone is
+already marked inactive, because cached policy state cannot prove which QPI
+context another layer left active. This coordinator is linked into the DOS
+launcher and host-tested through an injected backend, but is not used for DOS
+`EXEC` until the register-entry and private-memory-map layer is complete.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
 directory.  Its workflow and screen vocabulary follow Open 386MAX's
@@ -227,8 +240,9 @@ network-specific ABI is to be added to Open 386MAX.
 | Timers | nonblocking subset implemented | Four identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
 | Mailboxes | bounded nonblocking queue subset implemented | Two identities, four copied messages each, lifecycle/query/read, erase and base `SETFLAGS`/`GETFLAGS`; empty blocking wait planned |
 | Panels and further mailbox operations | planned | DESQview-specific dynamic object API |
-| Scheduler policy | bounded foundation | 16 generation-tagged lifecycle slots, ready/running/waiting states, round-robin dispatch and critical exclusion; launcher integration tested |
-| Concurrent V86 tasks | planned | Connect policy to saved registers, per-task DOS state, QPI contexts and IRQ calldowns |
+| Scheduler policy | bounded foundation | 16 generation-tagged lifecycle slots, saved V86 register/PIC images, context ownership, round-robin dispatch and critical exclusion |
+| VM context lifecycle | bounded foundation | Current-task activation, fail-closed root/Windows transition and ordered context teardown over the single owned QPI clone |
+| Concurrent V86 tasks | planned | Enter saved registers, build per-task DOS state/private maps and connect IRQ calldowns |
 | Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
 | `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
 
@@ -286,10 +300,11 @@ released from root. This is a genuine private-page lifetime and persistent
 mapping-table primitive, not yet a complete DOS memory map or runnable second
 task.
 
-Points 1, 4, 7 and 8 stay with Open MaxView. The bounded scheduler policy for
-point 7 is implemented independently of the backend, but points 4 and 8 still
-need the V86 execution layer: MaxView must save and restore a task's registers
-itself. Not available: the graphics virtualization
+Points 1, 4, 7 and 8 stay with Open MaxView. The bounded scheduler now stores
+the point-4 register/PIC image and implements point-7 policy independently of
+the backend. The VM-task coordinator establishes the ownership and transition
+guards for point 8. Entering and leaving those register images still needs the
+V86 execution layer. Not available: the graphics virtualization
 of `13h` (`1302h`-`1310h`) and enforced protection levels (`14h` is
 accepted but does not write-protect); the EMS mapping state is kept once,
 not per context, so EMS memory is mapped into a task with `0Bh`.
@@ -311,10 +326,9 @@ before every mapping is committed, persistence in the inactive clone after a
 verified root switch, pool/table exhaustion, and ordered page/context release.
 A committed private
 mapping does not weaken the Windows rule: it remains in the inactive clone,
-while the root switch is verified before control returns. Multi-context
-Windows support still requires the future launcher path to call the same
-fail-closed restoration before `EXEC` and to handle restoration failure as
-fatal.
+while the root switch is verified before control returns. The VM-task
+coordinator now implements that fail-closed preparation contract; the future
+Windows-aware `EXEC` path must call it and treat false as fatal.
 
 Services beyond QPI belong behind the Open-MaxView function range (`4Dxxh`).
 Open 386MAX identifies as QEMM only for the functions whose observable
@@ -331,9 +345,10 @@ of the current backend contract.
    provide tiny conformance programs for every call.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal
    process descriptor as scheduler and VM capabilities become available.
-3. Add cooperative multi-process loading for Open MaxView-aware programs.
-4. Connect the bounded scheduler state to saved V86 registers and the tested
-   QPI allocate/clone/guarded-switch/bounded-page-pool/map/commit/reactivate/
+3. Add V86 register entry/exit and cooperative multi-process loading for Open
+   MaxView-aware programs.
+4. Extend the scheduler/VM-task ownership state over the tested QPI
+   allocate/clone/guarded-switch/bounded-page-pool/map/commit/reactivate/
    restore/ordered-release wrapper, then wrap interrupt, timer and video
    primitives without weakening the private-ABI identity check.
 5. Add preemptive scheduling, private DOS state, video virtualisation and

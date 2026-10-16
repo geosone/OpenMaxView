@@ -34,7 +34,7 @@
 | Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one clone, a four-page private pool and four-entry mapping table have ordered allocation, activation, full-table commit across a root/clone switch, restoration and release. |
 | `.DVP` compatibility | Versioned import implemented | Launch and advanced task fields persist; advanced enforcement awaits backend support. |
 | Panels, blocking mailbox reads and blocking timer operations | Planned for 1.x | Wait/wakeup behavior and further dynamic object classes require scheduler-backed conformance tests. |
-| Concurrent V86 tasks and scheduler | Planned for 1.x | QPI context/IRQ primitives exist; MaxView register, DOS-state and scheduling code is still required. |
+| Concurrent V86 tasks and scheduler | Foundation implemented; execution planned for 1.x | Scheduler policy, saved register/PIC images and guarded single-clone ownership exist; V86 register entry, DOS state, private maps and IRQ scheduling remain. |
 | Per-task video, keyboard and I/O | Planned for 1.x | A guarded owned-private-page QPI mapping exists; complete task memory maps and trap integration are still required. |
 | Remote viewing | Deferred to 2.x | No remote code is present in 0.8 or the 1.x goal. |
 

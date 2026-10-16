@@ -18,14 +18,13 @@ Further 0.x work should land in independently testable slices:
 2. Connect the versioned process profile now retained by `.DVP` import to
    scheduler, video, serial and protection enforcement as backend capabilities
    land.
-3. Extend the implemented bounded task lifecycle and round-robin policy with
-   saved V86 register state and cooperative execution primitives for Open
-   MaxView-aware tasks.
+3. Add the V86 entry/exit assembly that consumes the implemented saved register
+   image and VM-context ownership layer, beginning with cooperative execution
+   primitives for Open MaxView-aware tasks.
 4. Extend the implemented single-context QPI allocate/clone/guarded-switch/
    bounded-private-page-pool/mapping-table/commit/reactivate/restore/
-   ordered-release wrapper into complete task memory maps, then wrap virtual
-   interrupts, timer, video and I/O trapping; implement register state in
-   MaxView where QPI deliberately leaves it to the V86 scheduler.
+   ordered-release wrapper and VM-task coordinator into complete task memory
+   maps, then wrap virtual interrupts, timer, video and I/O trapping.
 5. Add timer-driven preemption, per-task DOS state, QPI context switching and
    true local windows.
 6. Add serial ownership, UART I/O trapping, virtual IRQ delivery and a FOSSIL

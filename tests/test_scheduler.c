@@ -23,6 +23,8 @@ int main(void)
     unsigned stale;
     unsigned selected;
     unsigned index;
+    mv_v86_registers saved;
+    mv_v86_registers loaded;
 
     mv_scheduler_init(&scheduler);
     require(mv_scheduler_current(&scheduler) == MV_TASK_NONE,
@@ -90,6 +92,51 @@ int main(void)
             "non-current task entered critical section");
     require(!mv_scheduler_leave_critical(&scheduler, handles[2]),
             "non-current task left critical section");
+
+    saved.eax = 0x12345678UL;
+    saved.ebx = 0x87654321UL;
+    saved.ecx = 3;
+    saved.edx = 4;
+    saved.esi = 5;
+    saved.edi = 6;
+    saved.ebp = 7;
+    saved.esp = 8;
+    saved.eip = 9;
+    saved.eflags = 0x00020202UL;
+    saved.cs = 10;
+    saved.ds = 11;
+    saved.es = 12;
+    saved.fs = 13;
+    saved.gs = 14;
+    saved.ss = 15;
+    saved.virtual_pic_mask = 0xfffe;
+    saved.pending_interrupts = 1;
+    require(mv_scheduler_save_registers(&scheduler, handles[2], &saved),
+            "register save failed");
+    require(mv_scheduler_load_registers(&scheduler, handles[2], &loaded),
+            "register load failed");
+    require(loaded.eax == saved.eax && loaded.ebx == saved.ebx &&
+            loaded.eip == saved.eip && loaded.eflags == saved.eflags &&
+            loaded.cs == saved.cs && loaded.ss == saved.ss &&
+            loaded.virtual_pic_mask == saved.virtual_pic_mask &&
+            loaded.pending_interrupts == saved.pending_interrupts,
+            "register image changed");
+
+    require(mv_scheduler_attach_context(&scheduler, handles[2],
+                                        0x12345678UL),
+            "context attach failed");
+    require(!mv_scheduler_attach_context(&scheduler, handles[2],
+                                         0x87654321UL),
+            "duplicate context attach accepted");
+    require(mv_scheduler_context(&scheduler, handles[2]) == 0x12345678UL,
+            "attached context is wrong");
+    require(!mv_scheduler_terminate(&scheduler, handles[2]),
+            "task with a context was terminated");
+    require(mv_scheduler_detach_context(&scheduler, handles[2],
+                                        0x12345678UL),
+            "context detach failed");
+    require(mv_scheduler_context(&scheduler, handles[2]) == 0,
+            "detached context remains visible");
 
     puts("scheduler tests passed");
     return 0;
