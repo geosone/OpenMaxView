@@ -245,7 +245,8 @@ network-specific ABI is to be added to Open 386MAX.
 | Panels and further mailbox operations | planned | DESQview-specific dynamic object API |
 | Scheduler policy | bounded foundation | 16 generation-tagged lifecycle slots, saved V86 register/PIC images, context ownership, round-robin dispatch and critical exclusion |
 | VM context lifecycle | bounded foundation | Current-task activation, fail-closed root/Windows transition and ordered context teardown over the single owned QPI clone |
-| Concurrent V86 tasks | planned | Enter saved registers, build per-task DOS state/private maps and connect IRQ calldowns |
+| Master IRQ calldowns | bounded foundation | Guarded QPI `1C01h` install, `1C04h` injection and `1C00h` removal with a copied non-null IRQ0-7 table |
+| Concurrent V86 tasks | planned | Enter saved registers, build per-task DOS state/private maps and invoke dispatch from the IRQ0 calldown |
 | Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
 | `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
 
@@ -302,6 +303,15 @@ page continues to prevent clone release until all pool entries have been
 released from root. This is a genuine private-page lifetime and persistent
 mapping-table primitive, not yet a complete DOS memory map or runnable second
 task.
+
+The backend wrapper also owns a guarded master-PIC calldown lifecycle. It
+validates all eight far handlers before enabling QPI `1C01h`, refuses duplicate
+ownership, restricts `1C04h` injection to vectors `08h`-`0Fh`, and clears
+ownership only after `1C00h` succeeds. A DOS probe installs a private IRQ0
+callback, injects one tick, verifies its execution, chains the original BIOS
+handler for normal clock/EOI processing and removes the table. Saving the
+interrupted register frame and choosing another task are the next execution
+layer rather than claims of this wrapper.
 
 Points 1, 4, 7 and 8 stay with Open MaxView. The bounded scheduler now stores
 the point-4 register/PIC image and implements point-7 policy independently of

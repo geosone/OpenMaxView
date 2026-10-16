@@ -7,6 +7,7 @@
 #define ODQ_QPI_VERSION_7_3      0x0703
 #define ODQ_MAX_PRIVATE_PAGES    4
 #define ODQ_MAX_MAPPINGS         4
+#define ODQ_MAX_IRQ_VECTORS      8
 
 typedef struct odq_max_backend_info {
     unsigned abi_version;
@@ -34,6 +35,11 @@ typedef struct odq_max_qpi_mapping {
     unsigned committed;
 } odq_max_qpi_mapping;
 
+typedef struct odq_max_qpi_vector {
+    unsigned offset;
+    unsigned segment;
+} odq_max_qpi_vector;
+
 /* Returns nonzero only after discovery, signature and status validation. */
 int odq_max_backend_query(odq_max_backend_info *information);
 
@@ -52,5 +58,10 @@ int odq_max_mapping_query(odq_max_qpi_mapping *mapping);
 int odq_max_mapping_install(odq_max_qpi_mapping *mapping);
 int odq_max_mapping_commit(odq_max_qpi_mapping *mapping);
 int odq_max_mapping_restore(odq_max_qpi_mapping *mapping);
+
+/* Master-PIC V86 calldowns use a copied table of IRQ0-7 far handlers. */
+int odq_max_irq_master_install(const odq_max_qpi_vector *vectors);
+int odq_max_irq_master_inject(unsigned vector);
+int odq_max_irq_master_remove(void);
 
 #endif

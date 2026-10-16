@@ -18,9 +18,9 @@ Further 0.x work should land in independently testable slices:
 2. Enable individual classes in the implemented task-bound process resource
    contract only as scheduler, video, serial and protection backends acquire
    and verify the corresponding resources.
-3. Add the V86 entry/exit assembly that consumes the implemented saved register
-   image and VM-context ownership layer, beginning with cooperative execution
-   primitives for Open MaxView-aware tasks.
+3. Extend the implemented master-PIC calldown lifecycle with an IRQ0 frame
+   handler that consumes the saved register image and VM-context ownership
+   layer, beginning with cooperative execution for Open MaxView-aware tasks.
 4. Extend the implemented single-context QPI allocate/clone/guarded-switch/
    bounded-private-page-pool/mapping-table/commit/reactivate/restore/
    ordered-release wrapper and VM-task coordinator into complete task memory

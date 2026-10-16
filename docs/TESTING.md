@@ -65,7 +65,9 @@ checks:
   entry, exact user `SS:SP` restoration and stack reuse;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone
-  guards, verified clone/root switching, four-page private-pool exhaustion,
+  guards, master-IRQ table validation, duplicate install rejection, synchronous
+  IRQ0 injection, invalid-vector rejection and ordered removal, verified
+  clone/root switching, four-page private-pool exhaustion,
   a four-entry verified map/restore cycle in an exclusively reserved DOS test
   area, refusal to restore root with a partially committed table, committed
   table persistence across a root/clone switch, out-of-order release refusal

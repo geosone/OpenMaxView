@@ -15,6 +15,15 @@ static const unsigned qpi_release_order[ODQ_MAX_PRIVATE_PAGES] = {
     1, 3, 0, 2
 };
 
+static volatile unsigned qpi_irq0_calls;
+static void (__far __interrupt *qpi_old_irq0)(void);
+
+static void __far __interrupt qpi_irq0_probe(void)
+{
+    ++qpi_irq0_calls;
+    _chain_intr(qpi_old_irq0);
+}
+
 static int allocate_block(unsigned function, unsigned bytes,
                           far_block *block)
 {
@@ -114,6 +123,8 @@ int main(void)
     odq_max_qpi_page qpi_pages[ODQ_MAX_PRIVATE_PAGES + 1];
     odq_max_qpi_mapping qpi_mappings[ODQ_MAX_MAPPINGS];
     odq_max_qpi_mapping qpi_extra_mapping;
+    odq_max_qpi_vector qpi_vectors[ODQ_MAX_IRQ_VECTORS];
+    void (__far __interrupt *irq_handler)(void);
     unsigned scratch_segment;
     unsigned aligned_segment;
 
@@ -673,6 +684,29 @@ int main(void)
                backend.qpi_version >> 8, backend.qpi_version & 0xff,
                backend.qpi_context);
         if (backend.qpi_version != 0) {
+            for (i = 0; i < ODQ_MAX_IRQ_VECTORS; ++i) {
+                irq_handler = _dos_getvect(8 + i);
+                if (i == 0)
+                    qpi_old_irq0 = irq_handler;
+                qpi_vectors[i].offset = FP_OFF(irq_handler);
+                qpi_vectors[i].segment = FP_SEG(irq_handler);
+            }
+            irq_handler = qpi_irq0_probe;
+            qpi_vectors[0].offset = FP_OFF(irq_handler);
+            qpi_vectors[0].segment = FP_SEG(irq_handler);
+            qpi_irq0_calls = 0;
+            if (!odq_max_irq_master_install(qpi_vectors) ||
+                odq_max_irq_master_install(qpi_vectors) ||
+                odq_max_irq_master_inject(0x60) ||
+                !odq_max_irq_master_inject(0x08) ||
+                qpi_irq0_calls == 0 ||
+                !odq_max_irq_master_remove() ||
+                odq_max_irq_master_remove() ||
+                odq_max_irq_master_inject(0x08)) {
+                puts("QPI master IRQ calldown lifecycle failed.");
+                return 76;
+            }
+            puts("QPI master IRQ calldown lifecycle passed.");
             qpi_context.page_table = backend.qpi_context;
             if (odq_max_context_release(&qpi_context)) {
                 puts("QPI accepted the active context as an owned clone.");

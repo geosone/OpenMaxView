@@ -18,6 +18,9 @@
         public  odq_max_mapping_install_
         public  odq_max_mapping_commit_
         public  odq_max_mapping_restore_
+        public  odq_max_irq_master_install_
+        public  odq_max_irq_master_inject_
+        public  odq_max_irq_master_remove_
 
 MV_QUERY        equ 04D00h
 MV_STATUS       equ 04D01h
@@ -34,6 +37,9 @@ QPI_GET_CONTEXT equ 00700h
 QPI_SET_CONTEXT equ 00800h
 QPI_GET_MAPPING equ 00900h
 QPI_SET_MAPPING equ 00A00h
+QPI_IRQ_MASTER_OFF equ 01C00h
+QPI_IRQ_MASTER_ON  equ 01C01h
+QPI_IRQ_INJECT     equ 01C04h
 QPI_LAST_PAGE   equ 003FFh
 QPI_PAGE_SLOTS  equ 4
 QPI_PAGE_BYTES  equ QPI_PAGE_SLOTS * 4
@@ -865,6 +871,146 @@ mapping_restore_failed:
         ret
 odq_max_mapping_restore_ endp
 
+; Install a complete non-null IRQ0-7 V86 calldown table. QPI copies the
+; caller's DS:DI table, so stack or automatic C storage is valid afterwards.
+odq_max_irq_master_install_ proc near
+        push    si
+        push    di
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        mov     si,ax
+        or      si,si
+        jz      short irq_master_install_failed
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short irq_master_install_failed
+        cmp     word ptr cs:qpi_irq_master_active,0
+        jne     short irq_master_install_failed
+        cmp     word ptr cs:qpi_owned_active,0
+        jne     short irq_master_install_failed
+        mov     di,si
+        mov     cx,8
+irq_master_validate_next:
+        mov     eax,dword ptr [di]
+        test    eax,eax
+        jz      short irq_master_install_failed
+        add     di,4
+        loop    irq_master_validate_next
+        mov     di,si
+        mov     ax,QPI_IRQ_MASTER_ON
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short irq_master_install_returned
+        add     sp,2
+        jmp     short irq_master_install_failed
+irq_master_install_returned:
+        add     sp,2
+        mov     word ptr cs:qpi_irq_master_active,1
+        mov     ax,1
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     di
+        pop     si
+        ret
+irq_master_install_failed:
+        xor     ax,ax
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     di
+        pop     si
+        ret
+odq_max_irq_master_install_ endp
+
+; Inject only a master-PIC hardware vector while this wrapper owns the table.
+odq_max_irq_master_inject_ proc near
+        push    si
+        push    di
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        mov     si,ax
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short irq_master_inject_failed
+        cmp     word ptr cs:qpi_irq_master_active,1
+        jne     short irq_master_inject_failed
+        cmp     si,08h
+        jb      short irq_master_inject_failed
+        cmp     si,0Fh
+        ja      short irq_master_inject_failed
+        mov     bx,si
+        mov     ax,QPI_IRQ_INJECT
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short irq_master_inject_returned
+        add     sp,2
+        jmp     short irq_master_inject_failed
+irq_master_inject_returned:
+        add     sp,2
+        mov     ax,1
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     di
+        pop     si
+        ret
+irq_master_inject_failed:
+        xor     ax,ax
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     di
+        pop     si
+        ret
+odq_max_irq_master_inject_ endp
+
+; Disable the master calldown. Ownership is cleared only on QPI success.
+odq_max_irq_master_remove_ proc near
+        push    si
+        push    di
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        cmp     word ptr cs:qpi_context_ready,1
+        jne     short irq_master_remove_failed
+        cmp     word ptr cs:qpi_irq_master_active,1
+        jne     short irq_master_remove_failed
+        mov     ax,QPI_IRQ_MASTER_OFF
+        pushf
+        call    dword ptr cs:qpi_entry
+        jnc     short irq_master_remove_returned
+        add     sp,2
+        jmp     short irq_master_remove_failed
+irq_master_remove_returned:
+        add     sp,2
+        mov     word ptr cs:qpi_irq_master_active,0
+        mov     ax,1
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     di
+        pop     si
+        ret
+irq_master_remove_failed:
+        xor     ax,ax
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     di
+        pop     si
+        ret
+odq_max_irq_master_remove_ endp
+
 ; Return nonzero when DX names a representable page in the owned pool.
 qpi_page_is_owned proc near
         push    bx
@@ -904,5 +1050,6 @@ qpi_mapping_committed       dw QPI_MAP_SLOTS dup (0)
 qpi_mapping_page            dw QPI_MAP_SLOTS dup (0)
 qpi_mapping_original        dw QPI_MAP_SLOTS dup (0)
 qpi_mapping_target          dw QPI_MAP_SLOTS dup (0)
+qpi_irq_master_active       dw 0
 
         end

@@ -62,6 +62,10 @@ Watcom. Do not add NASM as an alternate hidden requirement.
 * Enable an `mv_process_descriptor` feature class only after its backing
   resource is acquired and verified. Parsed DVP data is a request, not proof
   of enforcement; raw flag bits remain grouped until independently specified.
+* A QPI IRQ calldown is a V86 interrupt handler: do not call DOS, allocate
+  memory or perform unbounded work inside it. Preserve the interrupted frame,
+  arrange the required PIC/BIOS chaining, and remove the copied handler table
+  before its code or data can be released.
 * Before starting Windows from private-address-space mode `08h`, restore and
   verify the Open 386MAX standard/root context. Windows snapshots the page
   table for the first 4 MiB at startup, so this transition must fail closed.

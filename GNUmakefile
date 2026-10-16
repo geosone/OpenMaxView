@@ -423,6 +423,7 @@ test-dos: all $(BUILD)/MAXSTUB.COM $(BUILD)/ANSIPRB.COM $(BUILD)/HANDLEPR.COM $(
 	rg -q 'Foreground targeted PUTKEY API passed' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend not detected' $(BUILD)/MVPROBE.TXT
 	rg -q 'Open 386MAX backend ABI 1.0, 2/4 contexts, QPI 7.3, table 00001234' $(BUILD)/MVPROBE2.TXT
+	rg -q 'QPI master IRQ calldown lifecycle passed' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI active context release rejected' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI empty context token rejected' $(BUILD)/MVPROBE2.TXT
 	rg -q 'QPI cloned page table 00005678 without activating it' $(BUILD)/MVPROBE2.TXT

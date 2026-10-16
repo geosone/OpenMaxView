@@ -52,6 +52,12 @@ qpi_entry:
         je      short qpi_is_map_query
         cmp     ax,0A00h
         je      short qpi_is_map_set
+        cmp     ax,1C00h
+        je      short qpi_is_irq_master_off
+        cmp     ax,1C01h
+        je      short qpi_is_irq_master_on
+        cmp     ax,1C04h
+        je      short qpi_is_irq_inject
         jmp     short qpi_not_switch
 qpi_is_switch:
         jmp     qpi_switch
@@ -63,6 +69,12 @@ qpi_is_map_query:
         jmp     qpi_map_query
 qpi_is_map_set:
         jmp     qpi_map_set
+qpi_is_irq_master_off:
+        jmp     qpi_irq_master_off
+qpi_is_irq_master_on:
+        jmp     qpi_irq_master_on
+qpi_is_irq_inject:
+        jmp     qpi_irq_inject
 qpi_not_switch:
         cmp     ax,4D00h
         je      short qpi_query
@@ -286,6 +298,39 @@ qpi_error:
         stc
         retf
 
+qpi_irq_master_on:
+        cmp     byte ptr cs:qpi_irq_enabled,0
+        jne     short qpi_error
+        mov     word ptr cs:qpi_irq_table,di
+        mov     word ptr cs:qpi_irq_table+2,ds
+        mov     byte ptr cs:qpi_irq_enabled,1
+        clc
+        retf
+qpi_irq_master_off:
+        cmp     byte ptr cs:qpi_irq_enabled,1
+        jne     short qpi_error
+        mov     byte ptr cs:qpi_irq_enabled,0
+        mov     dword ptr cs:qpi_irq_table,0
+        clc
+        retf
+qpi_irq_inject:
+        cmp     byte ptr cs:qpi_irq_enabled,1
+        jne     short qpi_error
+        cmp     bx,08h
+        jb      short qpi_error
+        cmp     bx,0Fh
+        ja      short qpi_error
+        sub     bx,08h
+        shl     bx,1
+        shl     bx,1
+        push    ds
+        lds     si,dword ptr cs:qpi_irq_table
+        pushf
+        call    dword ptr [si+bx]
+        pop     ds
+        clc
+        retf
+
 old2f           dd 0
 qpi_allocated   db 0
 qpi_page_mask   db 0
@@ -293,5 +338,7 @@ qpi_active_context dd 00001234h
 qpi_mapping_active dw 4 dup (0)
 qpi_mapping_page dw 4 dup (0)
 qpi_mapping_frame dw 4 dup (0)
+qpi_irq_enabled db 0
+qpi_irq_table   dd 0
 resident_end:
         end     start
