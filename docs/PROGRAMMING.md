@@ -280,6 +280,13 @@ status-zero mailbox form. Push the length DWORD, source far pointer and
 mailbox handle in that order. It has the same copy, size, open/full and Carry
 rules as `ADDTO`, but consumes 12 stack bytes and records status zero.
 
+Capability `ODQ_CAP3_MAILBOX_REFERENCE` enables `SUBFROM` (`BH=0Bh`). Its
+stack layout matches `ADDTO`: status, length, far address and mailbox handle.
+Unlike `ADDTO`, the payload is not copied. Keep the complete source range
+allocated and valid until a read or destructive mailbox operation removes
+the record. `READ` returns that same pointer; `READINTO` dereferences it when
+called. The current bounded implementation accepts at most 128 bytes.
+
 Capability `ODQ_CAP3_MAILBOX_READ` enables pointer-return `READ` (`BH=04h`).
 Push only the explicit mailbox handle. On return, the stack contains the
 message length DWORD on top followed by its resident far pointer. The record

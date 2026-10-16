@@ -36,7 +36,8 @@ checks:
   enumeration, reuse, stack popping, open/close, relative/absolute countdown and
   elapsed/remaining/state queries, foreground `PUSHKEY`,
   a two-slot mailbox lifecycle with exhaustion, type/identity checks,
-  enumeration, `WRITE` status-zero delivery, four-entry by-value queues,
+  enumeration, `WRITE` status-zero delivery, copied `ADDTO` and referenced
+  `SUBFROM` records, four-entry queues,
   count/length/status, full-queue
   failure, FIFO pointer-return `READ` and `READINTO` data/status delivery,
   empty-read failure, erase,

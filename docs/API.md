@@ -31,6 +31,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=09h BL=00h`, object DWORD on caller stack | Replaces handle with remaining hundredths or total queued bytes | Timer/mailbox `LEN` |
 | `INT 15h AH=12h BH=0Ah BL=00h`, timer then duration DWORDs on caller stack | Starts a relative timer and pops both DWORDs | Timer `ADDTO`; duration below handle |
 | `INT 15h AH=12h BH=0Ah BL=00h`, status, length, address and mailbox DWORDs on caller stack | Copies and queues up to 128 bytes; pops all four DWORDs | Mailbox `ADDTO`; four-entry queue, Carry on failure |
+| `INT 15h AH=12h BH=0Bh BL=00h`, status, length, address and mailbox DWORDs on caller stack | Queues a caller-owned far pointer and pops all four DWORDs | Mailbox `SUBFROM`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=0Ch/0Dh BL=00h`, object DWORD on caller stack | Opens/closes timer or mailbox and pops handle | `OPEN`/`CLOSE`; mailbox close discards queued mail |
 | `INT 15h AH=12h BH=0Eh BL=00h`, object DWORD on caller stack | Cancels a timer or empties a mailbox and pops handle | `ERASE` |
 | `INT 15h AH=12h BH=0Fh BL=00h`, object DWORD on caller stack | Replaces handle with state/status DWORD | Timer state or retained mailbox last-read status |
@@ -126,8 +127,9 @@ are bounded to one midnight wrap. Blocking `READ` remains unimplemented until
 its scheduling and task-wakeup rules have conformance coverage.
 
 Mailbox objects additionally provide a bounded FIFO write layer. Each of two
-mailboxes stores four by-value `WRITE` or `ADDTO` records with payloads of zero through
-128 bytes. `SIZEOF` returns the queued-record count and `LEN` the total queued
+mailboxes stores four `WRITE`, `ADDTO` or `SUBFROM` records with payloads of
+zero through 128 bytes. `WRITE` and `ADDTO` copy their bytes; `SUBFROM` retains
+the caller's far pointer. `SIZEOF` returns the queued-record count and `LEN` the total queued
 bytes. `ERASE`, `CLOSE`, `FREE` and task reset discard pending records. A
 closed or full mailbox, a payload over 128 bytes or a nonzero high length word
 sets Carry and leaves the queue unchanged. `STATUS` remains the last-read
@@ -139,6 +141,12 @@ short buffer receives a truncated record and the complete record is still
 consumed. Unlike DESQview's scheduler-backed operation, an empty read returns
 a zero length and null pointer with Carry set rather than blocking.
 Task-default selectors are not yet implemented.
+
+The producer of a `SUBFROM` record owns its referenced storage until that
+record is read, erased, closed or freed. `READ` returns the original pointer;
+`READINTO` copies from it at consumption time. Changing the referenced bytes
+before consumption is therefore visible to the reader. Open MaxView validates
+the pointer and applies the same 128-byte and four-record bounds as `ADDTO`.
 
 Mailbox flags `0001h`, `0002h` and `0004h` are retained. The first requests
 common-memory placement and is advisory because the bounded resident pool has
@@ -187,12 +195,12 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=001Ch`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=001Dh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
-| `D705h` | `BX=03FFh` object-message capability bits, `CX=DX=0` |
+| `D705h` | `BX=07FFh` object-message capability bits, `CX=DX=0` |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise
@@ -214,6 +222,7 @@ Bit 7 advertises bounded explicit-handle mailbox names and `FINDMAIL`.
 Bit 8 advertises by-value mailbox `WRITE` with implicit status zero.
 Bit 9 advertises pointer-return mailbox `READ` for ready records; it does not
 advertise a blocking empty-mailbox wait or timer `READ`.
+Bit 10 advertises bounded mailbox `SUBFROM` records retained by far reference.
 
 ## Open 386MAX QPI wrapper
 

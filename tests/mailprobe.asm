@@ -168,6 +168,33 @@ start:
         or      di,di
         jnz     failed
 
+        ; SUBFROM keeps a far reference rather than copying. A producer-side
+        ; change before READINTO must therefore be visible to the consumer.
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,0055h
+        mov     si,offset reference_message
+        call    mailbox_add_reference
+        jc      failed
+        mov     byte ptr reference_message,'X'
+        push    ds
+        pop     es
+        mov     di,offset read_buffer
+        mov     ax,word ptr mailbox_one
+        mov     cx,128
+        call    mailbox_readinto
+        jc      failed
+        cmp     ax,5
+        jne     failed
+        cmp     byte ptr read_buffer,'X'
+        jne     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0F00h
+        call    mailbox_query
+        cmp     ax,0055h
+        jne     failed
+        mov     byte ptr reference_message,'R'
+
         mov     ax,word ptr mailbox_one
         mov     bx,0800h              ; SIZEOF: queued message count
         call    mailbox_query
@@ -499,6 +526,31 @@ mailbox_add_value:
         pop     bp
         ret
 
+; AX is the mailbox segment, DX the status, CX the byte length and DS:SI the
+; referenced message. SUBFROM consumes the same four DWORDs as ADDTO.
+mailbox_add_reference:
+        push    bp
+        mov     bp,sp
+        push    bx
+        push    di
+        mov     di,ax
+        xor     ax,ax
+        push    ax                    ; status high word
+        push    dx                    ; status low word
+        push    ax                    ; length high word
+        push    cx                    ; length low word
+        push    ds                    ; message segment
+        push    si                    ; message offset
+        push    di                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,0B00h
+        int     15h
+        pop     di
+        pop     bx
+        pop     bp
+        ret
+
 ; AX is the mailbox segment, CX the byte length and DS:SI the source. WRITE
 ; consumes length, address and handle and assigns status zero.
 mailbox_write_value:
@@ -634,6 +686,7 @@ sample_message db 'HELLO'
 later_message db 'LATER'
 mailbox_name db 'MVTEST01'
 second_name db 'NODE'
+reference_message db 'REFER'
 name_buffer db 32 dup(0)
 read_buffer db 128 dup(0)
 passed_msg db 'MAXVTSR mailbox queue lifecycle passed.',13,10,'$'

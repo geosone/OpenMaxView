@@ -56,7 +56,7 @@ releases are useful only for version-qualified scheduler, communications and
 | `SETPRI`/`GETPRI` | Missing | OBJECTQ ordering |
 | `SIZEOF`/`LEN` | Timer and mailbox subset | Window, keyboard, pointer, panel and OBJECTQ meanings |
 | `ADDTO` | Timers and by-value mailbox records | Window data/attribute writes and other object classes |
-| `SUBFROM` | Missing | By-reference mailbox records, object flags and OBJECTQ removal |
+| `SUBFROM` | Bounded by-reference mailbox records | Object flags and OBJECTQ removal |
 | `OPEN`/`CLOSE` | Timer and mailbox subset | Window, keyboard, pointer, panel and OBJECTQ behavior |
 | `ERASE` | Timer and mailbox subset | Windows, input queues, pointers and OBJECTQs |
 | `STATUS` | Timer/mailbox subset | Keyboard, pointer, panel and OBJECTQ status contracts |
