@@ -3,7 +3,7 @@
 Open MaxView is a clean-room, GPL-licensed reimplementation of the DOS
 multitasking environment DESQview 2.8.  It targets real DOS (8086 for the
 user interface, 80386 or newer for the future virtual-machine backend) and is
-designed to cooperate with [Open 386MAX](https://github.com/geosone/386MAX)
+designed to cooperate with [Open 386MAX](https://github.com/geosone/Open386MAX)
 instead of reimplementing a memory manager.
 
 The repository does **not** contain files from Quarterdeck's DESQview media.
