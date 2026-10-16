@@ -31,7 +31,7 @@ releases are useful only for version-qualified scheduler, communications and
 | Presence, `PAUSE`, `GETVER` | Implemented | Multi-task scheduling effect of `PAUSE` |
 | `GETMEM`/`PUTMEM` | Bounded foreground implementation | Variable sizes, per-task ownership and exhaustion behavior |
 | `PRINTC` | Foreground full-screen text implementation | Multiple windows, clipping and private cursor state |
-| `GETBIT`/`FREEBIT`/`SETBIT` | Missing | Second-level interrupt allocation, dispatch and release |
+| `GETBIT`/`FREEBIT`/`SETBIT` | Bounded foreground implementation | Deferred dispatch at the hardware-interrupt return boundary and multi-task `ES` selection |
 | `ISOBJ`, `LOCATE`, `GETBUF` | Foreground implementation | Multiple overlapping windows and private video buffers |
 | `SOUND` | Missing | Ownership, duration and background scheduling |
 | `OSTACK`/`USTACK` | Missing | Nested internal-stack switching and interrupt interaction |
@@ -75,8 +75,8 @@ releases are useful only for version-qualified scheduler, communications and
 The implemented `DEh` group covers memory status, foreground identity,
 task-state modes, keyboard injection, screen information, process memory,
 installation path, named-mailbox lookup, object traversal and versioned window
-information. The next public-API probes must cover second-level interrupt
-services, task/process creation and control, additional window metadata,
+information. The next public-API probes must cover task/process creation and
+control, additional window metadata,
 mouse/pointer delivery and version-qualified error behavior. DESQview/X socket
 and X-server calls are not part of the local 1.x completion gate.
 

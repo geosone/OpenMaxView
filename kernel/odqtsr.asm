@@ -8,6 +8,7 @@
 ;   INT 15h AX=1000h                 cooperative PAUSE
 ;   INT 15h AX=1001h/1002h           system-memory allocate/release aliases
 ;   INT 15h AX=1003h                 foreground PRINTC text output
+;   INT 15h AX=1013h/1014h/1015h     second-level callback services
 ;   INT 15h AX=1016h                 object-handle validation
 ;   INT 15h AX=1018h                 foreground window location
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
@@ -61,7 +62,7 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 001Eh
+MUX_VERSION    equ 001Fh
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
 CAPABILITIES3  equ 07FFh             ; HANDLE, timers, mailbox services
@@ -78,6 +79,7 @@ MAILBOX_QUEUE_DEPTH equ 4
 MAILBOX_MESSAGE_SIZE equ 128
 MAILBOX_ENTRY_COUNT equ MAILBOX_SLOT_COUNT * MAILBOX_QUEUE_DEPTH
 MAILBOX_NAME_SIZE  equ 32
+SECOND_LEVEL_COUNT equ 16
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -289,6 +291,18 @@ int15_not_putmem_alias:
 int15_printc_ours:
         jmp     int15_printc
 int15_not_printc:
+        cmp     ax,1013h              ; GETBIT
+        jne     short int15_not_getbit
+        jmp     int15_getbit
+int15_not_getbit:
+        cmp     ax,1014h              ; FREEBIT
+        jne     short int15_not_freebit
+        jmp     int15_freebit
+int15_not_freebit:
+        cmp     ax,1015h              ; SETBIT
+        jne     short int15_not_setbit
+        jmp     int15_setbit
+int15_not_setbit:
         cmp     ax,1016h              ; ISOBJ
         jne     short int15_not_isobj
         jmp     int15_isobj
@@ -509,6 +523,141 @@ printc_set_cursor:
         int     10h
 printc_done:
         pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     int15_handled
+
+; Allocate one of the sixteen documented second-level interrupt bits and bind
+; it to ES:DI. A null callback is rejected rather than leaving a callable null
+; vector. The lowest free bit is returned in BX; zero reports exhaustion.
+int15_getbit:
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        mov     ax,es
+        or      ax,di
+        jz      short getbit_exhausted
+        mov     dx,1
+        xor     si,si
+        mov     cx,SECOND_LEVEL_COUNT
+getbit_scan:
+        test    word ptr cs:second_level_used,dx
+        jz      short getbit_found
+        shl     dx,1
+        add     si,4
+        loop    getbit_scan
+getbit_exhausted:
+        xor     bx,bx
+        jmp     short getbit_done
+getbit_found:
+        or      word ptr cs:second_level_used,dx
+        mov     word ptr cs:second_level_handlers[si],di
+        mov     ax,es
+        mov     word ptr cs:second_level_handlers[si+2],ax
+        mov     bx,dx
+getbit_done:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        jmp     int15_handled
+
+; Remove every callback selected by BX. Pending callbacks are cancelled as
+; part of the release, which also makes FREEBIT safe from inside a callback.
+int15_freebit:
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        mov     ax,bx
+        not     ax
+        and     word ptr cs:second_level_pending,ax
+        and     word ptr cs:second_level_used,ax
+        mov     dx,1
+        xor     si,si
+        mov     cx,SECOND_LEVEL_COUNT
+freebit_scan:
+        test    bx,dx
+        jz      short freebit_next
+        mov     word ptr cs:second_level_handlers[si],0
+        mov     word ptr cs:second_level_handlers[si+2],0
+freebit_next:
+        shl     dx,1
+        add     si,4
+        loop    freebit_scan
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        jmp     int15_handled
+
+; Queue all allocated bits in BX and drain them in low-to-high order. Open
+; MaxView's current foreground service has no scheduler/IRQ epilogue yet, so
+; callbacks run synchronously before SETBIT returns. Nested SETBIT calls only
+; extend the pending mask and are drained by the outer dispatcher.
+int15_setbit:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        mov     ax,bx
+        and     ax,word ptr cs:second_level_used
+        or      word ptr cs:second_level_pending,ax
+        cmp     byte ptr cs:second_level_active,0
+        jne     setbit_done
+        mov     byte ptr cs:second_level_active,1
+setbit_dispatch:
+        mov     ax,word ptr cs:second_level_pending
+        and     ax,word ptr cs:second_level_used
+        mov     word ptr cs:second_level_pending,ax
+        or      ax,ax
+        jz      short setbit_dispatch_done
+        mov     dx,1
+        xor     si,si
+        mov     cx,SECOND_LEVEL_COUNT
+setbit_scan:
+        test    ax,dx
+        jnz     short setbit_found
+        shl     dx,1
+        add     si,4
+        loop    setbit_scan
+        jmp     short setbit_dispatch_done
+setbit_found:
+        mov     ax,dx
+        not     ax
+        and     word ptr cs:second_level_pending,ax
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     ax,word ptr cs:task_handle_segment
+        mov     es,ax
+        call    dword ptr cs:second_level_handlers[si]
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     setbit_dispatch
+setbit_dispatch_done:
+        mov     byte ptr cs:second_level_active,0
+setbit_done:
         pop     di
         pop     si
         pop     dx
@@ -2706,7 +2855,9 @@ int2f_handler:
         cmp     ax,MUX_RESET
         je      short int2f_reset
         cmp     ax,MUX_TASK_INFO
-        je      short int2f_task_info
+        jne     short int2f_not_task_info
+        jmp     int2f_task_info
+int2f_not_task_info:
         cmp     ax,MUX_CAPS2
         jne     short int2f_not_caps2
         jmp     int2f_caps2
@@ -2735,6 +2886,9 @@ int2f_reset:
         mov     byte ptr cs:error_mode,0
         mov     byte ptr cs:debug_column,0
         mov     byte ptr cs:keyboard_mouse,0
+        mov     word ptr cs:second_level_used,0
+        mov     word ptr cs:second_level_pending,0
+        mov     byte ptr cs:second_level_active,0
         push    ax
         push    cx
         push    di
@@ -2790,6 +2944,10 @@ task_flags     dw TASK_JUSTIFY
 error_mode     db 0
 debug_column   db 0
 keyboard_mouse db 0
+second_level_active db 0
+second_level_used dw 0
+second_level_pending dw 0
+second_level_handlers dd SECOND_LEVEL_COUNT dup(0)
 video_segment  dw 0B800h
 printc_page    db 0
 printc_columns db 80
@@ -2855,7 +3013,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.30 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.31 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:

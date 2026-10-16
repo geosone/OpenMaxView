@@ -346,6 +346,17 @@ foreground implementation advances the BIOS cursor, wraps and scrolls in text
 mode. `BX=0` only synchronizes the hardware cursor. Use the handle returned by
 `ODQ_DVC_GET_FOREGROUND`; do not pass a guessed video segment.
 
+Hardware handlers that need task-level work can register a far callback with
+`ODQ_DVC_GET_BIT` (`AX=1013h`, `ES:DI=callback`). Save the returned single-bit
+mask; zero means that the bounded 16-entry table is full. Pass one or several
+allocated bits to `ODQ_DVC_SET_BIT` (`AX=1015h`, `BX=mask`) and release them
+with `ODQ_DVC_FREE_BIT` (`AX=1014h`). The callback is a far routine and must
+return with `RETF`; `ES` contains the foreground task-handle segment. The
+current one-task implementation invokes callbacks synchronously before
+`SETBIT` returns, so code must not assume the final hardware-interrupt-return
+timing until a scheduler capability explicitly advertises it. Nested requests
+are safe and are drained after the active callback.
+
 ## Keyboard input
 
 Use BIOS or DOS keyboard calls for ordinary input. `ODQ_DVC_PUSH_KEY` inserts

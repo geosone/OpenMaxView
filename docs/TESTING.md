@@ -47,6 +47,8 @@ checks:
   alternate video buffer, plus `SCRNINFO` and non-DV/X identity;
 * foreground `PRINTC` character/attribute output, cursor advancement and
   `BX=0` cursor synchronization;
+* all 16 second-level callback allocations, exhaustion, masked dispatch,
+  foreground-task `ES`, release/reuse and reset cleanup;
 * absent and stubbed Open 386MAX backend reporting, including QPI version and
   active page-table frame, empty-token rejection, root-release and second-clone
   guards, verified clone/root switching, four-page private-pool exhaustion,

@@ -14,6 +14,9 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1001h BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | TopView `GETMEM` alias |
 | `INT 15h AX=1002h ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | TopView `PUTMEM` alias |
 | `INT 15h AX=1003h BH=attribute BL=character DX=window` | Displays and advances one foreground text cell; `BX=0` synchronizes the cursor | TopView `PRINTC`; exact foreground handle |
+| `INT 15h AX=1013h ES:DI=callback` | `BX=single-bit mask`, or zero when all 16 slots are allocated | TopView `GETBIT`; foreground task |
+| `INT 15h AX=1014h BX=mask` | Releases the selected callback slots | TopView `FREEBIT` |
+| `INT 15h AX=1015h BX=mask` | Invokes allocated callbacks selected by the mask | TopView `SETBIT`; synchronous foreground dispatch |
 | `INT 15h AX=1016h ES:DI=handle` | `BX=FFFFh` if valid, otherwise zero | `ISOBJ` |
 | `INT 15h AX=1018h BH=column BL=row ES=window-below` | `ES=window` or zero | `LOCATE`; foreground full-screen window |
 | `INT 15h AX=101Bh` | Increments a saturating nesting count | `BEGINC` |
@@ -113,6 +116,16 @@ window at the bottom edge. `BX=0` is a cursor-synchronization request; because
 the foreground logical cursor is the BIOS cursor, it is a no-op. Graphics
 modes do not draw. Calls for foreign window handles remain chained.
 
+`GETBIT` owns a bounded 16-entry per-task table and allocates its lowest free
+bit to the far callback supplied in `ES:DI`. A null callback or exhausted
+table returns `BX=0`. `FREEBIT` may release one or several bits and cancels
+their pending callbacks. `SETBIT` accepts a combined mask, calls allocated
+callbacks in low-to-high bit order and supplies the foreground task-handle
+segment in `ES`. Nested `SETBIT` requests are queued until the current
+dispatcher finishes. In the foreground implementation callbacks run before
+`SETBIT` returns; true dispatch after return from a hardware interrupt awaits
+the scheduler/IRQ epilogue. Task reset releases the complete table.
+
 The foreground task, four timer slots and two mailbox slots have paragraph-aligned,
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
@@ -203,7 +216,7 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=001Eh`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=001Fh`, `DX=0280h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |
