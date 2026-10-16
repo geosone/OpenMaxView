@@ -268,9 +268,17 @@ with the total queued bytes. `ERASE` consumes the handle and empties the queue.
 nonempty record, or a length above 128 bytes returns Carry set without
 changing the queue.
 `STATUS` is reserved for the status of the last message read and remains zero
-until reads are implemented. Task-default selectors and blocking `READ` are
-still unavailable; do not issue `READ` merely because write-queue capability
-bit 4 is present.
+until a message is consumed. When `ODQ_CAP3_MAILBOX_READINTO` is set, push the
+destination capacity first, then its far pointer, then the mailbox handle and
+send `BH=13h`. The service consumes the handle and pointer, leaving the
+capacity DWORD replaced by the number of bytes copied. It consumes the oldest
+record and exposes that record's low-byte status through `STATUS`. If the
+buffer is short, the copy is truncated and the whole record is consumed.
+
+An empty `READINTO` currently returns a zero count with Carry set. Original
+DESQview blocks in that case; compatible waiting requires the future scheduler.
+Task-default selectors and pointer-return `READ` remain unavailable. Do not
+infer either feature from queue capability bit 4 or ready-read bit 5.
 
 ## Text video
 

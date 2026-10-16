@@ -82,12 +82,18 @@ start:
         or      dx,dx
         jnz     failed
 
-        mov     di,4
-mailbox_fill_loop:
         mov     ax,word ptr mailbox_one
         mov     cx,5
         mov     dx,007Ah
         mov     si,offset sample_message
+        call    mailbox_add_value
+        jc      failed
+        mov     di,3
+mailbox_fill_loop:
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Bh
+        mov     si,offset later_message
         call    mailbox_add_value
         jc      failed
         dec     di
@@ -122,6 +128,58 @@ mailbox_fill_loop:
         cmp     ax,4
         jne     failed
 
+        push    ds
+        pop     es
+        mov     di,offset read_buffer
+        mov     ax,word ptr mailbox_one
+        mov     cx,128
+        call    mailbox_readinto
+        jc      failed
+        cmp     ax,5
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        cmp     byte ptr read_buffer,'H'
+        jne     failed
+        cmp     byte ptr read_buffer+1,'E'
+        jne     failed
+        cmp     byte ptr read_buffer+2,'L'
+        jne     failed
+        cmp     byte ptr read_buffer+3,'L'
+        jne     failed
+        cmp     byte ptr read_buffer+4,'O'
+        jne     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0F00h              ; status of the message just read
+        call    mailbox_query
+        cmp     ax,007Ah
+        jne     failed
+        or      dx,dx
+        jnz     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        cmp     ax,3
+        jne     failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0900h
+        call    mailbox_query
+        cmp     ax,15
+        jne     failed
+
+        ; The dequeue frees the oldest ring slot for another write.
+        mov     ax,word ptr mailbox_one
+        mov     cx,5
+        mov     dx,007Bh
+        mov     si,offset sample_message
+        call    mailbox_add_value
+        jc      failed
+        mov     ax,word ptr mailbox_one
+        mov     bx,0800h
+        call    mailbox_query
+        cmp     ax,4
+        jne     failed
+
         mov     ax,word ptr mailbox_one
         mov     bx,0E00h              ; ERASE discards every queued message
         call    mailbox_command
@@ -134,6 +192,20 @@ mailbox_fill_loop:
         mov     bx,0900h
         call    mailbox_query
         or      ax,ax
+        jnz     failed
+
+        ; Until the scheduler exists, an empty READINTO is a nonblocking
+        ; failure returning a zero byte count.
+        push    ds
+        pop     es
+        mov     di,offset read_buffer
+        mov     ax,word ptr mailbox_one
+        mov     cx,128
+        call    mailbox_readinto
+        jnc     failed
+        or      ax,ax
+        jnz     failed
+        or      dx,dx
         jnz     failed
 
         mov     ax,word ptr mailbox_one
@@ -286,9 +358,37 @@ mailbox_add_value:
         pop     bp
         ret
 
+; AX is the mailbox segment, CX the destination capacity and ES:DI the
+; destination. READINTO consumes the handle and pointer but leaves one DWORD
+; byte count, returned here as DX:AX.
+mailbox_readinto:
+        push    bp
+        mov     bp,sp
+        push    bx
+        push    si
+        mov     si,ax
+        xor     ax,ax
+        push    ax                    ; capacity high word
+        push    cx                    ; capacity low word / result storage
+        push    es                    ; destination segment
+        push    di                    ; destination offset
+        push    si                    ; mailbox segment
+        push    ax                    ; mailbox offset
+        mov     ax,1200h
+        mov     bx,1300h
+        int     15h
+        pop     ax                    ; returned byte count low
+        pop     dx                    ; returned byte count high
+        pop     si
+        pop     bx
+        pop     bp
+        ret
+
 mailbox_one dw 0
 mailbox_two dw 0
 sample_message db 'HELLO'
+later_message db 'LATER'
+read_buffer db 128 dup(0)
 passed_msg db 'MAXVTSR mailbox queue lifecycle passed.',13,10,'$'
 failed_msg db 'MAXVTSR mailbox queue lifecycle failed.',13,10,'$'
         end start

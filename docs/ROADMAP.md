@@ -13,8 +13,9 @@ Open 386MAX ABI boundary.
 
 Further 0.x work should land in independently testable slices:
 
-1. Extend the implemented `HANDLE`, timer and bounded mailbox-write messages
-   with scheduler-backed waits, mailbox reads, keyboard queues and panels.
+1. Extend the implemented `HANDLE`, timer and bounded mailbox messages with
+   scheduler-backed empty-mailbox/timer waits, pointer-return reads, keyboard
+   queues and panels.
 2. Connect the versioned process profile now retained by `.DVP` import to
    scheduler, video, serial and protection enforcement as backend capabilities
    land.

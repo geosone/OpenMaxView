@@ -19,7 +19,7 @@
 | Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
 | `HANDLE` object message | Foreground implementation | Original caller-stack ABI returns the window and validates live task/timer handles; unavailable selectors return null. |
 | Timer objects | Bounded nonblocking implementation | Four pointer-compatible timers support lifecycle, relative/absolute countdown, open/close and elapsed/remaining/state queries. |
-| Mailbox objects | Bounded write-queue implementation | Two pointer-compatible mailboxes each hold four copied messages of up to 128 bytes; allocation, validation, enumeration, open/close, count/length/status and erase are implemented. |
+| Mailbox objects | Bounded nonblocking queue implementation | Two pointer-compatible mailboxes each hold four copied messages of up to 128 bytes; lifecycle, count/length/status, erase and ready-record `READINTO` are implemented. Empty reads return Carry instead of waiting. |
 | Window location and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; `GETBUF` exposes the active text page. |
 | Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
 | DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |

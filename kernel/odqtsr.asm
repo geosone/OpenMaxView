@@ -56,10 +56,10 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
-MUX_VERSION    equ 0017h
+MUX_VERSION    equ 0018h
 CAPABILITIES   equ 0FFFFh
 CAPABILITIES2  equ 0FFFFh
-CAPABILITIES3  equ 001Fh             ; HANDLE, timers, mailbox queue
+CAPABILITIES3  equ 003Fh             ; HANDLE, timers, mailbox queue/read
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
@@ -219,6 +219,8 @@ int15_handler:
         je      short int15_dispatch_erase
         cmp     bh,0Fh                ; STATUS
         je      short int15_dispatch_timer_query
+        cmp     bh,13h                ; READINTO
+        je      short int15_dispatch_mailbox_readinto
         jmp     short int15_unknown_message
 int15_dispatch_handle:
         jmp     int15_message_handle
@@ -234,6 +236,8 @@ int15_dispatch_timer_open_close:
         jmp     int15_message_timer_open_close
 int15_dispatch_erase:
         jmp     int15_message_erase
+int15_dispatch_mailbox_readinto:
+        jmp     int15_message_mailbox_readinto
 int15_unknown_message:
         jmp     int15_chain
 int15_not_message:
@@ -925,6 +929,108 @@ message_erase_done:
         add     sp,4
         jmp     int15_handled
 
+; READINTO copies and removes the oldest queued mailbox message. The original
+; call blocks when empty; foreground API 0.x instead returns zero with Carry
+; set until scheduler-backed task waits exist. A short destination truncates
+; the copied record and still consumes that record.
+int15_message_mailbox_readinto:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     cx,word ptr ss:[bp+18]
+        mov     dx,word ptr ss:[bp+20]
+        mov     word ptr ss:[bp+18],0
+        mov     word ptr ss:[bp+20],0
+        or      word ptr ss:[bp+8],1
+        cmp     bl,0
+        je      short mailbox_readinto_selector_ok
+        jmp     mailbox_readinto_done
+mailbox_readinto_selector_ok:
+        cmp     word ptr ss:[bp+10],0
+        je      short mailbox_readinto_handle_offset_ok
+        jmp     mailbox_readinto_done
+mailbox_readinto_handle_offset_ok:
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jnc     short mailbox_readinto_handle_ok
+        jmp     mailbox_readinto_done
+mailbox_readinto_handle_ok:
+        cmp     word ptr cs:mailbox_open[si],1
+        je      short mailbox_readinto_open
+        jmp     mailbox_readinto_done
+mailbox_readinto_open:
+        cmp     word ptr cs:mailbox_count[si],0
+        jne     short mailbox_readinto_available
+        jmp     mailbox_readinto_done
+mailbox_readinto_available:
+        or      dx,dx
+        jne     short mailbox_readinto_done
+        mov     ax,cx
+        or      ax,ax
+        jz      short mailbox_readinto_done
+        cmp     word ptr ss:[bp+16],0
+        je      short mailbox_readinto_done
+        mov     dx,si                 ; retain mailbox table word index
+        mov     bx,si
+        shl     bx,1
+        add     bx,word ptr cs:mailbox_head[si]
+        mov     di,bx
+        shl     di,1
+        mov     cx,word ptr cs:mailbox_message_length[di]
+        cmp     cx,ax
+        jbe     short mailbox_readinto_size_ready
+        mov     cx,ax
+mailbox_readinto_size_ready:
+        mov     word ptr ss:[bp+18],cx
+        mov     si,bx
+        push    cx
+        mov     cl,7
+        shl     si,cl
+        pop     cx
+        add     si,offset mailbox_message_data
+        push    cs
+        pop     ds
+        mov     ax,word ptr ss:[bp+16]
+        mov     es,ax
+        mov     di,word ptr ss:[bp+14]
+        cld
+        rep     movsb
+        mov     si,dx
+        mov     di,bx
+        shl     di,1
+        mov     ax,word ptr cs:mailbox_message_length[di]
+        sub     word ptr cs:mailbox_bytes[si],ax
+        xor     ax,ax
+        mov     al,byte ptr cs:mailbox_message_status[bx]
+        mov     word ptr cs:mailbox_status[si],ax
+        dec     word ptr cs:mailbox_count[si]
+        inc     word ptr cs:mailbox_head[si]
+        cmp     word ptr cs:mailbox_head[si],MAILBOX_QUEUE_DEPTH
+        jb      short mailbox_readinto_head_ready
+        mov     word ptr cs:mailbox_head[si],0
+mailbox_readinto_head_ready:
+        and     word ptr ss:[bp+8],0FFFEh
+mailbox_readinto_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
+
 ; Locate the sole full-screen foreground window.  A search below that window
 ; or a coordinate outside the physical text screen returns a null handle.
 int15_locate:
@@ -1552,6 +1658,7 @@ mailbox_validate_done:
 ; not be scrubbed because no public pointer exposes resident queue storage.
 mailbox_clear_queue:
         mov     word ptr cs:mailbox_count[si],0
+        mov     word ptr cs:mailbox_head[si],0
         mov     word ptr cs:mailbox_tail[si],0
         mov     word ptr cs:mailbox_bytes[si],0
         ret
@@ -1993,6 +2100,7 @@ mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_head   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_tail   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_bytes  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_message_status db MAILBOX_ENTRY_COUNT dup(0)
@@ -2024,7 +2132,7 @@ MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
 
-installed_msg  db 'Open MaxView resident API 0.23 installed.',13,10,'$'
+installed_msg  db 'Open MaxView resident API 0.24 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'
 
 resident_end:
