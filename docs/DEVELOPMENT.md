@@ -53,6 +53,9 @@ Watcom. Do not add NASM as an alternate hidden requirement.
 * Give command-line operations stable output so DOSBox can test them.
 * Keep every screen in the shared Open 386MAX-inspired `mvui` vocabulary.
 * Avoid a name such as `MAXMEM` that conflicts with 386MAX components.
+* Keep scheduler policy independent of QPI mechanics. A task becomes a real
+  concurrent DOS task only after register state, DOS state and its verified
+  private context are all owned by the same lifecycle.
 * Before starting Windows from private-address-space mode `08h`, restore and
   verify the Open 386MAX standard/root context. Windows snapshots the page
   table for the first 4 MiB at startup, so this transition must fail closed.

@@ -8,11 +8,14 @@ Run:
 make test
 ```
 
-The catalogue, settings, automatic-detection and DVP modules are compiled as
-strict C89 with warnings as errors. Tests cover valid and invalid records,
-limits, duplicate handling, atomic-save behaviour and detection. Synthetic,
-freely generated DVP data tests checksum rejection, bounded field parsing and
-catalogue conversion. Python unit tests exercise the read-only QIP parser.
+The catalogue, settings, automatic-detection, DVP and scheduler-policy modules
+are compiled as strict C89 with warnings as errors. Tests cover valid and
+invalid records, limits, duplicate handling, atomic-save behaviour and
+detection. Scheduler tests cover table exhaustion, deterministic round-robin
+selection, wait/wake transitions, nested critical exclusion, teardown, slot
+reuse and stale-handle rejection. Synthetic, freely generated DVP data tests
+checksum rejection, bounded field parsing and catalogue conversion. Python
+unit tests exercise the read-only QIP parser.
 
 ## DOS integration tests
 

@@ -10,6 +10,7 @@
 #include "catalog.h"
 #include "maxbackend.h"
 #include "odqapi.h"
+#include "scheduler.h"
 #include "settings.h"
 
 #define SCREEN_COLS 80
@@ -264,7 +265,7 @@ static void show_desktop(const odq_catalog *catalog, unsigned selected,
     draw_button(24, 28, 11, "Info F2", 5);
 }
 
-static void show_diagnostics(void)
+static void show_diagnostics(const mv_scheduler *scheduler)
 {
     unsigned dv_version = 0, vcpi_version = 0;
     int api = desqview_api_present(&dv_version);
@@ -307,8 +308,9 @@ static void show_diagnostics(void)
         write_at(13, 12, "Open 386MAX MaxView backend: not detected",
                  ATTR_ACTIVE);
     }
-    write_at(16, 12, "0.8 mode: configurable foreground environment",
-             ATTR_ACTIVE);
+    sprintf(line, "Task ledger: %u runnable; foreground execution",
+            mv_scheduler_runnable(scheduler));
+    write_at(16, 12, line, ATTR_ACTIVE);
     write_at(18, 12, "Press any key to return.", ATTR_ACTIVE);
     getch();
 }
@@ -428,10 +430,12 @@ static void reload_catalog_after_child(odq_catalog *catalog,
         *selected = catalog->count - 1;
 }
 
-static int launch(const odq_program *program, char *status)
+static int launch(const odq_program *program, char *status,
+                  mv_scheduler *scheduler)
 {
     char old_directory[ODQ_DIR_LEN + 1];
     int result;
+    unsigned child;
 
     if (getcwd(old_directory, sizeof(old_directory)) == NULL)
         old_directory[0] = '\0';
@@ -439,10 +443,26 @@ static int launch(const odq_program *program, char *status)
         sprintf(status, "Cannot change to %.52s", program->directory);
         return -1;
     }
+    if (!mv_scheduler_create(scheduler, &child)) {
+        strcpy(status, "Task table is full.");
+        if (old_directory[0] != '\0')
+            chdir(old_directory);
+        return -1;
+    }
+    if (!mv_scheduler_dispatch(scheduler, NULL) ||
+        mv_scheduler_current(scheduler) != child) {
+        mv_scheduler_terminate(scheduler, child);
+        strcpy(status, "Cannot dispatch child task.");
+        if (old_directory[0] != '\0')
+            chdir(old_directory);
+        return -1;
+    }
     reset_resident_state();
     prepare_child_screen();
     result = system(program->command);
     reset_resident_state();
+    mv_scheduler_terminate(scheduler, child);
+    mv_scheduler_dispatch(scheduler, NULL);
     if (old_directory[0] != '\0')
         chdir(old_directory);
     initialise_video();
@@ -454,9 +474,18 @@ int main(void)
 {
     odq_catalog catalog;
     odq_settings settings;
+    mv_scheduler scheduler;
     unsigned selected = 0, error_line = 0;
+    unsigned desktop_task;
     int result, key;
     char status[76];
+
+    mv_scheduler_init(&scheduler);
+    if (!mv_scheduler_create(&scheduler, &desktop_task) ||
+        !mv_scheduler_dispatch(&scheduler, NULL)) {
+        fputs("Open MaxView cannot initialise its task table.\n", stderr);
+        return 1;
+    }
 
     result = odq_catalog_load("MAXVIEW.CFG", &catalog, &error_line);
     if (result == ODQ_CATALOG_IO) {
@@ -497,11 +526,11 @@ int main(void)
             continue;
         }
         if (key == 'D') {
-            show_diagnostics();
+            show_diagnostics(&scheduler);
             continue;
         }
         if (key == 13 && catalog.count != 0) {
-            launch(&catalog.programs[selected], status);
+            launch(&catalog.programs[selected], status, &scheduler);
             reload_settings(&settings);
             apply_resident_services(&settings, status);
             reload_catalog_after_child(&catalog, &selected, &settings);
@@ -512,7 +541,7 @@ int main(void)
             for (index = 0; index < catalog.count; ++index)
                 if (catalog.programs[index].hotkey == key) {
                     selected = index;
-                    launch(&catalog.programs[selected], status);
+                    launch(&catalog.programs[selected], status, &scheduler);
                     reload_settings(&settings);
                     apply_resident_services(&settings, status);
                     reload_catalog_after_child(&catalog, &selected, &settings);

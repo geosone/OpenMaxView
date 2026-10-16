@@ -111,9 +111,15 @@ the interrupt return frame on that resident stack, while `USTACK` rebuilds it
 on the saved user stack so execution resumes with the original `SS:SP`.
 Nested switches are excluded by the public contract and guarded as no-ops.
 
-`MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode.  It
-contains no memory-manager logic.  In 0.8 it launches a child through DOS and
-regains control when that child exits.
+`MAXVIEW.EXE` owns the menu, catalogue and foreground compatibility mode. It
+contains no memory-manager logic. A bounded 16-slot scheduler policy module
+now gives the desktop and every launched child a generation-tagged handle,
+tracks ready/running/waiting states, selects tasks in deterministic round-robin
+order and pins the running task across nested critical regions. The current
+launcher uses that lifecycle around DOS `EXEC`, then tears down the child and
+returns the desktop to running state. Execution remains foreground-only: the
+policy module does not save V86 registers, switch QPI contexts or claim that a
+child continues running while the desktop has control.
 
 `SETUP.EXE` installs the runnable files from one directory into a chosen DOS
 directory.  Its workflow and screen vocabulary follow Open 386MAX's
@@ -221,7 +227,8 @@ network-specific ABI is to be added to Open 386MAX.
 | Timers | nonblocking subset implemented | Four identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
 | Mailboxes | bounded nonblocking queue subset implemented | Two identities, four copied messages each, lifecycle/query/read, erase and base `SETFLAGS`/`GETFLAGS`; empty blocking wait planned |
 | Panels and further mailbox operations | planned | DESQview-specific dynamic object API |
-| Concurrent V86 tasks | planned | Backend primitives available through QPI (contexts, IRQ calldowns); scheduler pending |
+| Scheduler policy | bounded foundation | 16 generation-tagged lifecycle slots, ready/running/waiting states, round-robin dispatch and critical exclusion; launcher integration tested |
+| Concurrent V86 tasks | planned | Connect policy to saved registers, per-task DOS state, QPI contexts and IRQ calldowns |
 | Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
 | `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
 
@@ -279,9 +286,10 @@ released from root. This is a genuine private-page lifetime and persistent
 mapping-table primitive, not yet a complete DOS memory map or runnable second
 task.
 
-Points 1, 4, 7 and 8 stay with Open MaxView (the scheduler runs in V86, as
-DESQview's does on QEMM: it saves and restores a task's registers itself)
-or need the Open-MaxView ABI.  Not available: the graphics virtualization
+Points 1, 4, 7 and 8 stay with Open MaxView. The bounded scheduler policy for
+point 7 is implemented independently of the backend, but points 4 and 8 still
+need the V86 execution layer: MaxView must save and restore a task's registers
+itself. Not available: the graphics virtualization
 of `13h` (`1302h`-`1310h`) and enforced protection levels (`14h` is
 accepted but does not write-protect); the EMS mapping state is kept once,
 not per context, so EMS memory is mapped into a task with `0Bh`.
@@ -324,10 +332,10 @@ of the current backend contract.
 2. Carry the implemented `.DVP` parser's advanced fields into an internal
    process descriptor as scheduler and VM capabilities become available.
 3. Add cooperative multi-process loading for Open MaxView-aware programs.
-4. Build scheduler state on the tested QPI allocate/clone/guarded-switch/
-   bounded-page-pool/map/commit/reactivate/restore/ordered-release wrapper,
-   then wrap interrupt, timer and video primitives without weakening the
-   private-ABI identity check.
+4. Connect the bounded scheduler state to saved V86 registers and the tested
+   QPI allocate/clone/guarded-switch/bounded-page-pool/map/commit/reactivate/
+   restore/ordered-release wrapper, then wrap interrupt, timer and video
+   primitives without weakening the private-ABI identity check.
 5. Add preemptive scheduling, private DOS state, video virtualisation and
    foreground switching.
 6. Test real applications and document deviations from DESQview 2.8.

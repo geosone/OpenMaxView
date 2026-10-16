@@ -37,7 +37,7 @@ $(BUILD)/odqtsr.obj: kernel/odqtsr.asm | $(BUILD)
 $(BUILD)/MAXVTSR.COM: $(BUILD)/odqtsr.obj
 	cd $(BUILD) && $(JWLINK) format dos com name MAXVTSR.COM option quiet option map=MAXVTSR.MAP file odqtsr.obj
 
-$(BUILD)/opendesq.obj: src/opendesq.c include/catalog.h include/maxbackend.h include/odqapi.h include/settings.h | $(BUILD)
+$(BUILD)/opendesq.obj: src/opendesq.c include/catalog.h include/maxbackend.h include/odqapi.h include/scheduler.h include/settings.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
 $(BUILD)/catalog.obj: src/catalog.c include/catalog.h | $(BUILD)
@@ -46,14 +46,17 @@ $(BUILD)/catalog.obj: src/catalog.c include/catalog.h | $(BUILD)
 $(BUILD)/settings.obj: src/settings.c include/settings.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
+$(BUILD)/scheduler.obj: src/scheduler.c include/scheduler.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
 $(BUILD)/mvui.obj: src/mvui.c include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
 $(BUILD)/maxbackend.obj: kernel/maxbackend.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 
-$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/maxbackend.obj
-	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/maxbackend.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
@@ -285,11 +288,15 @@ $(BUILD)/test_autodetect: tests/test_autodetect.c src/autodetect.c src/catalog.c
 $(BUILD)/test_dvp: tests/test_dvp.c src/dvp.c src/catalog.c include/dvp.h include/catalog.h | $(BUILD)
 	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_dvp.c src/dvp.c src/catalog.c
 
-test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BUILD)/test_dvp
+$(BUILD)/test_scheduler: tests/test_scheduler.c src/scheduler.c include/scheduler.h | $(BUILD)
+	$(CC) -std=c89 -Wall -Wextra -Werror -pedantic -Iinclude -o $@ tests/test_scheduler.c src/scheduler.c
+
+test: $(BUILD)/test_catalog $(BUILD)/test_settings $(BUILD)/test_autodetect $(BUILD)/test_dvp $(BUILD)/test_scheduler
 	$(BUILD)/test_catalog
 	$(BUILD)/test_settings
 	$(BUILD)/test_autodetect
 	$(BUILD)/test_dvp
+	$(BUILD)/test_scheduler
 	python3 -m unittest discover -s tests -p 'test_*.py'
 	python3 tools/build_books.py --check
 

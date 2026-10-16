@@ -85,7 +85,7 @@ and X-server calls are not part of the local 1.x completion gate.
 
 | Subsystem | Required result |
 |---|---|
-| Scheduler | Multiple runnable/waiting V86 tasks, preemption, fair `PAUSE`, critical-region exclusion and deterministic teardown |
+| Scheduler | Bounded lifecycle/round-robin policy exists; still required are multiple runnable/waiting V86 tasks, preemption, fair `PAUSE`, real critical-region exclusion and deterministic VM teardown |
 | Address spaces | Private conventional memory with verified Open 386MAX root/clone transitions and no cross-task leakage |
 | Windows launch | Restore and verify the standard/root context before launch; abort if restoration fails |
 | DOS state | Per-task PSP/DTA/current-directory/file context and serialized non-reentrant DOS entry |
