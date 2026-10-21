@@ -2,7 +2,7 @@
 # 386MAX: Open Watcom's C compiler plus its embedded JWasm and JWlink.
 
 WATCOM ?= /opt/watcom
-MAXROOT ?= /home/mario/mars/386MAX
+MAXROOT ?= $(abspath ../Open386MAX)
 WCC    := $(WATCOM)/binl64/wcc
 JWASM  := $(MAXROOT)/linux/bin/jwasm
 JWLINK := $(MAXROOT)/linux/bin/jwlink
@@ -20,7 +20,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 
 .PHONY: all package setup-package release-check test test-dos books book-html book-pdf book-epub clean
 
-all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MAXVAPP.EXE \
+all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MVRUN.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
 	$(BUILD)/MAXVDVP.EXE \
@@ -66,6 +66,16 @@ $(BUILD)/maxbackend.obj: kernel/maxbackend.asm | $(BUILD)
 
 $(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/mvprocess.obj $(BUILD)/vmtask.obj $(BUILD)/vmbackend.obj $(BUILD)/maxbackend.obj
 	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,mvprocess.obj,vmtask.obj,vmbackend.obj,maxbackend.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+
+MVDEBUG ?= 0
+$(BUILD)/mvkern.obj: kernel/mvkern.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -DMVDEBUG=$(MVDEBUG) -Fo$@ $<
+
+$(BUILD)/mvrun.obj: src/mvrun.c include/mvkern.h | $(BUILD)
+	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+
+$(BUILD)/MVRUN.EXE: $(BUILD)/mvrun.obj $(BUILD)/mvkern.obj
+	cd $(BUILD) && $(JWLINK) format dos name MVRUN.EXE option quiet option map=MVRUN.MAP option stack=4096 option nofarcalls file mvrun.obj,mvkern.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<

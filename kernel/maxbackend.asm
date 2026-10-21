@@ -872,7 +872,8 @@ mapping_restore_failed:
 odq_max_mapping_restore_ endp
 
 ; Install a complete non-null IRQ0-7 V86 calldown table. QPI copies the
-; caller's DS:DI table, so stack or automatic C storage is valid afterwards.
+; table at ES:DI (set from DS here), so stack or automatic C storage is
+; valid afterwards.
 odq_max_irq_master_install_ proc near
         push    si
         push    di
@@ -898,6 +899,8 @@ irq_master_validate_next:
         add     di,4
         loop    irq_master_validate_next
         mov     di,si
+        push    ds
+        pop     es
         mov     ax,QPI_IRQ_MASTER_ON
         pushf
         call    dword ptr cs:qpi_entry
