@@ -77,6 +77,12 @@ $(BUILD)/mvrun.obj: src/mvrun.c include/mvkern.h | $(BUILD)
 $(BUILD)/MVRUN.EXE: $(BUILD)/mvrun.obj $(BUILD)/mvkern.obj
 	cd $(BUILD) && $(JWLINK) format dos name MVRUN.EXE option quiet option map=MVRUN.MAP option stack=4096 option nofarcalls file mvrun.obj,mvkern.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
+$(BUILD)/memprobe.obj: tests/memprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/MEMPROBE.COM: $(BUILD)/memprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name MEMPROBE.COM option quiet option map=MEMPROBE.MAP file memprobe.obj
+
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 

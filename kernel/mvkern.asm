@@ -33,6 +33,7 @@ MAXTASK         equ 8           ; task 0 (the caller) + 7
 MAXPAGE         equ 160         ; private pages per task (640KB)
 STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
 KSTACK          equ 256         ; kernel stack (QPI 08h)
+ISTACK          equ 1024        ; IRQ stack (a handler in another task)
 
 ifndef MVDEBUG
 MVDEBUG         equ 0           ; 1:  trace characters to port E9h (QEMU
@@ -84,6 +85,10 @@ tasks   TASK    MAXTASK dup (<>)
 cdtab   dd      8 dup (?)       ; IRQ0-7 calldown table (QPI copies it)
 kstk    db      KSTACK dup (?)
 kstktop label   word
+istk    db      ISTACK dup (?)
+istktop label   word
+origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
+                                ; differs has hooked it
 
         .code
 
@@ -114,6 +119,8 @@ running  dw     0
 quantum  dw     2
 qleft    dw     2
 i13busy  dw     0
+actpt    dw     0               ; page table active now
+idepth   dw     0               ; IRQ handlers of other tasks running
 nswitch  dd     0
 old13    dd     0
 
@@ -167,6 +174,7 @@ mvk_init_ proc near
         mov     ax,MVE_NOQPI
         jc      init_ret
         mov     cs:root_pt,dx
+        mov     cs:actpt,dx
         ; top of conventional memory and the private range
         int     12h
         shl     ax,6            ; KB -> paragraphs
@@ -578,6 +586,8 @@ irq0    proc far
         je      irq0_nocs
         cmp     cs:i13busy,0
         jne     irq0_no13
+        cmp     cs:idepth,0
+        jne     irq0_no13
         les     bx,cs:sda_ptr
         cmp     word ptr es:[bx],0 ; critical error flag, InDOS
         jne     irq0_nodos
@@ -640,6 +650,7 @@ irq0_found:
         mov     dx,[di].T_PT
         mov     ax,0800h
         qpi
+        mov     cs:actpt,dx
         pop     dx
         mov     cs:cur,dx
         dbg     'T'
@@ -665,20 +676,123 @@ irq0_out:
         iret
 irq0    endp
 
-; IRQ1-7:  to the task's IVT
-irq1:   int     09h
-        iret
-irq2:   int     0Ah
-        iret
-irq3:   int     0Bh
-        iret
-irq4:   int     0Ch
-        iret
-irq5:   int     0Dh
-        iret
-irq6:   int     0Eh
-        iret
-irq7:   int     0Fh
+; IRQ1-7:  to the task that hooked the vector (its IVT entry differs from
+; the one at mvk_start), the current task first; none:  the current IVT
+irq1:   push    ax
+        mov     al,09h
+        jmp     short irqdisp
+irq2:   push    ax
+        mov     al,0Ah
+        jmp     short irqdisp
+irq3:   push    ax
+        mov     al,0Bh
+        jmp     short irqdisp
+irq4:   push    ax
+        mov     al,0Ch
+        jmp     short irqdisp
+irq5:   push    ax
+        mov     al,0Dh
+        jmp     short irqdisp
+irq6:   push    ax
+        mov     al,0Eh
+        jmp     short irqdisp
+irq7:   push    ax
+        mov     al,0Fh
+
+irqdisp:
+        push    bx
+        push    cx
+        push    dx
+        push    esi             ; (32 bits:  used for addressing)
+        push    edi
+        push    bp
+        push    ds
+        push    es
+        mov     bx,cs:dgseg
+        mov     ds,bx
+        xor     ah,ah
+        shl     ax,1
+        shl     ax,1
+        movzx   esi,ax          ; ESI = vector * 4
+        xor     ax,ax
+        mov     es,ax
+        ; the current task's vector (in the IVT now)
+        mov     ax,es:[si]
+        mov     dx,es:[si+2]
+        cmp     ax,word ptr origivt[si]
+        jne     irqd_here
+        cmp     dx,word ptr origivt[si+2]
+        jne     irqd_here
+        ; another task's
+        mov     cx,cs:ntasks
+        xor     bx,bx
+irqd_next:
+        cmp     bx,cs:cur
+        je      irqd_skip
+        push    bx
+        call    taskptr
+        movzx   edi,bx
+        pop     bx
+        cmp     [di].T_STATE,TS_FREE
+        je      irqd_skip
+        mov     ax,word ptr [edi+esi].T_IVT
+        cmp     ax,word ptr origivt[si]
+        jne     irqd_other
+        mov     ax,word ptr [edi+esi].T_IVT+2
+        cmp     ax,word ptr origivt[si+2]
+        jne     irqd_other
+irqd_skip:
+        inc     bx
+        loop    irqd_next
+irqd_here:
+        pushf
+        call    dword ptr es:[si]
+        jmp     irqd_ret
+irqd_other:
+        ; DI ==> the owner:  its handler in its context, on the IRQ stack
+        mov     dx,[di].T_PT
+        cmp     dx,cs:actpt
+        jne     @F
+        pushf                   ; its context is active already
+        call    dword ptr [edi+esi].T_IVT
+        jmp     irqd_ret
+@@:     mov     ax,ss
+        mov     bx,sp
+        cmp     cs:idepth,0
+        jne     @F              ; on the IRQ stack already
+        mov     cx,cs:dgseg
+        mov     ss,cx
+        mov     sp,offset istktop
+@@:     inc     cs:idepth
+        push    ax              ; old SS:SP
+        push    bx
+        push    cs:actpt
+        mov     ax,0800h
+        qpi
+        mov     cs:actpt,dx
+        mov     ax,cs:dgseg
+        mov     ds,ax
+        pushf
+        call    dword ptr [edi+esi].T_IVT
+        pop     dx              ; back to the context before
+        mov     ax,0800h
+        qpi
+        mov     cs:actpt,dx
+        pop     bx
+        pop     ax
+        dec     cs:idepth
+        mov     ss,ax
+        mov     sp,bx
+irqd_ret:
+        pop     es
+        pop     ds
+        pop     bp
+        pop     edi
+        pop     esi
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
         iret
 
 ; INT 13h:  no task switch while the disk BIOS works
@@ -729,6 +843,25 @@ mvk_start_ proc near
         inc     bx
         loop    @B
         cli
+        push    ds              ; the IVT now:  the one tasks start from
+        push    es
+        push    si
+        push    di
+        push    cx
+        mov     ax,ds
+        mov     cx,es
+        mov     es,ax
+        mov     ds,cx
+        xor     si,si
+        mov     di,offset origivt
+        mov     cx,512
+        cld
+        rep     movsw
+        pop     cx
+        pop     di
+        pop     si
+        pop     es
+        pop     ds
         mov     word ptr es:[13h*4],offset int13
         mov     es:[13h*4+2],cs
         ; calldown table
