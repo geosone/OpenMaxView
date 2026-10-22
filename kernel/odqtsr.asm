@@ -97,6 +97,7 @@ MAILBOX_NAME_SIZE  equ 32
 SECOND_LEVEL_COUNT equ 16
 SOUND_QUEUE_COUNT equ 32
 TASK_STACK_SIZE equ 512
+FIELD_BUFFER_SIZE equ 128
 TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
 TASK_OBJECT_SIZE equ 32
 
@@ -1827,7 +1828,13 @@ timer_add_mailbox:
         cmp     bh,0Ah
         jne     short timer_add_done
         call    mailbox_validate
-        jc      short timer_add_done
+        jnc     short timer_add_mailbox_ok
+        call    keyboard_validate     ; a keyboard:  its bits (field mode,
+        jc      short timer_add_done  ; cursor, ..)
+        mov     ax,word ptr ss:[bp+14]
+        or      word ptr cs:keyboard_flags,ax
+        jmp     short timer_add_done
+timer_add_mailbox_ok:
         call    message_swap22
         call    mailbox_add_value
         pop     si
@@ -2090,7 +2097,12 @@ window_stream_not_pair:
         cmp     al,0E7h
         je      short window_stream_next
         cmp     al,0EFh
-        je      short window_stream_name
+        je      window_stream_name
+        cmp     al,0F0h
+        jb      short window_stream_stop
+        call    window_field_op       ; F0h-FFh:  the input fields
+        jnc     short window_stream_next
+window_stream_stop:
         jmp     window_stream_ret
 window_stream_blanks:
         mov     al,' '
@@ -2109,7 +2121,7 @@ window_stream_attr_blanks:
         mov     ah,al
         mov     al,' '
         call    window_run
-        jmp     short window_stream_next
+        jmp     window_stream_next
 window_stream_literal:
         call    window_byte
         jc      short window_stream_end
@@ -2148,9 +2160,668 @@ window_clear_rows:
         jmp     window_stream_next
 window_stream_end:
         jmp     window_stream_ret
+; F0h-FFh (opcode AL) in a window stream (SI up to DI):  the fields of the
+; table FFh set up (field_header:  the caller's stream, as DESQview keeps
+; using it); CF:  the stream ends.
+window_field_op:
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        push    ax
+        mov     ah,0Fh
+        int     10h
+        mov     byte ptr cs:window_page,bh
+        pop     ax
+        cmp     al,0FFh
+        jne     short field_op_not_ff
+        mov     word ptr cs:field_header,si ; FFh:  the header and N entries
+        mov     word ptr cs:field_header+2,ds ; of 7 bytes
+        mov     cl,byte ptr [si]
+        xor     ch,ch
+        mov     ax,7
+        mul     cx
+        add     ax,6
+        add     si,ax
+        cmp     si,di
+        jbe     field_op_ok
+        mov     si,di
+        jmp     field_op_ok
+field_op_not_ff:
+        cmp     al,0FDh               ; FDh, FEh:  modified / and selected
+        jb      short field_op_not_reset ; bits off
+        mov     ah,0FEh
+        cmp     al,0FDh
+        je      short field_op_reset
+        mov     ah,0FCh
+field_op_reset:
+        call    field_count
+        jc      field_op_ok
+        mov     dl,1
+field_op_reset_one:
+        mov     al,dl
+        call    field_entry
+        and     byte ptr es:[bx+4],ah
+        inc     dl
+        loop    field_op_reset_one
+        jmp     field_op_ok
+field_op_not_reset:
+        cmp     al,0FCh               ; FCh:  a new header
+        jne     short field_op_not_fc
+        mov     cx,6
+        les     bx,dword ptr cs:field_header
+        mov     ax,es
+        or      ax,ax
+        jz      short field_op_skip
+field_op_fc:
+        call    window_byte
+        jc      field_op_end
+        mov     byte ptr es:[bx],al
+        inc     bx
+        loop    field_op_fc
+        jmp     field_op_ok
+field_op_skip:
+        add     si,cx
+        cmp     si,di
+        jbe     field_op_ok
+        mov     si,di
+        jmp     field_op_ok
+field_op_not_fc:
+        mov     dh,al                 ; the others:  a field number first
+        call    window_byte
+        jc      field_op_end
+        mov     dl,al
+        cmp     dh,0F4h
+        je      short field_op_cursor
+        cmp     dh,0F0h
+        je      short field_op_clear
+        cmp     dh,0F1h
+        je      short field_op_fill
+        cmp     dh,0F2h
+        je      short field_op_color
+        cmp     dh,0F3h
+        je      short field_op_contents
+        cmp     dh,0F6h
+        je      short field_op_type
+        cmp     dh,0F5h
+        je      short field_op_entry
+        cmp     dh,0F8h               ; F8h-FBh:  scrolling, not done
+        jae     field_op_ok
+        jmp     field_op_end          ; F7h:  its length is not known
+field_op_cursor:
+        mov     al,dl
+        call    field_entry
+        jc      field_op_ok
+        mov     dx,word ptr es:[bx]   ; DL row, DH column
+        xchg    dl,dh
+        call    field_cursor_set
+        jmp     field_op_ok
+field_op_clear:
+        mov     ax,0720h              ; (AH:  keep the attribute)
+        jmp     short field_op_fill_go
+field_op_fill:
+        call    window_byte
+        jc      field_op_end
+        mov     ah,07h
+field_op_fill_go:
+        push    ax
+        mov     al,dl
+        call    field_entry
+        pop     ax
+        jc      field_op_ok
+        call    field_fill_char
+        jmp     field_op_ok
+field_op_color:
+        call    window_byte
+        jc      field_op_end
+        push    ax
+        mov     al,dl
+        call    field_entry
+        pop     ax
+        jc      field_op_ok
+        call    field_fill_attr
+        jmp     field_op_ok
+field_op_contents:
+        mov     al,dl
+        call    field_entry
+        jc      field_op_end
+        call    field_contents
+        jc      field_op_end
+        jmp     field_op_ok
+field_op_type:
+        call    window_byte
+        jc      field_op_end
+        push    ax
+        mov     al,dl
+        call    field_entry
+        pop     ax
+        jc      field_op_ok
+        mov     byte ptr es:[bx+4],al
+        jmp     short field_op_ok
+field_op_entry:
+        mov     al,dl
+        call    field_entry
+        mov     cx,7
+        jc      field_op_skip
+field_op_entry_byte:
+        call    window_byte
+        jc      short field_op_end
+        mov     byte ptr es:[bx],al
+        inc     bx
+        loop    field_op_entry_byte
+field_op_ok:
+        clc
+        jmp     short field_op_ret
+field_op_end:
+        stc
+field_op_ret:
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
+; window_cursor_get/set on window_page (BX kept).
+field_cursor_get:
+        push    bx
+        mov     bh,byte ptr cs:window_page
+        call    window_cursor_get
+        pop     bx
+        ret
+field_cursor_set:
+        push    bx
+        mov     bh,byte ptr cs:window_page
+        call    window_cursor_set
+        pop     bx
+        ret
+
+; CX = the number of fields (CF:  no table).
+field_count:
+        push    bx
+        push    es
+        les     bx,dword ptr cs:field_header
+        mov     cx,es
+        stc
+        jcxz    field_count_ret
+        mov     cl,byte ptr es:[bx]
+        xor     ch,ch
+        clc
+        jcxz    field_count_none
+        jmp     short field_count_ret
+field_count_none:
+        stc
+field_count_ret:
+        pop     es
+        pop     bx
+        ret
+
+; ES:BX = the entry of field AL (1 .. N), CF:  none.
+field_entry:
+        push    ax
+        push    cx
+        call    field_count
+        jc      short field_entry_ret
+        or      al,al
+        jz      short field_entry_no
+        cmp     al,cl
+        ja      short field_entry_no
+        les     bx,dword ptr cs:field_header
+        dec     al
+        mov     cl,7
+        mul     cl
+        add     bx,ax
+        add     bx,6
+        clc
+        jmp     short field_entry_ret
+field_entry_no:
+        stc
+field_entry_ret:
+        pop     cx
+        pop     ax
+        ret
+
+; the cells of field ES:BX:  DX (DH row, DL column) of the first, CX their
+; number; field_next_cell steps DX (CF:  past the end).
+field_first_cell:
+        mov     dh,byte ptr es:[bx]
+        mov     dl,byte ptr es:[bx+1]
+        push    ax
+        mov     al,byte ptr es:[bx+2]
+        sub     al,byte ptr es:[bx]
+        inc     al
+        mov     cl,byte ptr es:[bx+3]
+        sub     cl,byte ptr es:[bx+1]
+        inc     cl
+        mul     cl
+        mov     cx,ax
+        pop     ax
+        ret
+field_next_cell:
+        inc     dl
+        cmp     dl,byte ptr es:[bx+3]
+        jbe     short field_next_ok
+        mov     dl,byte ptr es:[bx+1]
+        inc     dh
+        cmp     dh,byte ptr es:[bx+2]
+        jbe     short field_next_ok
+        stc
+        ret
+field_next_ok:
+        clc
+        ret
+
+; DX inside field ES:BX:  CF clear.
+field_inside:
+        cmp     dh,byte ptr es:[bx]
+        jb      short field_inside_no
+        cmp     dh,byte ptr es:[bx+2]
+        ja      short field_inside_no
+        cmp     dl,byte ptr es:[bx+1]
+        jb      short field_inside_no
+        cmp     dl,byte ptr es:[bx+3]
+        ja      short field_inside_no
+        clc
+        ret
+field_inside_no:
+        stc
+        ret
+
+; field ES:BX filled with character AL (the attributes kept), the cursor
+; kept.
+field_fill_char:
+        push    cx
+        push    dx
+        push    ax
+        call    field_cursor_get
+        pop     ax
+        push    dx
+        call    field_first_cell
+field_fill_char_one:
+        call    field_cursor_set
+        push    bx
+        push    cx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        mov     ah,0Ah
+        int     10h
+        pop     cx
+        pop     bx
+        call    field_next_cell
+        loop    field_fill_char_one
+        pop     dx
+        call    field_cursor_set
+        pop     dx
+        pop     cx
+        ret
+
+; field ES:BX in attribute AL (the characters kept), the cursor kept.
+field_fill_attr:
+        push    cx
+        push    dx
+        push    ax
+        call    field_cursor_get
+        pop     ax
+        push    dx
+        call    field_first_cell
+field_fill_attr_one:
+        call    field_cursor_set
+        push    ax
+        push    bx
+        push    cx
+        push    ax
+        mov     bh,byte ptr cs:window_page
+        mov     ah,08h
+        int     10h
+        pop     bx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        mov     ah,09h
+        int     10h
+        pop     cx
+        pop     bx
+        pop     ax
+        call    field_next_cell
+        loop    field_fill_attr_one
+        pop     dx
+        call    field_cursor_set
+        pop     dx
+        pop     cx
+        ret
+
+; F3h:  the field's size of stream bytes (SI up to DI) into field ES:BX;
+; CF:  the stream ended.
+field_contents:
+        push    cx
+        push    dx
+        call    field_cursor_get
+        push    dx
+        call    field_first_cell
+field_contents_one:
+        call    window_byte
+        jc      short field_contents_end
+        call    field_cursor_set
+        push    bx
+        push    cx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        mov     ah,0Ah
+        int     10h
+        pop     cx
+        pop     bx
+        call    field_next_cell
+        loop    field_contents_one
+        clc
+field_contents_end:
+        pop     dx
+        pushf
+        call    field_cursor_set
+        popf
+        pop     dx
+        pop     cx
+        ret
+
+; READ of the keyboard in field mode (field_header):  the field manager,
+; as DESQview 2.80 in keystroke-free fields:  typing goes into the
+; fill-in field (class 10b) the cursor is in (nothing while it is in none),
+; Tab / Shift+Tab to the next / previous one, the arrows and BS in it,
+; Enter (status 00h), Esc (1Bh) and a full auto-Enter field (04h) return.
+; Then the header's current field, the select field 0, the data:  packed
+; characters of all fields (also for the numbered modes, not done yet).
+; message_result_* set; the scan code (STATUS) is the reason.
+field_read:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        mov     ah,0Fh
+        push    bx
+        int     10h
+        mov     byte ptr cs:window_page,bh
+        pop     bx
+        call    field_current         ; SI = the field (0:  none)
+field_read_key:
+        mov     ah,1
+        int     16h
+        jnz     short field_read_got
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        jmp     short field_read_key
+field_read_got:
+        sti
+        xor     ah,ah
+        int     16h
+        cli
+        cmp     al,0Dh
+        jne     short field_read_not_enter
+        xor     al,al
+        jmp     field_read_done
+field_read_not_enter:
+        cmp     al,1Bh
+        jne     short field_read_not_esc
+        jmp     field_read_done
+field_read_not_esc:
+        cmp     al,09h
+        jne     short field_read_not_tab
+        mov     dl,1
+        call    field_step
+        jmp     short field_read_key
+field_read_not_tab:
+        cmp     ax,0F00h              ; Shift+Tab
+        jne     short field_read_not_btab
+        mov     dl,-1
+        call    field_step
+        jmp     short field_read_key
+field_read_not_btab:
+        or      si,si
+        jz      short field_read_key  ; in no field:  nothing
+        mov     cx,si
+        push    ax
+        mov     al,cl
+        call    field_entry
+        pop     ax
+        cmp     al,08h
+        je      short field_read_bs
+        or      al,al
+        jz      short field_read_ext
+        cmp     al,20h
+        jb      short field_read_key
+        test    byte ptr es:[bx+5],10h ; force upper case
+        jz      short field_read_case
+        cmp     al,'a'
+        jb      short field_read_case
+        cmp     al,'z'
+        ja      short field_read_case
+        sub     al,20h
+field_read_case:
+        push    bx
+        push    cx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        mov     ah,0Ah
+        int     10h
+        pop     cx
+        pop     bx
+        or      byte ptr es:[bx+4],01h ; modified
+        call    field_cursor_get
+        call    field_next_cell
+        jnc     short field_read_moved
+        test    byte ptr es:[bx+5],80h ; full:  auto Enter
+        jz      short field_read_full_next
+        mov     al,04h
+        jmp     short field_read_done
+field_read_full_next:
+        test    byte ptr es:[bx+5],40h ; next field
+        jz      short field_read_key_far
+        mov     dl,1
+        call    field_step
+        jmp     short field_read_key_far
+field_read_moved:
+        call    field_cursor_set
+field_read_key_far:
+        jmp     field_read_key
+field_read_bs:
+        call    field_cursor_get
+        cmp     dl,byte ptr es:[bx+1]
+        jbe     short field_read_key_far
+        dec     dl
+        call    field_cursor_set
+        push    bx
+        push    cx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        mov     ax,0A20h
+        int     10h
+        pop     cx
+        pop     bx
+        or      byte ptr es:[bx+4],01h
+        jmp     short field_read_key_far
+field_read_ext:
+        call    field_cursor_get
+        cmp     ah,4Bh                ; left
+        jne     short field_read_not_left
+        cmp     dl,byte ptr es:[bx+1]
+        jbe     short field_read_key_far
+        dec     dl
+        call    field_cursor_set
+        jmp     short field_read_key_far
+field_read_not_left:
+        cmp     ah,4Dh                ; right
+        jne     short field_read_key_far
+        call    field_next_cell
+        jc      short field_read_key_far
+        call    field_cursor_set
+        jmp     short field_read_key_far
+field_read_done:
+        mov     byte ptr cs:keyboard_scan,al ; STATUS:  why
+        les     bx,dword ptr cs:field_header
+        mov     ax,si
+        or      al,al
+        jz      short field_read_keep
+        mov     byte ptr es:[bx+2],al ; the current field
+field_read_keep:
+        mov     byte ptr es:[bx+3],0
+        mov     al,byte ptr es:[bx+1]
+        push    ax
+        call    field_data            ; CX bytes in field_buffer
+        pop     ax
+        test    al,03h                ; mode 00:  no data
+        jnz     short field_read_len
+        xor     cx,cx
+field_read_len:
+        test    al,04h                ; modified bits off at the return
+        jz      short field_read_result
+        push    ax
+        mov     ah,0FEh
+        call    field_count
+        jc      short field_read_nobits
+        mov     dl,1
+field_read_bits:
+        mov     al,dl
+        call    field_entry
+        and     byte ptr es:[bx+4],0FEh
+        inc     dl
+        loop    field_read_bits
+field_read_nobits:
+        pop     ax
+field_read_result:
+        mov     word ptr cs:message_result_len_lo,cx
+        mov     word ptr cs:message_result_len_hi,0
+        mov     word ptr cs:message_result_ptr_off,offset field_buffer
+        mov     word ptr cs:message_result_ptr_seg,cs
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; SI = the fill-in field the cursor is in (0:  none).
+field_current:
+        push    ax
+        push    cx
+        push    dx
+        xor     si,si
+        call    field_count
+        jc      short field_current_ret
+        call    field_cursor_get
+        mov     al,1
+field_current_one:
+        call    field_entry
+        mov     ah,byte ptr es:[bx+4]
+        and     ah,0C0h
+        cmp     ah,80h
+        jne     short field_current_next
+        call    field_inside
+        jc      short field_current_next
+        mov     ah,0
+        mov     si,ax
+        jmp     short field_current_ret
+field_current_next:
+        inc     al
+        loop    field_current_one
+field_current_ret:
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+
+; SI = the next (DL = 1) or previous (DL = -1) fill-in field after SI,
+; the cursor to its start.
+field_step:
+        push    ax
+        push    cx
+        push    dx
+        call    field_count
+        jc      short field_step_ret
+        mov     ax,si
+field_step_one:
+        add     al,dl
+        or      al,al
+        jnz     short field_step_low
+        mov     al,cl
+field_step_low:
+        cmp     al,cl
+        jbe     short field_step_chk
+        mov     al,1
+field_step_chk:
+        call    field_entry
+        mov     ah,byte ptr es:[bx+4]
+        and     ah,0C0h
+        cmp     ah,80h
+        je      short field_step_found
+        loop    field_step_one
+        jmp     short field_step_ret
+field_step_found:
+        xor     ah,ah
+        mov     si,ax
+        mov     dh,byte ptr es:[bx]
+        mov     dl,byte ptr es:[bx+1]
+        call    field_cursor_set
+field_step_ret:
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+
+; CX = the bytes of all fields' characters (packed, in field order) in
+; field_buffer (FIELD_BUFFER_SIZE at most); the cursor kept.
+field_data:
+        push    ax
+        push    bx
+        push    dx
+        push    di
+        push    es
+        call    field_cursor_get
+        push    dx
+        mov     di,offset field_buffer
+        call    field_count
+        jc      short field_data_end
+        mov     al,1
+field_data_field:
+        push    cx
+        push    ax
+        call    field_entry
+        call    field_first_cell
+field_data_cell:
+        cmp     di,offset field_buffer + FIELD_BUFFER_SIZE
+        jae     short field_data_next
+        call    field_cursor_set
+        push    bx
+        mov     bh,byte ptr cs:window_page
+        mov     ah,08h
+        int     10h
+        pop     bx
+        mov     byte ptr cs:[di],al
+        inc     di
+        call    field_next_cell
+        loop    field_data_cell
+field_data_next:
+        pop     ax
+        pop     cx
+        inc     al
+        loop    field_data_field
+field_data_end:
+        pop     dx
+        call    field_cursor_set
+        mov     cx,di
+        sub     cx,offset field_buffer
+        pop     es
+        pop     di
+        pop     dx
+        pop     bx
+        pop     ax
+        ret
+
 window_stream_name:
         call    window_byte
-        jc      short window_stream_end
+        jc      window_stream_end
         mov     cl,al
         xor     ch,ch
         add     si,cx
@@ -2164,7 +2835,7 @@ window_stream_counted:
         mov     ch,al
         and     ch,07h
         call    window_byte
-        jc      short window_stream_end
+        jc      window_stream_end
         mov     cl,al
         or      cx,cx
         jnz     short window_stream_counted_n
@@ -2180,7 +2851,7 @@ window_stream_counted_n:
 window_stream_set:
         mov     dl,al                 ; A0h row, A1h column, others:  1 arg
         call    window_byte
-        jc      short window_stream_end
+        jc      window_stream_end
         cmp     dl,0A1h
         ja      short window_stream_next_far
         push    dx
@@ -2200,7 +2871,7 @@ window_stream_next_far:
 window_stream_rel:
         mov     dl,al                 ; B0h rows, B1h columns, signed
         call    window_byte
-        jc      short window_stream_end
+        jc      window_stream_end
         cmp     dl,0B1h
         ja      short window_stream_next_far
         mov     cl,al
@@ -2371,6 +3042,19 @@ window_query_pair_ret:
 
 ; SUBFROM queues the caller's far pointer rather than copying its bytes. The
 ; producer must keep that storage valid until the record is read or erased.
+mailbox_ref_keyboard:                 ; SUBFROM of a keyboard:  bits off
+        call    keyboard_validate
+        jc      short mailbox_ref_done
+        and     word ptr ss:[bp+8],0FFFEh
+        mov     ax,word ptr ss:[bp+14]
+        not     ax
+        and     word ptr cs:keyboard_flags,ax
+        pop     si
+        pop     ax
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
 int15_message_mailbox_ref:
         push    bp
         mov     bp,sp
@@ -2383,7 +3067,7 @@ int15_message_mailbox_ref:
         jne     short mailbox_ref_done
         mov     ax,word ptr ss:[bp+12]
         call    mailbox_validate
-        jc      short mailbox_ref_done
+        jc      short mailbox_ref_keyboard
         call    message_swap22
         call    mailbox_add_reference
 mailbox_ref_done:
@@ -4152,9 +4836,14 @@ keyboard_of:
         add     ax,word ptr cs:keyboard_objects_base
         ret
 
-; CF clear:  BH is a message with a keyboard meaning here (READ, STATUS).
+; CF clear:  BH is a message with a keyboard meaning here (READ, STATUS,
+; ADDTO, SUBFROM).
 keyboard_message:
         cmp     bh,04h
+        je      short keyboard_message_yes
+        cmp     bh,0Ah                ; ADDTO, SUBFROM:  its bits
+        je      short keyboard_message_yes
+        cmp     bh,0Bh
         je      short keyboard_message_yes
         cmp     bh,0Fh
         je      short keyboard_message_yes
@@ -4208,6 +4897,13 @@ int15_message_keyboard_read:
         push    bp
         mov     bp,sp
         push    ax
+        test    byte ptr cs:keyboard_flags,1 ; field mode with a field table
+        jz      short keyboard_read_wait
+        cmp     word ptr cs:field_header+2,0
+        je      short keyboard_read_wait
+        call    field_read
+        pop     ax
+        jmp     message_expand4
 keyboard_read_wait:
         mov     ah,1
         int     16h
@@ -4835,6 +5531,10 @@ task_state_pool label byte
 task_handle_segment dw 0              ; the task's own object (0:  not yet,
                                       ; int15_handler finds it)
 window_color   db 0                   ; window stream E2h (0:  none yet)
+window_page    db 0                   ; the page (field manager)
+field_header   dd 0                   ; FFh's table in the caller's stream
+keyboard_flags dw 0                   ; ADDTO/SUBFROM bits (0:  field mode)
+field_buffer   db FIELD_BUFFER_SIZE dup(0) ; READ's data in field mode
 keyboard_char  db 0                   ; the last key READ gave (its buffer)
 keyboard_scan  db 0                   ;   and its scan code (STATUS)
 system_used    db SYSTEM_SLOT_COUNT dup(0)

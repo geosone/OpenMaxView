@@ -71,6 +71,7 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   fields input fields in field mode (tests/fldprb.asm)
 #   objq  the task's OBJECTQ (tests/obqprb.asm)
 #   kbd   the task's keyboard object (tests/kbdprb.asm):  READ waits for a
 #         key, gives its character (F1:  00)
@@ -92,7 +93,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -436,6 +437,17 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+fields)
+    echo "== fields:  input fields in field mode (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\FLDPRB.COM C:\\F1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/F.BAT"
+    CMD="C:\\F.BAT" END="wait:MVRUN:_done:120 sleep:3" run fields 20 "" "$OUT/F.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/FLDPRB.COM $TICK" \
+        "wait:fldprb_ready:60 sleep:3 key:a sleep:1 key:b sleep:1 key:tab sleep:1 key:x sleep:1 key:ret"
+    f1=$(file fields F1.TXT | tr '\n' '|')
+    echo "  F1: $f1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/fields/end.txt'"
+    check "READ 05h:  8 bytes, field 1 'ab..', field 2 'x..' (as DV)" "echo '$f1' | grep -q '^r 00000008 61 62 .. .. .. 78 '"
+    check "STATUS 0 (Enter), current field 2, both modified" "echo '$f1' | grep -q '|st 00000000|hdr 02 01 02 00 70 70 81 81|'"
     ;;
 objq)
     echo "== objq:  the task's OBJECTQ (as under DV)"
