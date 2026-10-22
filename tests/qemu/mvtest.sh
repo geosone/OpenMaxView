@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -28,6 +28,11 @@
 #         and TICK (outside DOS); then a TICK starts in a freed slot.  All
 #         end with exit FF, the first TICK stops, the new one counts, DOS
 #         works afterwards
+#   crit  a critical error in the background:  task 2 CRITPRB opens A:\X
+#         (no disk) while TICK (task 1) is the foreground; the critical
+#         error prompt comes to the foreground and keeps it (Ctrl+Alt+1
+#         ignored; meanwhile all tasks wait, as under DOS), Ignore ("u"
+#         German, "i" English) answers it, CRITPRB ends, TICK counts on
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -38,11 +43,11 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill}
+CASES=${*:-two mem serial keys kill crit}
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
-    build/KEYPROBE.COM || exit 2
+    build/KEYPROBE.COM build/CRITPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -144,6 +149,20 @@ kill)
     check "killed TICK stopped" "[ $t3 -ge 5 ] && [ $t3 -le 10 ]"
     check "new TICK counts" "[ $t4 -ge 15 ]"
     check "DOS works afterwards" "grep -q 'K2 *TXT' '$d/end.txt'"
+    ;;
+crit)
+    echo "== crit:  critical error of a background task"
+    FG="/F1 " run crit 30 "C:\\TICK.EXE C:\\T1.TXT ; C:\\CRITPRB.COM A:\\X C:\\C2.TXT" \
+        "$ROOT/build/CRITPRB.COM $TICK" \
+        "wait:critprobe_start:40 sleep:2 text:crit key:ctrl-alt-1 sleep:3 text:crit2 key:u sleep:1 key:i sleep:2 text:after"
+    d=$OUT/crit
+    c2=$(file crit C2.TXT); t1=$(last crit T1.TXT tick)
+    echo "  C2 '$c2', T1 $t1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$d/end.txt'"
+    check "prompt in the foreground" "grep -q 'critprobe start' '$d/crit.txt' && grep -qi 'A:\\|Laufwerk A\\|drive A' '$d/crit.txt'"
+    check "Ctrl+Alt+1 ignored meanwhile" "grep -q 'critprobe start' '$d/crit2.txt' && ! grep -q 'MVRUN' '$d/crit2.txt'"
+    check "answered:  CRITPRB went on" "[ \"\${c2#open }\" != \"\$c2\" ]"
+    check "TICK counts on" "[ $t1 -ge 20 ]"
     ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac

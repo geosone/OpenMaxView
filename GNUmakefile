@@ -89,6 +89,12 @@ $(BUILD)/keyprobe.obj: tests/keyprobe.asm | $(BUILD)
 $(BUILD)/KEYPROBE.COM: $(BUILD)/keyprobe.obj
 	cd $(BUILD) && $(JWLINK) format dos com name KEYPROBE.COM option quiet option map=KEYPROBE.MAP file keyprobe.obj
 
+$(BUILD)/critprobe.obj: tests/critprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/CRITPRB.COM: $(BUILD)/critprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name CRITPRB.COM option quiet option map=CRITPRB.MAP file critprobe.obj
+
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 

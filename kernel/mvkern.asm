@@ -30,7 +30,8 @@
 ; hardware alone (mode, cursor shape, page, palette; the CRTC cursor goes
 ; back to the foreground's).  IRQ1 runs the foreground's INT 09h with its
 ; key buffer; Ctrl+Alt+1..9 makes task 1..9 the foreground, Ctrl+Alt+0
-; task 0.
+; task 0.  A task in a DOS critical error (INT 24h:  no switching until it
+; is answered) becomes the foreground, and stays it until then.
 ;
 ; A task starts in TASK_ENTRY:  a stub PSP of its own at the task base,
 ; then DOS EXEC of its program; when that ends, the task is DONE and its
@@ -993,6 +994,13 @@ sched:: pushad
         mov     bp,sp
         mov     ax,cs:dgseg     ; the task table
         mov     ds,ax
+        ; a critical error:  its task must be answered, in the foreground
+        les     bx,cs:sda_ptr
+        cmp     byte ptr es:[bx],0
+        je      @F
+        mov     ax,cs:cur
+        mov     cs:newfg,ax
+@@:
         ; another foreground:  not inside 386MAX nor another task's handler
         mov     ax,cs:newfg
         cmp     ax,cs:fg
@@ -1315,6 +1323,9 @@ irqd_kbd:
         jb      irqk_fg
         cmp     al,0Bh
         ja      irqk_fg
+        les     bx,cs:sda_ptr   ; not during a critical error
+        cmp     byte ptr es:[bx],0
+        jne     irqk_fg
         xor     bx,bx
         mov     es,bx
         mov     bl,es:[417h]
