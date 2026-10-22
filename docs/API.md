@@ -28,13 +28,15 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1025h` | Returns on the user stack saved by `OSTACK` | TopView `USTACK`; valid only after `OSTACK` |
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AX=102Eh BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | DESQview 2.40 extended `GETMEM` alias |
-| `INT 15h AH=12h BH=00h BL=selector` | Selectors 00h, 02h, 04h, 06h, 0Ch take a DWORD on the caller stack and replace it; 01h, 03h, 05h, 07h, 0Dh take none and push the result (as DESQview 2.80) | `HANDLE`; selector 00h validates task/timer/mailbox handles, 01h returns the current task (its window), 02h replaces a task handle with that task's own mailbox, 03h pushes the current task's mailbox, the others null |
+| `INT 15h AH=12h BH=00h BL=selector` | Selectors 00h, 02h, 04h, 06h, 0Ch take a DWORD on the caller stack and replace it; 01h, 03h, 05h, 07h, 0Dh take none and push the result (as DESQview 2.80) | `HANDLE`; selector 00h validates task/timer/mailbox handles, 01h returns the current task (its window), 02h replaces a task handle with that task's own mailbox, 03h pushes the current task's mailbox, 04h replaces a task handle with that task's keyboard, 05h pushes the current task's keyboard, the others null |
 | `INT 15h AH=12h BH=01h BL=0Bh` | Pushes a timer handle or null (nothing taken from the stack, as DESQview 2.80) | `NEW`; bounded sixteen-object timer pool |
 | `INT 15h AH=12h BH=01h BL=09h` | Pushes a mailbox handle or null | `NEW`; bounded eight-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, object DWORD on caller stack | Releases a live timer or mailbox and pops the DWORD; invalid handles are ignored | `FREE`; bounded dynamic objects |
 | `INT 15h AH=12h BH=03h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with the sender task handle of the last consumed record | Mailbox `ADDR`; null before the first successful read |
 | `INT 15h AH=12h BL=03h` (`BH` a mailbox message) | The current task's own mailbox (made, open, at its first use) in place of a handle on the stack | As DESQview's task mailbox; `HANDLE 03h` pushes it |
 | `INT 15h AH=12h BL=02h` (`BH` a mailbox message), task handle DWORD on top | That task's own mailbox in its place | As DESQview:  answer the sender `ADDR` gave |
+| `INT 15h AH=12h BH=04h BL=05h` (or `BL=04h` with a task handle, `BL=00h` with a keyboard handle) | Waits for a key (keystroke mode) and leaves length 1 on top of the address of its character | Keyboard `READ`, as DESQview 2.80:  an extended key gives 00h |
+| `INT 15h AH=12h BH=0Fh BL=05h` (or `04h`, `00h`) | The scan code of the last key `READ` gave if its character was 00h, else 0 | Keyboard `STATUS` in keystroke mode, as DESQview 2.80 |
 | `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length (on top) followed by a resident pointer DWORD | Mailbox `READ`; waits on empty while the multitasking core runs (D709h), else Carry |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
 | `INT 15h AH=12h BH=05h BL=00h`, mailbox, length, address DWORDs (top first) | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |
@@ -152,7 +154,7 @@ but portable programs must not depend on that extension.
 
 Every task (32 task objects:  task N of the multitasking core has the N-th;
 a sole program task 0's), sixteen timer slots and eight mailbox slots have
-paragraph-aligned,
+paragraph-aligned (and one keyboard object per task, type `0Ah`),
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
 `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore

@@ -104,12 +104,14 @@ dvapi)
     for s in dv mv; do
         if [ $s = dv ]; then a=$(dvfile dvapi D1.TXT); b=$(dvfile dvapi D2.TXT)
         else a=$(mvfile dvapi D1.TXT); b=$(mvfile dvapi D2.TXT); fi
-        app="$(echo "$a" | awk '$1 == "app" {print $2}')/$(echo "$b" | awk '$1 == "app" {print $2}')"
+        aa=$(echo "$a" | awk '$1 == "app" {print $2}'); ab=$(echo "$b" | awk '$1 == "app" {print $2}')
+        # in start order:  DV opens B (window 1) before A, MVRUN starts A first
+        if [ $s = dv ]; then app="$ab/$aa"; else app="$aa/$ab"; fi
         crit=$(echo "$a" | awk '$1 == "crit" {print ($2 == $3 ? "held" : "NOT held") ($4 > $3 ? ", runs after" : ", NOT after")}')
         pause=$(echo "$a" | awk '$1 == "pause" && $2 > 0 {printf "x%.1f", $3 / $2}')
         eval "app_$s=\$app crit_$s=\"\$crit\" pause_$s=\$pause"
     done
-    row "dvapi:  APPNUM A/B" "$app_dv" "$app_mv"
+    row "dvapi:  APPNUM 1st/2nd started" "$app_dv" "$app_mv"
     row "dvapi:  BEGINC..ENDC" "${crit_dv:-?}" "${crit_mv:-?}"
     row "dvapi:  PAUSE (other task's share)" "${pause_dv:-?}" "${pause_mv:-?}"
     row "dvapi:  DV version (2B01h)" "$(dvfile dvapi D1.TXT | awk '$1 == "app" {print $4}')" "$(mvfile dvapi D1.TXT | awk '$1 == "app" {print $4}')"

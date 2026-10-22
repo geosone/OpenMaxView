@@ -126,6 +126,7 @@ start:
 
 install:
         call    initialize_task_objects
+        call    initialize_keyboard_objects
         mov     ax,word ptr task_objects_base
         mov     word ptr task_handle_segment,ax ; task 0's, the caller's
         call    initialize_timer_objects
@@ -264,8 +265,16 @@ int15_message_dispatch:
         jmp     message_default_mailbox
 message_dispatch_not3:
         cmp     bl,2                  ; that of the task on the stack
-        jne     short message_dispatch_go
+        jne     short message_dispatch_not2
         jmp     message_task_mailbox
+message_dispatch_not2:
+        cmp     bl,5                  ; the current task's keyboard
+        jne     short message_dispatch_not5
+        jmp     message_default_keyboard
+message_dispatch_not5:
+        cmp     bl,4                  ; that of the task on the stack
+        jne     short message_dispatch_go
+        jmp     message_task_keyboard
 message_dispatch_go:
         cmp     bh,0                  ; HANDLE
         je      short int15_dispatch_handle
@@ -1089,6 +1098,8 @@ int15_isobj:
         call    timer_validate
         jnc     short int15_isobj_valid
         call    mailbox_validate
+        jnc     short int15_isobj_valid
+        call    keyboard_validate
         jc      short int15_isobj_invalid
 int15_isobj_valid:
         mov     bx,0FFFFh
@@ -1120,8 +1131,13 @@ int15_object_type_timer:
         jmp     short int15_object_type_done
 int15_object_type_mailbox:
         call    mailbox_validate
-        jc      short int15_object_type_invalid
+        jc      short int15_object_type_keyboard
         mov     bl,09h                ; mailbox object
+        jmp     short int15_object_type_done
+int15_object_type_keyboard:
+        call    keyboard_validate
+        jc      short int15_object_type_invalid
+        mov     bl,0Ah                ; keyboard object
         jmp     short int15_object_type_done
 int15_object_type_invalid:
         xor     bx,bx
@@ -1144,11 +1160,18 @@ int15_message_read_gateway:
         jne     short message_read_gateway_chain
         mov     ax,word ptr ss:[bp+12]
         call    mailbox_validate
-        jc      short message_read_gateway_chain
+        jc      short message_read_gateway_keyboard
         pop     si
         pop     ax
         pop     bp
         jmp     int15_message_mailbox_read
+message_read_gateway_keyboard:
+        call    keyboard_validate
+        jc      short message_read_gateway_chain
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_keyboard_read
 message_read_gateway_chain:
         pop     si
         pop     ax
@@ -1361,16 +1384,20 @@ int15_message_handle:
         cmp     bl,1                  ; current task's window
         je      short message_handle_current
         cmp     bl,3                  ; current task's mailbox
-        je      short message_handle_mailbox
+        je      message_handle_mailbox
         cmp     bl,2                  ; that of the task on the stack
         je      short message_handle_task_mailbox
-        cmp     bl,5                  ; keyboard, OBJECTQ, parent:  not there
+        cmp     bl,5                  ; current task's keyboard
+        je      short message_handle_keyboard
+        cmp     bl,4                  ; that of the task on the stack
+        je      short message_handle_task_keyboard
+        cmp     bl,5                  ; OBJECTQ, parent:  not there
         je      short message_handle_none
         cmp     bl,7
         je      short message_handle_none
         cmp     bl,0Dh
         je      short message_handle_none
-        jmp     short message_handle_null
+        jmp     message_handle_null
 message_handle_stacked:
         cmp     word ptr ss:[bp+10],0
         jne     short message_handle_null
@@ -1396,6 +1423,21 @@ message_handle_task_mailbox:
         call    task_mailbox_of
         jc      short message_handle_null
         mov     ax,word ptr cs:mailbox_handle_segments[si]
+        mov     word ptr ss:[bp+12],ax
+        jmp     short message_handle_done
+message_handle_keyboard:
+        mov     ax,word ptr cs:task_handle_segment
+        call    task_validate
+        jc      short message_handle_none
+        call    keyboard_of
+        jmp     short message_handle_push
+message_handle_task_keyboard:
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_handle_null
+        mov     ax,word ptr ss:[bp+12]
+        call    task_validate
+        jc      short message_handle_null
+        call    keyboard_of
         mov     word ptr ss:[bp+12],ax
         jmp     short message_handle_done
 message_handle_mailbox:
@@ -1537,13 +1579,13 @@ timer_query_not_sizeof:
         cmp     bh,09h
         je      short timer_query_length
         cmp     bh,0Fh
-        jne     short timer_query_invalid
+        jne     timer_query_invalid
         xor     ax,ax                 ; STATUS
         xor     dx,dx
         cmp     word ptr cs:timer_open[si],0
         jne     short timer_query_status_open
         mov     dx,8000h              ; closed
-        jmp     short timer_query_store
+        jmp     timer_query_store
 timer_query_status_open:
         cmp     word ptr cs:timer_state[si],1
         jne     short timer_query_store
@@ -1551,7 +1593,7 @@ timer_query_status_open:
         jmp     short timer_query_store
 timer_query_mailbox:
         call    mailbox_validate
-        jc      short timer_query_invalid
+        jc      short timer_query_keyboard
         cmp     bh,08h
         je      short mailbox_query_count
         cmp     bh,09h
@@ -1584,6 +1626,15 @@ timer_query_length:
         mov     cx,word ptr cs:timer_duration_hi[si]
         sbb     cx,dx
         mov     dx,cx
+        jmp     short timer_query_store
+timer_query_keyboard:
+        call    keyboard_validate
+        jc      short timer_query_invalid
+        cmp     bh,0Fh
+        jne     short timer_query_invalid
+        mov     al,byte ptr cs:keyboard_scan ; STATUS:  the last key's scan
+        xor     ah,ah                 ; code (keystroke mode)
+        xor     dx,dx
         jmp     short timer_query_store
 timer_query_invalid:
         xor     ax,ax
@@ -2858,7 +2909,7 @@ mailbox_add_value_open:
         jmp     mailbox_add_value_done
 mailbox_add_value_room:
         cmp     word ptr ss:[bp+20],0
-        jne     short mailbox_add_value_done
+        jne     mailbox_add_value_done
         mov     cx,word ptr ss:[bp+18]
         cmp     cx,MAILBOX_MESSAGE_SIZE
         ja      short mailbox_add_value_done
@@ -3209,6 +3260,10 @@ message_default_mailbox:
         jc      short message_default_none
         mov     ax,word ptr cs:mailbox_handle_segments[si]
         pop     si
+        mov     byte ptr cs:message_bl,3
+; AX = the handle to put on the caller's stack (the caller's AX pushed,
+; message_bl set):  as if the caller had pushed it; BL = 00h.
+message_insert:
         push    bp
         mov     bp,sp                 ; BP, AX, PUSHF, IP, CS, FLAGS
         sub     sp,4
@@ -3231,7 +3286,6 @@ message_default_mailbox:
         pop     bp
         pop     ax
         xor     bl,bl
-        mov     byte ptr cs:message_bl,3
         jmp     message_dispatch_go
 message_default_none:
         pop     si
@@ -3329,6 +3383,117 @@ message_task_none:
         pop     bp
 message_task_go:
         jmp     message_dispatch_go
+
+; AX a keyboard handle of any task:  CF clear (AX kept), else CF set.
+keyboard_validate:
+        push    dx
+        mov     dx,ax
+        sub     dx,word ptr cs:keyboard_objects_base
+        jb      short keyboard_validate_no
+        test    dx,1
+        jnz     short keyboard_validate_no
+        shr     dx,1
+        cmp     dx,TASK_OBJECT_COUNT
+        jae     short keyboard_validate_no
+        pop     dx
+        clc
+        ret
+keyboard_validate_no:
+        pop     dx
+        stc
+        ret
+
+; AX = the keyboard of the task with tag AX (task_validate's).
+keyboard_of:
+        dec     ax
+        shl     ax,1
+        add     ax,word ptr cs:keyboard_objects_base
+        ret
+
+; CF clear:  BH is a message with a keyboard meaning here (READ, STATUS).
+keyboard_message:
+        cmp     bh,04h
+        je      short keyboard_message_yes
+        cmp     bh,0Fh
+        je      short keyboard_message_yes
+        stc
+        ret
+keyboard_message_yes:
+        clc
+        ret
+
+; BL = 05h, the current task's keyboard:  its handle goes on the stack as
+; for BL = 03h (message_insert); BL = 04h:  the task handle on the stack is
+; replaced by that task's keyboard.
+message_default_keyboard:
+        call    keyboard_message
+        jc      short message_keyboard_go
+        push    ax
+        mov     ax,word ptr cs:task_handle_segment
+        call    task_validate
+        jc      short message_keyboard_none
+        call    keyboard_of
+        mov     byte ptr cs:message_bl,5
+        jmp     message_insert
+message_keyboard_none:
+        pop     ax
+message_keyboard_go:
+        jmp     message_dispatch_go
+message_task_keyboard:
+        call    keyboard_message
+        jc      short message_keyboard_go
+        push    bp
+        mov     bp,sp
+        push    ax
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_task_keyboard_none
+        mov     ax,word ptr ss:[bp+12]
+        call    task_validate
+        jc      short message_task_keyboard_none
+        call    keyboard_of
+        mov     word ptr ss:[bp+12],ax
+        xor     bl,bl
+        mov     byte ptr cs:message_bl,4
+message_task_keyboard_none:
+        pop     ax
+        pop     bp
+        jmp     message_dispatch_go
+
+; READ of a keyboard (keystroke mode, as DESQview):  waits for a key (with
+; PAUSE while the multitasking core runs) and leaves length 1 on top of the
+; address of its character; a zero character's scan code is STATUS's.
+int15_message_keyboard_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+keyboard_read_wait:
+        mov     ah,1
+        int     16h
+        jnz     short keyboard_read_key
+        cmp     byte ptr cs:core_running,0
+        je      short keyboard_read_key ; (alone:  INT 16h waits)
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        jmp     short keyboard_read_wait
+keyboard_read_key:
+        sti
+        xor     ah,ah
+        int     16h
+        cli
+        mov     byte ptr cs:keyboard_char,al
+        or      al,al                 ; the scan code only for a zero
+        jz      short keyboard_read_scan ; character, as DESQview
+        xor     ah,ah
+keyboard_read_scan:
+        mov     byte ptr cs:keyboard_scan,ah
+        mov     word ptr cs:message_result_len_lo,1
+        mov     word ptr cs:message_result_len_hi,0
+        mov     word ptr cs:message_result_ptr_off,offset keyboard_char
+        mov     word ptr cs:message_result_ptr_seg,cs
+        pop     ax
+        jmp     message_expand4
 
 ; SI = the word index of the calling task's own mailbox, CF:  none.  Made
 ; (open, as DESQview gives every task one) at its first use; it goes when
@@ -3561,6 +3726,34 @@ initialize_task_loop:
         add     bx,TASK_OBJECT_SIZE
         add     ax,TASK_OBJECT_SIZE / 16
         loop    initialize_task_loop
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; One keyboard object per task:  task N's is keyboard_objects_base + 2 * N.
+initialize_keyboard_objects:
+        push    ax
+        push    bx
+        push    cx
+        mov     ax,cs
+        mov     bx,offset keyboard_objects
+        mov     cl,4
+        shr     bx,cl
+        add     ax,bx
+        mov     word ptr keyboard_objects_base,ax
+        mov     bx,offset keyboard_objects
+        mov     cx,TASK_OBJECT_COUNT
+initialize_keyboard_loop:
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],0Ah
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        add     bx,TASK_OBJECT_SIZE
+        add     ax,TASK_OBJECT_SIZE / 16
+        loop    initialize_keyboard_loop
         pop     cx
         pop     bx
         pop     ax
@@ -3881,6 +4074,8 @@ task_internal_stack_top label byte
 task_state_pool label byte
 task_handle_segment dw 0              ; the task's own object (0:  not yet,
                                       ; int15_handler finds it)
+keyboard_char  db 0                   ; the last key READ gave (its buffer)
+keyboard_scan  db 0                   ;   and its scan code (STATUS)
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 task_state_end label byte
@@ -3895,6 +4090,7 @@ printc_page    db 0
 printc_columns db 80
 printc_last_row db 24
 task_objects_base dw 0                ; task 0's object (initialize_task_objects)
+keyboard_objects_base dw 0            ; task 0's keyboard
 install_path   db 67 dup(0)
 alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
@@ -3942,6 +4138,10 @@ task_object    label byte             ; TASK_OBJECT_COUNT of them, each:
                                       ;   address, task flag and window
                                       ;   number, header storage
         db      (TASK_OBJECT_COUNT * TASK_OBJECT_SIZE) dup(0)
+
+KEYBOARD_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      KEYBOARD_OBJECT_PAD dup (0)
+keyboard_objects db (TASK_OBJECT_COUNT * TASK_OBJECT_SIZE) dup(0)
 
 ; NEW/FREE timers use separate paragraph-aligned 32-byte headers. They expose
 ; pointer-compatible identities now; countdown messages are not implemented.

@@ -67,6 +67,8 @@
 #         one (C) gives it screen and keys
 #   ipc   task mailboxes (tests/ipcprb.asm):  a server names its own
 #         mailbox and waits in READ, a client finds it and writes to it
+#   kbd   the task's keyboard object (tests/kbdprb.asm):  READ waits for a
+#         key, gives its character (F1:  00)
 #   objs  DESQview objects of a task that ends (tests/leakprb.asm):  the
 #         stack effect of NEW/HANDLE/FREE as DESQview 2.80; a task takes a
 #         GETMEM and a GETCOMMON block, a mailbox and a timer and ends:  the
@@ -85,7 +87,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -386,6 +388,18 @@ ipc)
     me=$(echo "$c2" | sed -n 's/.*|me \([0-9A-F:]*\)|.*/\1/p')
     check "a task handle per task, ADDR gives the sender's" "[ -n '$me' ] && [ '${me%%:*}' != 0000 ] && echo '$s1' | grep -q '|from $me|replied|'"
     check "WRITE 02h to the sender's mailbox, its READ 03h gets it" "echo '$c2' | grep -q '|reply 00000002 ok|'"
+    ;;
+kbd)
+    echo "== kbd:  the task's keyboard object (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\KBDPRB.COM C:\\K1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/K.BAT"
+    CMD="C:\\K.BAT" END="wait:MVRUN:_done:120 sleep:3" run kbd 20 "" "$OUT/K.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/KBDPRB.COM $TICK" \
+        "wait:kbdprb_ready:60 sleep:3 key:x sleep:3 key:f1 sleep:3 key:y"
+    k1=$(file kbd K1.TXT | tr '\n' '|'); t2=$(last kbd T2.TXT tick)
+    echo "  K1: $k1  TICK $t2"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/kbd/end.txt'"
+    check "HANDLE 05h:  a keyboard" "echo '$k1' | grep -q '^kbd [0-9A-F]*:0000|' && ! echo '$k1' | grep -q '^kbd 0000'"
+    check "READ 05h:  x, F1 as 00 with STATUS 3Bh, y (as DV)" "echo '$k1' | grep -q '|key 00000001 78 st 00000000|key 00000001 00 st 0000003B|key 00000001 79 st 00000000|'"
+    check "TICK counts while READ waits" "[ $t2 -ge 20 ]"
     ;;
 many)
     echo "== many:  16 task slots, 15 TICK tasks"
