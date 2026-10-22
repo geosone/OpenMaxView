@@ -120,6 +120,7 @@ int main(int argc, char **argv)
                 break;
         if (t > ntask)
             break;              /* all done */
+        mvk_yield();            /* we only wait */
     }
     n = mvk_switches();
     for (t = 1; t <= ntask; ++t)

@@ -98,6 +98,12 @@ $(BUILD)/critprobe.obj: tests/critprobe.asm | $(BUILD)
 $(BUILD)/CRITPRB.COM: $(BUILD)/critprobe.obj
 	cd $(BUILD) && $(JWLINK) format dos com name CRITPRB.COM option quiet option map=CRITPRB.MAP file critprobe.obj
 
+$(BUILD)/dvtask.obj: tests/dvtask.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/DVTASK.COM: $(BUILD)/dvtask.obj
+	cd $(BUILD) && $(JWLINK) format dos com name DVTASK.COM option quiet option map=DVTASK.MAP file dvtask.obj
+
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 

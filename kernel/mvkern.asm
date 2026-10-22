@@ -97,6 +97,7 @@ T_SP    dw      ?
 T_NPG   dw      ?               ; # private pages
 T_EXIT  dw      ?               ; EXEC result:  AX of 4Dh, FFFFh = EXEC failed
 T_KILL  dw      ?               ; 1:  end it, 2:  Ctrl-C sent
+T_CRIT  dw      ?               ; DESQview critical sections open
 T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
@@ -380,6 +381,7 @@ cr_new: mov     ax,MVE_FULL
 cr_have:
         mov     [bp-8],bx
         mov     [di].T_KILL,0
+        mov     [di].T_CRIT,0
         mov     [di].T_NPG,0
         mov     [di].T_PT,0
         mov     [di].T_VPG,0
@@ -1072,6 +1074,10 @@ sc_nofg:
         jne     irq0_no13
         cmp     cs:idepth,0
         jne     irq0_no13
+        mov     bx,cs:cur       ; a DESQview critical section
+        call    taskptr
+        cmp     [bx].T_CRIT,0
+        jne     irq0_no13
         les     bx,cs:sda_ptr
         cmp     cs:yieldf,0
         je      @F
@@ -1208,16 +1214,69 @@ i16_old:
         jmp     dword ptr cs:old16
 int16   endp
 
-; INT 15h AH=4Fh (the BIOS keyboard intercept, AL = scan code):  the
-; switch keys.  Ctrl+Alt+1..9, 0:  that task to the foreground (key
+; INT 15h while running:  the DESQview calls about scheduling, per task
+; (PAUSE yields; BEGINC/ENTERC, ENDC, GETCRIT:  critical sections, no task
+; switch while one is open; APPNUM:  the task #); the rest goes on to the
+; DESQview API (MAXVTSR).  AH=4Fh (the BIOS keyboard intercept, AL = scan
+; code):  the switch keys.  Ctrl+Alt+1..9, 0:  that task to the foreground (key
 ; dropped:  CF = 0); Alt released alone:  task 0 (with mvk_dvkey).  Not
 ; during a critical error.  (Port 60h is not read again:  386MAX's
 ; keyboard controller emulation would give the next byte of an E0 key.)
 int15   proc far
-        cmp     ah,4Fh
-        jne     i15_old
         cmp     cs:running,0
         je      i15_old
+        cmp     ah,4Fh
+        je      i15_key
+        cmp     ax,1000h        ; DESQview PAUSE
+        je      i15_pause
+        cmp     ax,101Bh        ; BEGINC
+        je      i15_beginc
+        cmp     ax,0DE1Ch       ; ENTERC
+        je      i15_beginc
+        cmp     ax,101Ch        ; ENDC
+        je      i15_endc
+        cmp     ax,0DE13h       ; GETCRIT
+        je      i15_getcrit
+        cmp     ax,0DE07h       ; APPNUM
+        jne     i15_old
+        mov     ax,cs:cur
+        iret
+i15_pause:
+        call    yield
+        iret
+i15_beginc:                     ; per task:  no switch while open
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,cs:cur
+        call    taskptr
+        cmp     [bx].T_CRIT,0FFFFh
+        je      @F
+        inc     [bx].T_CRIT
+@@:     pop     ds
+        pop     bx
+        iret
+i15_endc:
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,cs:cur
+        call    taskptr
+        cmp     [bx].T_CRIT,0
+        je      @F
+        dec     [bx].T_CRIT
+@@:     pop     ds
+        pop     bx
+        iret
+i15_getcrit:
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,cs:cur
+        call    taskptr
+        mov     bx,[bx].T_CRIT
+        pop     ds
+        iret
+i15_key:
         push    ax
         push    bx
         push    ds

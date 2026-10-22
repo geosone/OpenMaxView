@@ -99,6 +99,8 @@ DESQview test:
 | `crit` | a background critical error comes to the front |
 | `desk` | MAXVIEW.EXE starts programs as tasks, Alt, task list, exit |
 | `win` | MAXVIEW windows: two tasks on one screen, typing, move, zoom, close |
+| `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |
+| `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |
 
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the
 script stores them as `build/test-qemu/<case>.e9`.

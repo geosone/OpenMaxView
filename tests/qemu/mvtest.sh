@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win|dvapi|progs] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -40,6 +40,18 @@
 #   win   MAXVIEW windows:  two KEYPROBEs side by side on one screen, keys
 #         typed into a window, a window moved, zoomed to full screen and
 #         closed
+#   dvapi the DESQview scheduling calls (MAXVTSR loaded):  DVTASK
+#         (tests/dvtask.asm) A measures, B counts in the BIOS area 40:F0h;
+#         APPNUM is the task #, nothing else runs inside BEGINC..ENDC, PAUSE
+#         leaves the CPU to B
+#   progs the regression tests of Open386MAX's TESTS/ (PROGS, as in its
+#         desqview.sh), each in a task of its own (COMMAND.COM /C R.BAT
+#         test, errorlevel -> PROGS.TXT), JOBS runs at a time; each also
+#         runs without MaxView:  a test fails only when it passes there.
+#         The task is the foreground (as DESQview's Big DOS window).
+#         Expected in a task (EXPECT):  VDSFUNC "physical = linear" (the
+#         task's conventional memory is private pages; VDS gives their
+#         real addresses, which is its purpose)
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -50,11 +62,15 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk win}
+CASES=${*:-two mem serial keys kill crit desk win dvapi progs}
+PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
+JOBS=${JOBS:-6}
+EXPECT_VDSFUNC='physical = linear FAIL'
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
-    build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE || exit 2
+    build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
+    build/MAXVTSR.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -210,6 +226,52 @@ win)
     check "zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Tab next' '$d/full.txt'"
     check "close" "grep -q 'Probe A ended' '$d/closed.txt' && ! grep -q 'keyprobe D' '$d/closed.txt'"
     check "DOS works afterwards" "grep -q '^win end' '$d/end.txt'"
+    ;;
+dvapi)
+    echo "== dvapi:  DESQview scheduling calls per task"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN 40 C:\\DVTASK.COM A C:\\D1.TXT ; C:\\DVTASK.COM B C:\\D2.TXT\r\n' > "$OUT/D.BAT"
+    CMD="C:\\D.BAT" run dvapi 40 "" \
+        "$OUT/D.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/DVTASK.COM"
+    d1=$(file dvapi D1.TXT); d2=$(file dvapi D2.TXT)
+    echo "$d1" | sed 's/^/  D1: /'; echo "$d2" | sed 's/^/  D2: /'
+    set -- $(echo "$d1" | awk '$1 == "crit" {print $2, $3, $4}') x x x
+    c0=$1 c1=$2 c2=$3
+    set -- $(echo "$d1" | awk '$1 == "pause" {print $2, $3}') x x
+    p1=$1 p2=$2
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/dvapi/end.txt'"
+    check "DESQview API present" "echo '$d1' | grep -q 'dv 0280'"
+    check "APPNUM:  task 1 and 2" "echo '$d1' | grep -q '^app 1 ' && echo '$d2' | grep -q '^app 2 '"
+    check "BEGINC..ENDC:  no other task" "[ '$c0' = '$c1' ] && [ '$c0' != x ]"
+    check "after ENDC the other task runs" "[ '$c2' != x ] && [ $c2 -gt $c1 ]"
+    check "PAUSE leaves the CPU (\$p2 > 3/2 \$p1)" "[ '$p2' != x ] && [ $p1 -gt 0 ] && [ $((p2 * 2)) -gt $((p1 * 3)) ]"
+    ;;
+progs)
+    echo "== progs:  regression tests, each in a task of its own"
+    printf '@ECHO OFF\r\nC:\\%%1 > C:\\%%1.OUT\r\nIF ERRORLEVEL 1 ECHO %%1 FAIL >> C:\\PROGS.TXT\r\nIF NOT ERRORLEVEL 1 ECHO %%1 PASS >> C:\\PROGS.TXT\r\n' > "$OUT/R.BAT"
+    n=0
+    for t in $PROGS; do
+        [ -s "$MAXROOT/build/TESTS/$t.EXE" ] || { echo "  no $MAXROOT/build/TESTS/$t.EXE"; fail=1; continue; }
+        ( FG="/F1 " run progs-$t 300 "C:\\COMMAND.COM /C C:\\R.BAT $t" "$OUT/R.BAT $MAXROOT/build/TESTS/$t.EXE" > /dev/null ) &
+        ( CMD="C:\\R.BAT $t" END="sleep:1" run progs-ref-$t 0 "" "$OUT/R.BAT $MAXROOT/build/TESTS/$t.EXE" \
+              "wait:$t:_[PF]A:200" > /dev/null ) &
+        n=$((n + 2))
+        [ $((n % JOBS)) = 0 ] && wait
+    done
+    wait
+    for t in $PROGS; do
+        r=$(file progs-$t PROGS.TXT | awk -v t=$t '$1 == t {print $2}')
+        q=$(file progs-ref-$t PROGS.TXT | awk -v t=$t '$1 == t {print $2}')
+        line=$(printf '%-9s MaxView %-5s alone %s' $t "${r:-hang}" "${q:-hang}")
+        exp=$(eval echo "\${EXPECT_$t:-}")
+        if [ "$r" = FAIL ] && [ -n "$exp" ] && [ -z "$(file progs-$t $t.OUT |
+                grep -a FAIL | grep -v '^OK: ' | grep -v -F "$exp")" ]; then
+            r=PASS line="$line  (expected:  $exp)"
+        fi
+        if [ "$r" = PASS ]; then echo "  OK    $line"
+        elif [ "$q" != PASS ]; then echo "  OK    $line  (not alone either)"
+        else echo "  FAIL  $line"; fail=1
+        fi
+    done
     ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac
