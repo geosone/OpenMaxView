@@ -1,10 +1,10 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Task memory isolation probe for the multitasking core (tests/qemu):
-;   MEMPROBE file c
-; fills 32KB behind itself with the character c, checks it for about 10
-; seconds while other tasks run, then writes "psp SSSS c ok" (or "bad") to
-; file.  Tasks in contexts of their own get the same PSP segment and never
-; see each other's pattern.
+;   MEMPROBE file c [V]
+; fills 32KB behind itself (V:  the text pages 1-7, B9000h-BFFFFh) with
+; the character c, checks it for about 10 seconds while other tasks run,
+; then writes "psp SSSS c ok" (or "bad") to file.  Tasks in contexts of
+; their own get the same PSP segment and never see each other's pattern.
 
         .8086
         .model tiny
@@ -36,6 +36,23 @@ start:
         je      usage
         mov     pat,al
         mov     msg_pat,al
+        mov     ax,ds           ; where:  behind us or the text pages
+        mov     bx,offset buf
+        mov     cl,4
+        shr     bx,cl
+        add     ax,bx
+        inc     ax
+        mov     bufseg,ax
+        mov     blen,BUFLEN
+@@:     lodsb
+        cmp     al,' '
+        je      @B
+        and     al,0DFh
+        cmp     al,'V'
+        jne     where_ok
+        mov     bufseg,0B900h
+        mov     blen,7000h
+where_ok:
         ; PSP -> hex
         mov     ax,cs
         mov     di,offset msg_psp
@@ -54,9 +71,11 @@ hexok:  stosb
         pop     ax
         loop    @B
         ; fill
-        mov     di,offset buf
-        mov     cx,BUFLEN
+        mov     es,bufseg
+        xor     di,di
+        mov     cx,blen
         mov     al,pat
+        cld
         rep     stosb
         ; check for 182 ticks
         push    ds
@@ -64,13 +83,11 @@ hexok:  stosb
         mov     ds,ax
         mov     bx,ds:[6Ch]
         pop     ds
-again:  mov     si,offset buf
-        mov     cx,BUFLEN
+again:  xor     di,di
+        mov     cx,blen
         mov     al,pat
-chk:    cmp     [si],al
+        repe    scasb
         jne     bad
-        inc     si
-        loop    chk
         push    ds
         mov     ax,40h
         mov     ds,ax
@@ -109,6 +126,8 @@ msg_pat db      '? '
 msg_res db      'ok ',13,10
 MSGLEN  equ     $-msg
 pat     db      ?
+bufseg  dw      ?
+blen  dw      ?
 fname   db      80 dup (?)
 buf     label   byte
 

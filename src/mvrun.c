@@ -10,6 +10,7 @@
  * starts only after s seconds, when all the others are killed, in a slot
  * freed by them.  Prints the switch count and each task's state and
  * ends with "MVRUN: done". */
+#include <direct.h>
 #include <dos.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -128,6 +129,12 @@ int main(int argc, char **argv)
                mvk_state(t) == MVK_DONE ? "done" : "running", mvk_exit(t));
     mvk_stop();
     printf("switches %lu\n", n);
+    {
+        char cwd[80];
+
+        if (getcwd(cwd, sizeof cwd) != NULL)
+            printf("cwd %s\n", cwd);
+    }
     puts("MVRUN: done");
     return 0;
 }

@@ -573,16 +573,33 @@ static int launch_task(const odq_program *program, char *status)
     static char tail[ODQ_COMMAND_LEN + 8];
     const char *shell = getenv("COMSPEC");
     int t;
+    char old_directory[ODQ_DIR_LEN + 1];
+    unsigned old_drive, drives;
 
     if (shell == NULL)
         shell = "C:\\COMMAND.COM";
-    /* the current directory is not per task yet:  it stays changed */
-    if (program->directory[0] != '\0' && chdir(program->directory) != 0) {
-        sprintf(status, "Cannot change to %.52s", program->directory);
-        return -1;
+
+    /* the task starts with the current drive and directories of now
+     * (per task from then on):  the program's, ours back afterwards */
+    _dos_getdrive(&old_drive);
+    if (getcwd(old_directory, sizeof(old_directory)) == NULL)
+        old_directory[0] = '\0';
+    if (program->directory[0] != '\0') {
+        if (program->directory[1] == ':')
+            _dos_setdrive(toupper(program->directory[0]) - 'A' + 1, &drives);
+        if (chdir(program->directory) != 0) {
+            _dos_setdrive(old_drive, &drives);
+            sprintf(status, "Cannot change to %.52s", program->directory);
+            return -1;
+        }
     }
     sprintf(tail, " /C %.120s", program->command);
     t = mvk_create(shell, tail);
+    if (program->directory[0] != '\0') {
+        if (old_directory[0] != '\0')
+            chdir(old_directory);
+        _dos_setdrive(old_drive, &drives);
+    }
     if (t < 0) {
         sprintf(status, "%.30s: %.40s.", program->title, mvhost_error(-t));
         return -1;

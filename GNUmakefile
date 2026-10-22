@@ -104,6 +104,18 @@ $(BUILD)/dvtask.obj: tests/dvtask.asm | $(BUILD)
 $(BUILD)/DVTASK.COM: $(BUILD)/dvtask.obj
 	cd $(BUILD) && $(JWLINK) format dos com name DVTASK.COM option quiet option map=DVTASK.MAP file dvtask.obj
 
+$(BUILD)/cwdprobe.obj: tests/cwdprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/CWDPROBE.COM: $(BUILD)/cwdprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name CWDPROBE.COM option quiet option map=CWDPROBE.MAP file cwdprobe.obj
+
+$(BUILD)/emsprobe.obj: tests/emsprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/EMSPROBE.COM: $(BUILD)/emsprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name EMSPROBE.COM option quiet option map=EMSPROBE.MAP file emsprobe.obj
+
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 

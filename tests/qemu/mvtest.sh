@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win|dvapi|progs] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win|dvapi|progs|cwd|ems] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -52,6 +52,12 @@
 #         Expected in a task (EXPECT):  VDSFUNC "physical = linear" (the
 #         task's conventional memory is private pages; VDS gives their
 #         real addresses, which is its purpose)
+#   cwd   the current directory per task:  two CWDPROBEs (tests/
+#         cwdprobe.asm) change to C:\A and C:\B and keep finding their
+#         own; MVRUN's stays C:\
+#   ems   EMS per task:  two EMSPROBEs (tests/emsprobe.asm) map 4 pages of
+#         their own each into the page frame and keep seeing their own
+#         pattern
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -62,7 +68,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk win dvapi progs}
+CASES=${*:-two mem serial keys kill crit desk win dvapi cwd ems progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -70,7 +76,7 @@ EXPECT_VDSFUNC='physical = linear FAIL'
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
-    build/MAXVTSR.COM || exit 2
+    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -120,7 +126,13 @@ mem)
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/mem/end.txt'"
     check "task 1 pattern kept" "[ \"\$(echo \$m1 | awk '{print \$3 \$4}')\" = Aok ]"
     check "task 2 pattern kept" "[ \"\$(echo \$m2 | awk '{print \$3 \$4}')\" = Bok ]"
-    check "same PSP segment (private memory)" "[ -n \"\$m1\" ] && [ \"\$(echo \$m1 | awk '{print \$2}')\" = \"\$(echo \$m2 | awk '{print \$2}')\" ]"
+    check "same PSP segment (private memory)" "[ -n \"\$m1\" ] && ! echo \$m1 | grep -q 'psp 0000' && [ \"\$(echo \$m1 | awk '{print \$2}')\" = \"\$(echo \$m2 | awk '{print \$2}')\" ]"
+    echo "== mem:  text pages 1-7 per task"
+    run memv 15 "C:\\MEMPROBE.COM C:\\M1.TXT A V ; C:\\MEMPROBE.COM C:\\M2.TXT B V" "$ROOT/build/MEMPROBE.COM"
+    m1=$(file memv M1.TXT); m2=$(file memv M2.TXT)
+    echo "  M1: ${m1:-none}"; echo "  M2: ${m2:-none}"
+    check "task 1 text pages kept" "[ \"\$(echo \$m1 | awk '{print \$3 \$4}')\" = Aok ]"
+    check "task 2 text pages kept" "[ \"\$(echo \$m2 | awk '{print \$3 \$4}')\" = Bok ]"
     ;;
 serial)
     echo "== serial:  IRQ4 to the task that hooked it"
@@ -244,6 +256,26 @@ dvapi)
     check "BEGINC..ENDC:  no other task" "[ '$c0' = '$c1' ] && [ '$c0' != x ]"
     check "after ENDC the other task runs" "[ '$c2' != x ] && [ $c2 -gt $c1 ]"
     check "PAUSE leaves the CPU (\$p2 > 3/2 \$p1)" "[ '$p2' != x ] && [ $p1 -gt 0 ] && [ $((p2 * 2)) -gt $((p1 * 3)) ]"
+    ;;
+cwd)
+    echo "== cwd:  current directory per task"
+    printf 'MD C:\\A\r\nMD C:\\B\r\nC:\\MVRUN 25 C:\\CWDPROBE.COM \\A C:\\W1.TXT ; C:\\CWDPROBE.COM \\B C:\\W2.TXT\r\n' > "$OUT/C.BAT"
+    CMD="C:\\C.BAT" run cwd 25 "" "$OUT/C.BAT $ROOT/build/CWDPROBE.COM"
+    w1=$(file cwd W1.TXT); w2=$(file cwd W2.TXT)
+    echo "  W1 '$w1', W2 '$w2'"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/cwd/end.txt'"
+    check "task 1 keeps C:\\A" "[ '$w1' = 'cwd A ok' ]"
+    check "task 2 keeps C:\\B" "[ '$w2' = 'cwd B ok' ]"
+    check "MVRUN's directory unchanged" "grep -q '^cwd C:\\\\ *$' '$OUT/cwd/end.txt'"
+    ;;
+ems)
+    echo "== ems:  EMS page frame per task"
+    run ems 25 "C:\\EMSPROBE.COM C:\\E1.TXT A ; C:\\EMSPROBE.COM C:\\E2.TXT B" "$ROOT/build/EMSPROBE.COM"
+    e1=$(file ems E1.TXT); e2=$(file ems E2.TXT)
+    echo "  E1 '$e1', E2 '$e2'"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/ems/end.txt'"
+    check "task 1 keeps its EMS pages" "[ \"\$(echo \$e1)\" = 'ems A ok' ]"
+    check "task 2 keeps its EMS pages" "[ \"\$(echo \$e2)\" = 'ems B ok' ]"
     ;;
 progs)
     echo "== progs:  regression tests, each in a task of its own"

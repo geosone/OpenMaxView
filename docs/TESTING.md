@@ -92,7 +92,7 @@ DESQview test:
 | Case | Checks |
 |---|---|
 | `two` | two TICK tasks count side by side, COM1 output of one |
-| `mem` | each task its own conventional memory (same PSP, patterns kept) |
+| `mem` | each task its own conventional memory (same PSP, patterns kept) and text pages 1-7 |
 | `serial` | a background task receives COM1 by IRQ4 and echoes 3000 bytes |
 | `keys` | screen and keys only for the foreground; Ctrl+Alt+n; waiting tasks yield |
 | `kill` | killed tasks end through DOS, a new one starts in a freed slot |
@@ -100,6 +100,8 @@ DESQview test:
 | `desk` | MAXVIEW.EXE starts programs as tasks, Alt, task list, exit |
 | `win` | MAXVIEW windows: two tasks on one screen, typing, move, zoom, close |
 | `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |
+| `cwd` | current directory per task (CDS), MVRUN's unchanged |
+| `ems` | EMS page frame mapping per task, with 47h/48h save/restore |
 | `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |
 
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the

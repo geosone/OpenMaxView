@@ -20,11 +20,13 @@
 ; at once; then DOS may be busy with console input, safe as the whole SDA
 ; (with the DOS stacks) is swapped.
 ; Per task:  all registers (on the task's stack), the IVT, the DOS SDA
-; (INT 21h 5D06h, the in-DOS size), the BIOS key buffer and cursor data.
+; (INT 21h 5D06h, the in-DOS size; the current drive is in it), the DOS
+; current directories (the CDS), the BIOS key buffer and cursor data.
 ; QPI 08h is called on a shared kernel stack:  the task's stack is gone
 ; once the context changes, and the SDA swap may overwrite a DOS stack.
 ;
-; Screen and keys:  one task is the foreground (owns the display), one
+; Screen and keys:  one task is the foreground (owns the display; the
+; colour text memory B8000h-BFFFFh, NVPG pages, else private), one
 ; has the key focus (the foreground but for windows:  task 0 shows the
 ; others' screens, mvk_peek, in windows and gives the keys to one,
 ; mvk_focus).  The text page B8000h of
@@ -56,6 +58,8 @@ MAXPAGE         equ 160         ; private pages per task (640KB)
 STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
 KSTACK          equ 512         ; kernel stack (QPI 08h)
 SDAMAX          equ 2048        ; DOS SDA swapped
+CDSMAX          equ 26*58h      ; DOS current directories (CDS) swapped
+NVPG            equ 8           ; text pages B8000h-BFFFFh private per task
 KBDLEN          equ 36          ; 40:1A-40:3D key buffer head, tail, buffer
 VIDLEN          equ 18          ; 40:50-40:61 cursor positions and shape
 ISTACK          equ 1024        ; IRQ stack (a handler in another task)
@@ -101,10 +105,11 @@ T_CRIT  dw      ?               ; DESQview critical sections open
 T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
-T_VPG   dw      ?               ; private frame of the text page B8000h
+T_VPG   dw      NVPG dup (?)    ; private frames of the text pages B8000h..
 T_SDA   db      SDAMAX dup (?)
 T_KBD   db      KBDLEN dup (?)
 T_VID   db      VIDLEN dup (?)
+T_CDS   db      CDSMAX dup (?)
 T_IVT   db      1024 dup (?)
 T_FRAME dw      MAXPAGE dup (?) ; private page frames
 TASK    ends
@@ -126,6 +131,7 @@ ctail   db      128 dup (?)
 kdata_end label byte
 MVKDATA ends
 KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128
+        .erre   KDATASIZE LE 0FFF0h, <kernel data over 64KB:  MAXTASK, SDAMAX, CDSMAX>
 
         .code
         assume  ds:MVKDATA
@@ -154,6 +160,8 @@ qpi_seg  dw     0               ; 386MAX's V86 code segment
 kseg   dw     0
 sda_ptr  dd     0
 sda_size dw     0
+cds_ptr  dd     0               ; DOS CDS array (List of Lists +16h)
+cds_size dw     0               ; LASTDRIVE * entry size
 base_seg dw     0               ; task base (4KB aligned)
 priv_end dw     0               ; end of the private pages (segment)
 free_end dw     0               ; end of the root's free block at the base
@@ -297,6 +305,30 @@ mvk_init_ proc near
 @@:     cmp     cx,SDAMAX
         ja      init_sdabad
         mov     cs:sda_size,cx
+        ; current directories:  the CDS (List of Lists +16h, LASTDRIVE at
+        ; +21h; entries of 58h bytes, 51h before DOS 4)
+        push    ds
+        mov     ah,30h
+        int     21h
+        mov     cl,al
+        mov     ah,52h
+        int     21h
+        mov     ax,es:[bx+16h]
+        mov     word ptr cs:cds_ptr,ax
+        mov     ax,es:[bx+18h]
+        mov     word ptr cs:cds_ptr+2,ax
+        mov     al,es:[bx+21h]
+        xor     ah,ah
+        mov     dx,58h
+        cmp     cl,4
+        jae     @F
+        mov     dx,51h
+@@:     mul     dx
+        cmp     ax,CDSMAX
+        jbe     @F
+        mov     ax,CDSMAX
+@@:     mov     cs:cds_size,ax
+        pop     ds
         ; task 0:  the caller in the root context, the foreground
         mov     cs:cur,0
         mov     cs:fg,0
@@ -304,11 +336,10 @@ mvk_init_ proc near
         mov     cs:kfocus,0
         xor     bx,bx
         call    taskptr
-        mov     ax,0400h        ; its text page while in the background
-        qpi
+        mov     di,bx
+        call    vpg_alloc       ; its text pages while in the background
         mov     ax,MVE_MEM
         jc      init_ret
-        mov     [bx].T_VPG,dx
         mov     [bx].T_STATE,TS_READY
         mov     ax,cs:root_pt
         mov     [bx].T_PT,ax
@@ -384,7 +415,7 @@ cr_have:
         mov     [di].T_CRIT,0
         mov     [di].T_NPG,0
         mov     [di].T_PT,0
-        mov     [di].T_VPG,0
+        mov     [di].T_VPG,0    ; (vpg_alloc fills them all)
         mov     [di].T_EXIT,0FFFFh
         ; program and tail
         mov     si,[bp-2]
@@ -430,10 +461,8 @@ cr_have:
         add     si,2
         inc     [di].T_NPG
         loop    @B
-        mov     ax,0400h        ; text page (the task starts in the
-        qpi                     ; background)
+        call    vpg_alloc       ; text pages (it starts in the background)
         jc      cr_mem
-        mov     [di].T_VPG,dx
         ; into the new context:  install the pages
         mov     dx,[di].T_PT
         mov     ax,0800h
@@ -453,17 +482,25 @@ cr_have:
         inc     bx
         add     si,2
         loop    @B
-        mov     cx,0B8h         ; its text page, blank
-        mov     dx,[di].T_VPG
+        xor     bx,bx           ; its text pages, blank
+@@:     mov     cx,0B8h
+        add     cx,bx
+        push    bx
+        shl     bx,1
+        mov     dx,[di+bx].T_VPG
+        pop     bx
         mov     ax,0A00h
         qpi
         jc      cr_rootmem
+        inc     bx
+        cmp     bx,NVPG
+        jb      @B
         push    di
         mov     ax,0B800h
         mov     es,ax
         xor     di,di
         mov     ax,0720h
-        mov     cx,2048
+        mov     cx,NVPG*2048
         cld
         rep     stosw
         pop     di
@@ -590,12 +627,7 @@ task_free proc near
         add     si,2
         loop    @B
 tf_pt:  mov     [di].T_NPG,0
-        mov     dx,[di].T_VPG
-        or      dx,dx
-        jz      @F
-        mov     ax,0500h
-        qpi
-@@:     mov     [di].T_VPG,0
+        call    vpg_free
         mov     dx,[di].T_PT
         or      dx,dx
         jz      @F
@@ -639,6 +671,12 @@ save_ivtsda proc near
         mov     cx,VIDLEN/2
         rep     movsw
         pop     di
+        push    di
+        lea     di,[di].T_CDS
+        lds     si,cs:cds_ptr
+        mov     cx,cs:cds_size
+        rep     movsb
+        pop     di
         lea     di,[di].T_SDA
         lds     si,cs:sda_ptr
         mov     cx,cs:sda_size
@@ -676,6 +714,12 @@ load_ivtsda proc near
         mov     di,450h
         mov     cx,VIDLEN/2
         rep     movsw
+        pop     di
+        push    di
+        lea     si,[di].T_CDS
+        les     di,cs:cds_ptr
+        mov     cx,cs:cds_size
+        rep     movsb
         pop     di
         push    di
         lea     si,[di].T_SDA
@@ -734,6 +778,53 @@ kbdload proc near
         ret
 kbdload endp
 
+; the private text page frames of the TASK at DI:  allocate (CF:  failed;
+; the ones got stay for vpg_free), free
+vpg_alloc proc near
+        push    ax
+        push    bx
+        push    dx
+        xor     bx,bx
+@@:     mov     [di+bx].T_VPG,0
+        add     bx,2
+        cmp     bx,NVPG*2
+        jb      @B
+        xor     bx,bx
+@@:     mov     ax,0400h
+        qpi
+        jc      @F
+        mov     [di+bx].T_VPG,dx
+        add     bx,2
+        cmp     bx,NVPG*2
+        jb      @B
+        clc
+@@:     pop     dx
+        pop     bx
+        pop     ax
+        ret
+vpg_alloc endp
+
+vpg_free proc near
+        push    ax
+        push    bx
+        push    dx
+        xor     bx,bx
+@@:     mov     dx,[di+bx].T_VPG
+        or      dx,dx
+        jz      vf_next
+        mov     ax,0500h
+        qpi
+        mov     [di+bx].T_VPG,0
+vf_next:
+        add     bx,2
+        cmp     bx,NVPG*2
+        jb      @B
+        pop     dx
+        pop     bx
+        pop     ax
+        ret
+vpg_free endp
+
 ; DX = page table:  active (QPI 08h unless it is already)
 setctx  proc near
         cmp     dx,cs:actpt
@@ -746,7 +837,7 @@ setctx  proc near
 @@:     ret
 setctx  endp
 
-; text page B8000h <-> vbuf (DS = DGROUP)
+; text page BX (0:  B8000h) <-> vbuf (DS = kernel data)
 scr2buf proc near
         push    cx
         push    si
@@ -755,7 +846,9 @@ scr2buf proc near
         push    es
         mov     ax,ds
         mov     es,ax
-        mov     ax,0B800h
+        mov     ax,bx
+        add     ax,0B8h
+        xchg    al,ah
         mov     ds,ax
         xor     si,si
         mov     di,offset vbuf
@@ -775,7 +868,9 @@ buf2scr proc near
         push    si
         push    di
         push    es
-        mov     ax,0B800h
+        mov     ax,bx
+        add     ax,0B8h
+        xchg    al,ah
         mov     es,ax
         mov     si,offset vbuf
         xor     di,di
@@ -802,26 +897,39 @@ setfg   proc near
         mov     bx,cs:fg
         call    taskptr
         mov     di,bx
-        mov     dx,[di].T_PT    ; the old foreground
+        mov     dx,[di].T_PT    ; the old foreground:  its pages private
         call    setctx
-        call    scr2buf
+        xor     bx,bx
+@@:     call    scr2buf
         mov     cx,0B8h
-        mov     dx,[di].T_VPG
+        add     cx,bx
+        push    bx
+        shl     bx,1
+        mov     dx,[di+bx].T_VPG
+        pop     bx
         mov     ax,0A00h
         qpi
         call    buf2scr
-        pop     bx              ; the new one
+        inc     bx
+        cmp     bx,NVPG
+        jb      @B
+        pop     bx              ; the new one:  the display's
         push    bx
         call    taskptr
         mov     di,bx
         mov     dx,[di].T_PT
         call    setctx
-        call    scr2buf
+        xor     bx,bx
+@@:     call    scr2buf
         mov     cx,0B8h
+        add     cx,bx
         mov     dx,cx
         mov     ax,0A00h
         qpi
         call    buf2scr
+        inc     bx
+        cmp     bx,NVPG
+        jb      @B
         pop     dx
         mov     cs:fg,dx
         pop     dx
@@ -1690,9 +1798,8 @@ stop_k proc near
         sti
         xor     bx,bx
         call    taskptr
-        mov     dx,[bx].T_VPG
-        mov     ax,0500h
-        qpi
+        mov     di,bx
+        call    vpg_free
         mov     cx,cs:ntasks
         dec     cx
         jcxz    sp_done

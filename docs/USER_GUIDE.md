@@ -86,9 +86,11 @@ hardware itself; Alt and Ctrl+Alt+n work again once it ends or another
 task has the keys.
 
 Without QPI the launcher runs one program at a time as before. Up to seven
-programs can run at once. Known limits of this first version: the current
-directory is shared by all programs, only the first text page is kept per
-program, and graphics screens are not yet saved.
+programs can run at once. Each has its own current drive and directories,
+its own EMS page frame mapping and all eight colour text pages. Known
+limits of this version: graphics screens are not saved (run graphics
+programs in the foreground), and a monochrome adapter's text memory
+(B0000h) is shared.
 
 Press F2 to inspect the selected program's launch fields and retained DVP
 process profile. The resource-contract line distinguishes requested feature
