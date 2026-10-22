@@ -8,7 +8,10 @@
 ;                     message if the first is its length)
 ;   IPCPRB C file     the client, 3 s later:  "mine SSSS:OOOO", "find B
 ;                     SSSS:OOOO" (FINDMAIL IPCSRV), then WRITE of "hello"
-;                     to it and "sent"
+;                     to it and "sent", then "me SSSS:OOOO" (HANDLE 01h)
+;                     and waits for the answer:  "reply LLLLLLLL text"
+;   (the server, after "got":  "from SSSS:OOOO" (ADDR of its mailbox:  the
+;   sender) and WRITE 02h of "ok" to that task's mailbox, "replied")
 ; The two "mine" differ:  a mailbox per task.
 
         .model tiny
@@ -55,6 +58,8 @@ start:
         int     15h
         pop     dx              ; offset
         pop     ax              ; segment
+        mov     word ptr own,dx
+        mov     word ptr own+2,ax
         call    putptr
         call    putnl
         cmp     role,'C'
@@ -143,6 +148,31 @@ start:
         rep     movsb
         pop     ds
 @@:     call    putnl
+        mov     si,offset t_from        ; ADDR:  who sent it
+        call    puts
+        push    word ptr own+2
+        push    word ptr own
+        mov     ax,1200h
+        mov     bx,0300h
+        int     15h
+        pop     dx
+        pop     ax
+        mov     word ptr sender,dx
+        mov     word ptr sender+2,ax
+        call    putptr
+        call    putnl
+        push    ds              ; WRITE 02h:  to the mailbox of that task
+        push    offset okmsg
+        push    0
+        push    okmsg_len
+        push    word ptr sender+2
+        push    word ptr sender
+        mov     ax,1200h
+        mov     bx,0502h
+        int     15h
+        mov     si,offset t_replied
+        call    puts
+        call    putnl
         jmp     done
 
 client: push    es              ; 3 s first
@@ -182,6 +212,38 @@ client: push    es              ; 3 s first
         mov     si,offset t_sent
         call    puts
         call    putnl
+        mov     si,offset t_me          ; HANDLE 01h
+        call    puts
+        mov     ax,1200h
+        mov     bx,0001h
+        int     15h
+        pop     dx
+        pop     ax
+        call    putptr
+        call    putnl
+        mov     ax,1200h        ; READ 03h:  the answer
+        mov     bx,0403h
+        int     15h
+        pop     word ptr d1
+        pop     word ptr d1+2
+        pop     word ptr d2
+        pop     word ptr d2+2
+        mov     si,offset t_reply
+        call    puts
+        mov     eax,d1
+        call    puthex32
+        mov     al,' '
+        stosb
+        mov     cx,word ptr d1
+        cmp     word ptr d1+2,0
+        jne     @F
+        cmp     cx,40
+        ja      @F
+        push    ds
+        lds     si,d2
+        rep     movsb
+        pop     ds
+@@:     call    putnl
 
 done:   mov     ah,3Eh
         mov     bx,handle
@@ -329,6 +391,14 @@ t_named db      'named',0
 t_got   db      'got ',0
 t_find  db      'find ',0
 t_sent  db      'sent',0
+t_me    db      'me ',0
+t_reply db      'reply ',0
+t_from  db      'from ',0
+t_replied db    'replied',0
+okmsg   db      'ok'
+okmsg_len equ   $ - okmsg
+own     dd      0
+sender  dd      0
 role    db      0
 handle  dw      0
 d1      dd      0

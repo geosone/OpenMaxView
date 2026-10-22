@@ -104,7 +104,7 @@ DESQview test:
 | `cwd` | current directory per task (CDS), MVRUN's unchanged |
 | `ems` | EMS page frame mapping per task, with 47h/48h save/restore |
 | `gfx` | VGA mode 13h task and text task:  each one's mode on switching, graphics held in the background, drawn again |
-| `ipc` | task mailboxes as DESQview 2.80 (IPCPRB measured in two DV windows gives the same):  HANDLE 03h differs per task; AT takes the column on top; SETNAME and WRITE the length on the address; FINDMAIL finds the server's mailbox; READ 03h waits for the client's message and leaves the length on top |
+| `ipc` | task mailboxes as DESQview 2.80 (IPCPRB measured in two DV windows gives the same):  HANDLE 03h differs per task; AT takes the column on top; SETNAME and WRITE the length on the address; FINDMAIL finds the server's mailbox; READ 03h waits for the client's message and leaves the length on top; ADDR gives the client's task handle (its HANDLE 01h), and WRITE 02h with it answers into the client's own mailbox |
 | `objs` | stack effect of `NEW`/`HANDLE`/`FREE` as DESQview 2.80 (+4, +4, 0, -4); a task's `GETMEM` blocks and mailbox come back when it ends, a common block and a timer stay (as DESQview when a window is closed); two tasks at once get 8 GETMEM blocks each (the pool is per task) |
 | `many` | 16 task slots (`MVRUN /N16 @list`):  15 TICK tasks count side by side, a 16th finds the table full |
 | `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |

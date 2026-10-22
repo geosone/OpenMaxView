@@ -97,6 +97,8 @@ MAILBOX_NAME_SIZE  equ 32
 SECOND_LEVEL_COUNT equ 16
 SOUND_QUEUE_COUNT equ 32
 TASK_STACK_SIZE equ 512
+TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
+TASK_OBJECT_SIZE equ 32
 
 TASK_JUSTIFY   equ 0001h
 TASK_CSTYLE    equ 0002h
@@ -123,14 +125,9 @@ start:
         int     21h
 
 install:
-        mov     ax,cs
-        mov     bx,offset task_object
-        mov     cl,4
-        shr     bx,cl
-        add     ax,bx
-        mov     word ptr task_handle_segment,ax
-        mov     word ptr task_object+0Ah,ax
-        mov     word ptr task_object+0Eh,ax
+        call    initialize_task_objects
+        mov     ax,word ptr task_objects_base
+        mov     word ptr task_handle_segment,ax ; task 0's, the caller's
         call    initialize_timer_objects
         call    initialize_mailbox_objects
 
@@ -254,13 +251,21 @@ int1c_handler:
 
 int15_handler:
         pushf
+        cmp     word ptr cs:task_handle_segment,0
+        jne     short int15_have_task
+        call    task_handle_init
+int15_have_task:
         cmp     ah,12h                ; TopView/DESQview SEND MESSAGE
         je      short int15_message_dispatch
         jmp     int15_not_message
 int15_message_dispatch:
         cmp     bl,3                  ; the current task's mailbox
-        jne     short message_dispatch_go
+        jne     short message_dispatch_not3
         jmp     message_default_mailbox
+message_dispatch_not3:
+        cmp     bl,2                  ; that of the task on the stack
+        jne     short message_dispatch_go
+        jmp     message_task_mailbox
 message_dispatch_go:
         cmp     bh,0                  ; HANDLE
         je      short int15_dispatch_handle
@@ -1077,8 +1082,10 @@ int15_isobj:
         or      di,di
         jnz     short int15_isobj_invalid
         mov     ax,es
-        cmp     ax,word ptr cs:task_handle_segment
-        je      short int15_isobj_valid
+        push    ax                    ; any task's
+        call    task_validate
+        pop     ax
+        jnc     short int15_isobj_valid
         call    timer_validate
         jnc     short int15_isobj_valid
         call    mailbox_validate
@@ -1100,8 +1107,10 @@ int15_object_type:
         or      di,di
         jnz     short int15_object_type_invalid
         mov     ax,es
-        cmp     ax,word ptr cs:task_handle_segment
-        jne     short int15_object_type_timer
+        push    ax                    ; any task's
+        call    task_validate
+        pop     ax
+        jc      short int15_object_type_timer
         mov     bl,08h                ; window/task object
         jmp     short int15_object_type_done
 int15_object_type_timer:
@@ -1353,6 +1362,8 @@ int15_message_handle:
         je      short message_handle_current
         cmp     bl,3                  ; current task's mailbox
         je      short message_handle_mailbox
+        cmp     bl,2                  ; that of the task on the stack
+        je      short message_handle_task_mailbox
         cmp     bl,5                  ; keyboard, OBJECTQ, parent:  not there
         je      short message_handle_none
         cmp     bl,7
@@ -1364,8 +1375,10 @@ message_handle_stacked:
         cmp     word ptr ss:[bp+10],0
         jne     short message_handle_null
         mov     ax,word ptr ss:[bp+12]
-        cmp     ax,word ptr cs:task_handle_segment
-        je      short message_handle_done
+        push    ax                    ; any task's
+        call    task_validate
+        pop     ax
+        jnc     short message_handle_done
         call    timer_validate
         jnc     short message_handle_done
         call    mailbox_validate
@@ -1374,6 +1387,17 @@ message_handle_stacked:
 message_handle_current:
         mov     ax,word ptr cs:task_handle_segment
         jmp     short message_handle_push
+message_handle_task_mailbox:
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_handle_null
+        mov     ax,word ptr ss:[bp+12]
+        call    task_validate
+        jc      short message_handle_null
+        call    task_mailbox_of
+        jc      short message_handle_null
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
+        mov     word ptr ss:[bp+12],ax
+        jmp     short message_handle_done
 message_handle_mailbox:
         call    task_mailbox
         jc      short message_handle_none
@@ -2744,10 +2768,10 @@ int15_ustack:
         iret
 
 int15_handled:
-        cmp     byte ptr cs:message_bl3,0 ; (BL as the caller passed it)
+        cmp     byte ptr cs:message_bl,0 ; (BL as the caller passed it)
         je      short int15_handled_bl
-        mov     bl,3
-        mov     byte ptr cs:message_bl3,0
+        mov     bl,byte ptr cs:message_bl
+        mov     byte ptr cs:message_bl,0
 int15_handled_bl:
         popf
         iret
@@ -3177,18 +3201,8 @@ message_push4:
 ; NEW, FREE and the messages without a mailbox meaning go on unchanged, as
 ; when there is no mailbox for the task (the pool is full).
 message_default_mailbox:
-        cmp     bh,3
-        jb      short message_default_go
-        cmp     bh,6
-        je      short message_default_go
-        cmp     bh,7
-        je      short message_default_go
-        cmp     bh,10h
-        je      short message_default_go
-        cmp     bh,14h
-        je      short message_default_go
-        cmp     bh,16h
-        ja      short message_default_go
+        call    mailbox_message
+        jc      short message_default_go
         push    ax
         push    si
         call    task_mailbox
@@ -3217,7 +3231,7 @@ message_default_mailbox:
         pop     bp
         pop     ax
         xor     bl,bl
-        mov     byte ptr cs:message_bl3,1
+        mov     byte ptr cs:message_bl,3
         jmp     message_dispatch_go
 message_default_none:
         pop     si
@@ -3225,14 +3239,113 @@ message_default_none:
 message_default_go:
         jmp     message_dispatch_go
 
+; A task of the multitasking core new to MAXVTSR (its state block starts
+; with no task handle):  its object is that of its number (APPNUM, which the
+; core answers).  Task 0's in the meantime, so the APPNUM call itself finds
+; one.
+task_handle_init:
+        push    ax
+        mov     ax,word ptr cs:task_objects_base
+        mov     word ptr cs:task_handle_segment,ax
+        mov     ax,0DE07h
+        int     15h
+        cmp     ax,TASK_OBJECT_COUNT
+        jb      short task_handle_number
+        xor     ax,ax
+task_handle_number:
+        shl     ax,1                  ; (TASK_OBJECT_SIZE / 16)
+        add     ax,word ptr cs:task_objects_base
+        mov     word ptr cs:task_handle_segment,ax
+        pop     ax
+        ret
+
+; AX a task handle (segment) of any task:  CF clear, AX = its tag (number
+; + 1, as caller_tag); else CF set, AX kept.
+task_validate:
+        push    dx
+        mov     dx,ax
+        sub     dx,word ptr cs:task_objects_base
+        jb      short task_validate_no
+        test    dx,1
+        jnz     short task_validate_no
+        shr     dx,1
+        cmp     dx,TASK_OBJECT_COUNT
+        jae     short task_validate_no
+        inc     dx
+        mov     ax,dx
+        pop     dx
+        clc
+        ret
+task_validate_no:
+        pop     dx
+        stc
+        ret
+
+; CF clear:  BH is a message with a mailbox meaning (HANDLE, NEW and FREE
+; are not:  they read BL themselves).
+mailbox_message:
+        cmp     bh,3
+        jb      short mailbox_message_no
+        cmp     bh,6
+        je      short mailbox_message_no
+        cmp     bh,7
+        je      short mailbox_message_no
+        cmp     bh,10h
+        je      short mailbox_message_no
+        cmp     bh,14h
+        je      short mailbox_message_no
+        cmp     bh,16h
+        ja      short mailbox_message_no
+        clc
+        ret
+mailbox_message_no:
+        stc
+        ret
+
+; BL = 02h, the own mailbox of the task whose handle is on the stack:  the
+; handle is replaced by that mailbox's and BL = 00h (03h again at the
+; return), as message_default_mailbox.
+message_task_mailbox:
+        call    mailbox_message
+        jc      short message_task_go
+        push    bp
+        mov     bp,sp                 ; BP, PUSHF, IP, CS, FLAGS, handle
+        push    ax
+        push    si
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_task_none
+        mov     ax,word ptr ss:[bp+12]
+        call    task_validate
+        jc      short message_task_none
+        call    task_mailbox_of
+        jc      short message_task_none
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
+        mov     word ptr ss:[bp+12],ax
+        xor     bl,bl
+        mov     byte ptr cs:message_bl,2
+message_task_none:
+        pop     si
+        pop     ax
+        pop     bp
+message_task_go:
+        jmp     message_dispatch_go
+
 ; SI = the word index of the calling task's own mailbox, CF:  none.  Made
 ; (open, as DESQview gives every task one) at its first use; it goes when
 ; the task ends (D708h).
 task_mailbox:
         push    ax
-        push    cx
         call    caller_tag
         xor     ah,ah
+        call    task_mailbox_of
+        pop     ax
+        ret
+
+; SI = the word index of the own mailbox of the task with tag AX, CF:
+; none (made as task_mailbox).
+task_mailbox_of:
+        push    ax
+        push    cx
         xor     si,si
         mov     cx,MAILBOX_SLOT_COUNT
 task_mailbox_scan:
@@ -3338,15 +3451,11 @@ mailbox_release:
 ; answers it) + 1.  Its mailboxes go when the task ends (D708h), as
 ; DESQview frees them with the window.
 caller_tag:
-        push    bx
-        push    cx
-        push    dx
-        mov     ax,0DE07h
-        int     15h
-        inc     al
-        pop     dx
-        pop     cx
-        pop     bx
+        mov     ax,word ptr cs:task_handle_segment
+        call    task_validate
+        jnc     short caller_tag_done
+        mov     al,1
+caller_tag_done:
         ret
 
 ; Relocate the frame over a handle plus one DWORD argument.
@@ -3422,6 +3531,36 @@ initialize_timer_loop:
         loop    initialize_timer_loop
         pop     si
         pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; One task object per task of the multitasking core:  task N's handle is
+; task_objects_base + 2 * N (32-byte objects), as DESQview has one per task.
+initialize_task_objects:
+        push    ax
+        push    bx
+        push    cx
+        mov     ax,cs
+        mov     bx,offset task_object
+        mov     cl,4
+        shr     bx,cl
+        add     ax,bx
+        mov     word ptr task_objects_base,ax
+        mov     bx,offset task_object
+        mov     cx,TASK_OBJECT_COUNT
+initialize_task_loop:
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],0
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        mov     byte ptr [bx+10h],1
+        add     bx,TASK_OBJECT_SIZE
+        add     ax,TASK_OBJECT_SIZE / 16
+        loop    initialize_task_loop
         pop     cx
         pop     bx
         pop     ax
@@ -3730,7 +3869,7 @@ task_stack_return_cs dw 0
 task_stack_return_flags dw 0
 message_saved_ax dw 0
 message_saved_bp dw 0
-message_bl3    db 0                   ; BL was 03h (the task's mailbox)
+message_bl     db 0                   ; BL was 02h/03h (a task's mailbox)
 message_result_len_lo dw 0
 message_result_len_hi dw 0
 message_result_ptr_off dw 0
@@ -3740,6 +3879,8 @@ task_internal_stack_top label byte
 ; GETMEM (system memory) per task, as DESQview's in the window's memory:
 ; a new task starts with it all free, and it goes with the task
 task_state_pool label byte
+task_handle_segment dw 0              ; the task's own object (0:  not yet,
+                                      ; int15_handler finds it)
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 task_state_end label byte
@@ -3753,7 +3894,7 @@ video_segment  dw 0B800h
 printc_page    db 0
 printc_columns db 80
 printc_last_row db 24
-task_handle_segment dw 0
+task_objects_base dw 0                ; task 0's object (initialize_task_objects)
 install_path   db 67 dup(0)
 alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
@@ -3793,14 +3934,14 @@ common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 ; Dynamic alignment remains correct as the resident code grows.
 TASK_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      TASK_OBJECT_PAD dup (0)
-task_object    label byte
-        dw      0,0                   ; previous and next task objects
-        dw      0FEDCh                ; DESQview-compatible object signature
-        dw      0                     ; window/task object type
-        dw      0,0                   ; public handle, patched at install
-        dw      0,0                   ; canonical address, patched at install
-        db      1,0                   ; task flag and internal window number
-        dw      0,0,0,0,0,0,0        ; bounded public header storage
+task_object    label byte             ; TASK_OBJECT_COUNT of them, each:
+                                      ;   previous and next task objects,
+                                      ;   FEDCh (DESQview's object
+                                      ;   signature), 0 (window/task), its
+                                      ;   public handle, its canonical
+                                      ;   address, task flag and window
+                                      ;   number, header storage
+        db      (TASK_OBJECT_COUNT * TASK_OBJECT_SIZE) dup(0)
 
 ; NEW/FREE timers use separate paragraph-aligned 32-byte headers. They expose
 ; pointer-compatible identities now; countdown messages are not implemented.

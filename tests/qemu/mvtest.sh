@@ -383,6 +383,9 @@ ipc)
     check "SETNAME 03h:  the length on top (as DV)" "echo '$s1' | grep -q '|named.* 2|'"
     check "FINDMAIL finds the server's mailbox" "echo '$c2' | grep -q '|find 1 $m1|sent|'"
     check "READ 03h waits, gets length on top, then the text" "echo '$s1' | grep -q '|got 00000005 [0-9A-F]* hello|'"
+    me=$(echo "$c2" | sed -n 's/.*|me \([0-9A-F:]*\)|.*/\1/p')
+    check "a task handle per task, ADDR gives the sender's" "[ -n '$me' ] && [ '${me%%:*}' != 0000 ] && echo '$s1' | grep -q '|from $me|replied|'"
+    check "WRITE 02h to the sender's mailbox, its READ 03h gets it" "echo '$c2' | grep -q '|reply 00000002 ok|'"
     ;;
 many)
     echo "== many:  16 task slots, 15 TICK tasks"
