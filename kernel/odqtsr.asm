@@ -2544,10 +2544,16 @@ field_read:
         mov     byte ptr cs:window_page,bh
         pop     bx
         call    field_current         ; SI = the field (0:  none)
+        call    field_mouse_click     ; (presses before the READ:  gone)
 field_read_key:
         mov     ah,1
         int     16h
         jnz     short field_read_got
+        call    field_mouse_click     ; a left click on a select field:
+        jnc     short field_read_idle ; selected, status 1 (as a key)
+        mov     al,1
+        jmp     field_read_done
+field_read_idle:
         sti
         mov     ax,1000h
         int     15h
@@ -2753,6 +2759,62 @@ field_paint:
 field_paint_attr:
         call    field_fill_attr
 field_paint_done:
+        pop     ax
+        ret
+
+; A mouse driver's (INT 33h) left button presses since the last call:
+; at the last one the select field under the pointer (text cell = pixel
+; / 8) selected, modified and painted, CF set then (DESQview 2.80:  a
+; click on a select field returns as its key does).
+field_mouse_click:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        xor     ax,ax                 ; no driver:  nothing
+        mov     es,ax
+        mov     ax,word ptr es:[33h*4]
+        or      ax,word ptr es:[33h*4+2]
+        jz      short field_mouse_no
+        mov     ax,5
+        xor     bx,bx
+        int     33h
+        or      bx,bx
+        jz      short field_mouse_no
+        shr     cx,1                  ; (8086:  no SHR by 3)
+        shr     cx,1
+        shr     cx,1
+        shr     dx,1
+        shr     dx,1
+        shr     dx,1
+        mov     dh,dl                 ; DH row, DL column
+        mov     dl,cl
+        call    field_count
+        jc      short field_mouse_no
+        mov     al,1
+field_mouse_one:
+        call    field_entry
+        mov     ah,byte ptr es:[bx+4]
+        and     ah,0C0h
+        cmp     ah,0C0h
+        jne     short field_mouse_next
+        call    field_inside
+        jc      short field_mouse_next
+        or      byte ptr es:[bx+4],03h
+        call    field_paint
+        stc
+        jmp     short field_mouse_ret
+field_mouse_next:
+        inc     al
+        loop    field_mouse_one
+field_mouse_no:
+        clc
+field_mouse_ret:
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
         pop     ax
         ret
 

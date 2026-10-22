@@ -71,6 +71,7 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   mouse  a click on a select field (tests/mseprb.asm; needs CuteMouse)
 #   records numbered field records (tests/numprb.asm)
 #   selects select fields by key (tests/selprb.asm)
 #   fields input fields in field mode (tests/fldprb.asm)
@@ -95,7 +96,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -439,6 +440,21 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+mouse)
+    echo "== mouse:  a click on a select field (as under DV)"
+    CTM=${CTMOUSE:-$HOME/mars/scratch-386max/ctm/bin/ctmouse.exe}
+    if [ ! -f "$CTM" ]; then echo "  SKIP  no CuteMouse (CTMOUSE=path of ctmouse.exe)"; continue; fi
+    cp "$CTM" "$OUT/CTMOUSE.EXE"
+    printf 'C:\\CTMOUSE.EXE\r\nC:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\MSEPRB.COM C:\\M1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/M.BAT"
+    # CuteMouse's small moves are linear here:  8 counts a column or row
+    mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
+    CMD="C:\\M.BAT" END="wait:MVRUN:_done:120 sleep:3" run mouse 60 "" "$OUT/M.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MSEPRB.COM $TICK" \
+        "wait:mseprb_ready:60 sleep:3 $(mv -100 -100 10) $(mv 4 0 25) $(mv 0 8 4) $(mv 0 4 1) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0"
+    m1=$(file mouse M1.TXT | tr '\n' '|')
+    echo "  M1: $m1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/mouse/end.txt'"
+    check "click on field 2:  N Y N, status 1, 1Fh, C3h (as DV)" "[ '$m1' = 'r 00000003 4E 59 4E|st 00000001|at 07 1F 07|hdr 03 01 00 00 70 1F C0 C3 C0|' ]"
     ;;
 records)
     echo "== records:  numbered field records, modes 10b/11b (as under DV)"
