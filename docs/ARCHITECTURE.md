@@ -250,7 +250,7 @@ network-specific ABI is to be added to Open 386MAX.
 | VM context lifecycle | bounded foundation | Current-task activation, fail-closed root/Windows transition and ordered context teardown over the single owned QPI clone |
 | Master IRQ calldowns | bounded foundation | Guarded QPI `1C01h` install, `1C04h` injection and `1C00h` removal with a copied non-null IRQ0-7 table |
 | Concurrent V86 tasks | planned | Enter saved registers, build per-task DOS state/private maps and invoke dispatch from the IRQ0 calldown |
-| Per-task video and I/O | planned | Page mapping and port/CRTC traps available through QPI; use pending |
+| Per-task video and I/O | CRTC/DAC done | A background task's CRTC and DAC port writes are trapped (QPI `0Dh`/`0Eh`):  its cursor address goes to its BIOS cursor and reads back from it, other CRTC and DAC writes are dropped; the foreground's go to the hardware |
 | `.DVP` import | versioned profile implemented | Advanced VM/scheduler fields retained but not yet enforced |
 
 ## VM-backend contract

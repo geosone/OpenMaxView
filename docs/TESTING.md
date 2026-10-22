@@ -108,6 +108,7 @@ DESQview test:
 | `wwrite` | window `WRITE` as DESQview 2.80 (WINPRB in a DV window gives the same):  8 bytes popped, 12 with the handle; the cursor after "Hello", "AB", CR LF, BS; the text on the screen |
 | `wstream` | a window stream as DESQview 2.80 (STRPRB in a DV window gives the same):  C0h cursor, E2h colour, a literal, a repeat, attributed blanks, then plain text in the stream's colour |
 | `wquery` | a query stream as DESQview 2.80 (QRYPRB in a DV window):  cursor, colour, mode byte and flags as there; size 25 x 80 and no frame for the screen-sized window (DV:  its 10 x 78 framed window) |
+| `crtc` | a background task's direct CRTC cursor and DAC OUTs (5 s) leave the foreground's cursor and palette on the hardware; it reads its own cursor back (IN 3D5h, INT 10h AH=03h); without the trapping:  the foreground's cursor and DAC changed |
 | `kbd` | the task's keyboard object as DESQview 2.80 (KBDPRB in a DV window gives the same):  READ 05h waits for a key and gives its character, F1 as 00h with STATUS 3Bh, STATUS 0 after an ordinary key; TICK counts meanwhile |
 | `objs` | stack effect of `NEW`/`HANDLE`/`FREE` as DESQview 2.80 (+4, +4, 0, -4); a task's `GETMEM` blocks and mailbox come back when it ends, a common block and a timer stay (as DESQview when a window is closed); two tasks at once get 8 GETMEM blocks each (the pool is per task); the task handle of a task that ended is no object any more (LEAKPRB V) |
 | `many` | 16 task slots (`MVRUN /N16 @list`):  15 TICK tasks count side by side, a 16th finds the table full |

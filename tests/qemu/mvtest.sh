@@ -70,6 +70,7 @@
 #   wwrite WRITE to the task's window (tests/winprb.asm)
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
+#   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
 #   kbd   the task's keyboard object (tests/kbdprb.asm):  READ waits for a
 #         key, gives its character (F1:  00)
 #   objs  DESQview objects of a task that ends (tests/leakprb.asm):  the
@@ -90,7 +91,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd wwrite wstream wquery many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -424,6 +425,16 @@ wquery)
     # DV 2.80 in its 10 x 78 framed window:  C3 0A 4E .. A6 0A A7 4E .. D6
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/wquery/end.txt'"
     check "cursor, size, colour, mode, flags" "[ '$q1' = 'q A0 04 A1 07 C0 04 07 C3 19 50 C5 19 50 A6 19 A7 50 AB 50 AF 44 E2 1E D4 D7 DC DE|cur 4 7|' ]"
+    ;;
+crtc)
+    echo "== crtc:  a background task's CRTC and DAC OUTs (QPI 0Dh/0Eh)"
+    run crtc 15 "C:\\CRTPRB.COM F C:\\F1.TXT ; C:\\CRTPRB.COM B C:\\B2.TXT" "$ROOT/build/CRTPRB.COM"
+    f1=$(file crtc F1.TXT | tr '\n' '|'); b2=$(file crtc B2.TXT | tr '\n' '|')
+    echo "  F1: $f1  B2: $b2"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/crtc/end.txt'"
+    check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
+    check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
+    check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
     ;;
 kbd)
     echo "== kbd:  the task's keyboard object (as under DV)"

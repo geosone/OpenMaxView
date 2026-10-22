@@ -41,7 +41,9 @@
 ; every other task is a private page (QPI 0Ah); a foreground change copies
 ; the screens and remaps them.  INT 10h of a background task leaves the
 ; hardware alone (mode, cursor shape, page, palette; the CRTC cursor goes
-; back to the foreground's).  IRQ1 runs the foreground's INT 09h with its
+; back to the foreground's).  A background task's own CRTC and DAC OUTs do
+; not reach the hardware either (QPI 0Dh/0Eh, crtset):  its cursor address
+; goes to its BIOS cursor, the rest is dropped.  IRQ1 runs the foreground's INT 09h with its
 ; key buffer; Ctrl+Alt+1..9 makes task 1..9 the foreground, Ctrl+Alt+0
 ; task 0; with mvk_dvkey also Alt pressed and released alone (DESQview's
 ; key).  These come by the BIOS keyboard intercept (INT 15h AH=4Fh).  A task in a DOS critical error (INT 24h:  no switching until it
@@ -196,6 +198,8 @@ root_pt  dw     0
 ntasks   dw     0
 cur      dw     0
 running  dw     0
+crtok    db     0               ; QPI 0Eh took our cursor callbacks
+crtmode  db     0               ; QPI 0Dh now:  0 off, 1 mono, 2 colour
 dvst_ptr dd     0               ; MAXVTSR's per-task state block
 dvst_size dw    0               ;   (0:  none)
 dvst_init dw    0               ;   what new tasks inherit of it
@@ -1219,6 +1223,7 @@ setfg   proc near
         cmp     dx,cs:fg
         je      sfg_ret
         inc     cs:insched
+        call    crtoff          ; (modes and the cursor on the hardware)
         push    cs:actpt        ; the context to come back to
         push    dx
         mov     bx,cs:fg
@@ -1270,12 +1275,117 @@ sfg_g1: mov     [di].T_HOLD,0
         pop     dx
         call    setctx
         call    fgcursor
+        call    crtset
         dec     cs:insched
 sfg_ret:
         pop     es
         popa
         ret
 setfg   endp
+
+; QPI 0Dh for the task now running (cur):  the foreground's own CRTC and
+; DAC, a background task's trapped (cursor address to crtget/crtset, the
+; rest dropped, as DESQview keeps background programs off them with QEMM)
+crtset  proc near
+        cmp     cs:crtok,0
+        je      cs_ret
+        push    ax
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        mov     ax,cs:cur
+        cmp     ax,cs:fg
+        mov     al,0
+        je      @F
+        mov     al,2
+        cmp     word ptr es:[463h],3B4h ; mono CRTC
+        jne     @F
+        mov     al,1
+@@:     cmp     al,cs:crtmode
+        je      @F
+        call    crtmode_set
+@@:     pop     es
+        pop     ax
+cs_ret: ret
+crtset  endp
+
+; the trapping off (the kernel programs the hardware itself)
+crtoff  proc near
+        cmp     cs:crtmode,0
+        je      @F
+        push    ax
+        xor     al,al
+        call    crtmode_set
+        pop     ax
+@@:     ret
+crtoff  endp
+
+crtmode_set proc near            ; AL = the 0Dh mode
+        push    ax
+        mov     cs:crtmode,al
+        mov     ah,0Dh
+        qpi
+        pop     ax
+        ret
+crtmode_set endp
+
+; QPI cursor callbacks (in the running task, V86):  BX = the CRTC cursor
+; address it reads (from its BIOS cursor, 40:50h) or writes (into it)
+crtget  proc far
+        push    ax
+        push    dx
+        push    ds
+        mov     ax,40h
+        mov     ds,ax
+        mov     bl,ds:[62h]     ; the active page's cursor
+        xor     bh,bh
+        shl     bx,1
+        mov     dx,ds:[50h+bx]  ; DH row, DL column
+        mov     al,dh
+        mul     byte ptr ds:[4Ah]
+        xor     dh,dh
+        add     ax,dx
+        mov     bx,ds:[4Eh]     ; + the page start
+        shr     bx,1
+        add     bx,ax
+        pop     ds
+        pop     dx
+        pop     ax
+        ret
+crtget  endp
+
+crtsetcb proc far
+        push    ax
+        push    dx
+        push    si
+        push    ds
+        mov     ax,40h
+        mov     ds,ax
+        mov     ax,bx
+        mov     dx,ds:[4Eh]
+        shr     dx,1
+        sub     ax,dx
+        jb      csc_ret
+        xor     dx,dx
+        mov     si,ds:[4Ah]
+        or      si,si
+        jz      csc_ret
+        div     si              ; AX row, DX column
+        cmp     ax,0FFh
+        ja      csc_ret
+        mov     dh,al
+        mov     al,ds:[62h]
+        xor     ah,ah
+        mov     si,ax
+        shl     si,1
+        mov     ds:[50h+si],dx
+csc_ret:
+        pop     ds
+        pop     si
+        pop     dx
+        pop     ax
+        ret
+crtsetcb endp
 
 ; the CRTC cursor of the foreground task (DS = DGROUP)
 fgcursor proc near
@@ -1607,6 +1717,7 @@ irq0_found:
         pop     dx
         call    load_ivtsda     ; (in the new one's)
         mov     cs:cur,dx
+        call    crtset
         dbg     'T'
 if MVDEBUG
         push    ax
@@ -1864,11 +1975,13 @@ i10_bios:
         call    dword ptr cs:old10
         pushf
         dec     cs:in10
+        cmp     cs:crtmode,0    ; trapped:  the CRTC is the foreground's
+        jne     @F
         push    ds
         mov     ds,cs:kseg
         call    fgcursor
         pop     ds
-        popf
+@@:     popf
         retf    2
 i10_mode:                       ; mode set:  recorded for the foreground;
         push    ax              ; text and CGA:  a blank screen, VGA
@@ -2618,6 +2731,24 @@ start_k proc near
         mov     ax,0D709h
         int     2Fh
         pop     bx
+        push    bx              ; QPI 0Eh:  our cursor callbacks (a
+        push    dx              ; background task's CRTC trapped, crtset)
+        push    ds
+        push    es
+        mov     ax,cs
+        mov     es,ax
+        mov     ds,ax
+        mov     bx,offset crtget
+        mov     dx,offset crtsetcb
+        mov     ax,0E00h
+        qpi
+        pop     es
+        pop     ds
+        pop     dx
+        pop     bx
+        jc      @F
+        mov     cs:crtok,1
+@@:
         xor     ax,ax
         jmp     short st_ret
 st_irqbad:
@@ -2650,6 +2781,8 @@ stop_k proc near
         call    setfg
         mov     cs:newfg,dx
         mov     cs:running,0
+        call    crtoff
+        mov     cs:crtok,0
         sti
         push    bx              ; MAXVTSR:  no more waits
         xor     bx,bx
