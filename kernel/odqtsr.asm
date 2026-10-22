@@ -1151,10 +1151,23 @@ int15_object_type_done:
 ; only an explicit live mailbox handle; every other class remains available
 ; to the previous INT 15h provider.
 int15_message_read_gateway:
+        cmp     bl,7                  ; the task's OBJECTQ
+        jne     short message_read_gateway_not7
+        jmp     int15_message_objectq_read
+message_read_gateway_not7:
         push    bp
         mov     bp,sp
         push    ax
         push    si
+        cmp     bl,6                  ; a task's:  only the own one
+        jne     short message_read_gateway_not6
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_read_gateway_chain
+        mov     ax,word ptr ss:[bp+12]
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short message_read_gateway_chain
+        jmp     short message_read_gateway_objectq
+message_read_gateway_not6:
         cmp     bl,0
         jne     short message_read_gateway_chain
         cmp     word ptr ss:[bp+10],0
@@ -1167,12 +1180,26 @@ int15_message_read_gateway:
         pop     bp
         jmp     int15_message_mailbox_read
 message_read_gateway_keyboard:
+        call    objectq_validate
+        jnc     short message_read_gateway_objectq_own
         call    keyboard_validate
         jc      short message_read_gateway_chain
         pop     si
         pop     ax
         pop     bp
         jmp     int15_message_keyboard_read
+message_read_gateway_objectq_own:
+        push    ax                    ; only the own one
+        call    caller_tag
+        xor     ah,ah
+        pop     si
+        cmp     ax,si
+        jne     short message_read_gateway_chain
+message_read_gateway_objectq:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_objectq_read
 message_read_gateway_chain:
         pop     si
         pop     ax
@@ -1332,6 +1359,9 @@ mailbox_read_pointer_ready:
         mov     al,byte ptr cs:mailbox_message_status[bx]
         mov     word ptr cs:mailbox_status[si],ax
         dec     word ptr cs:mailbox_count[si]
+        cmp     word ptr cs:mailbox_noted[si],0
+        je      short $+7
+        dec     word ptr cs:mailbox_noted[si]
         inc     word ptr cs:mailbox_head[si]
         cmp     word ptr cs:mailbox_head[si],MAILBOX_QUEUE_DEPTH
         jb      short mailbox_read_head_ready
@@ -1389,29 +1419,33 @@ int15_message_handle:
         cmp     bl,2                  ; that of the task on the stack
         je      short message_handle_task_mailbox
         cmp     bl,5                  ; current task's keyboard
-        je      short message_handle_keyboard
+        je      message_handle_keyboard
         cmp     bl,4                  ; that of the task on the stack
-        je      short message_handle_task_keyboard
-        cmp     bl,5                  ; OBJECTQ, parent:  not there
-        je      short message_handle_none
+        je      message_handle_task_keyboard
+        cmp     bl,7                  ; current task's OBJECTQ
+        je      short message_handle_objectq
+        cmp     bl,6                  ; that of the task on the stack
+        je      short message_handle_task_objectq
+        cmp     bl,5                  ; parent:  not there
+        je      message_handle_none
         cmp     bl,7
-        je      short message_handle_none
+        je      message_handle_none
         cmp     bl,0Dh
-        je      short message_handle_none
+        je      message_handle_none
         jmp     message_handle_null
 message_handle_stacked:
         cmp     word ptr ss:[bp+10],0
-        jne     short message_handle_null
+        jne     message_handle_null
         mov     ax,word ptr ss:[bp+12]
         push    ax                    ; any task's
         call    task_validate
         pop     ax
-        jnc     short message_handle_done
+        jnc     message_handle_done
         call    timer_validate
-        jnc     short message_handle_done
+        jnc     message_handle_done
         call    mailbox_validate
-        jc      short message_handle_null
-        jmp     short message_handle_done
+        jc      message_handle_null
+        jmp     message_handle_done
 message_handle_current:
         mov     ax,word ptr cs:task_handle_segment
         jmp     short message_handle_push
@@ -1424,6 +1458,23 @@ message_handle_task_mailbox:
         call    task_mailbox_of
         jc      short message_handle_null
         mov     ax,word ptr cs:mailbox_handle_segments[si]
+        mov     word ptr ss:[bp+12],ax
+        jmp     short message_handle_done
+message_handle_objectq:
+        mov     ax,word ptr cs:task_handle_segment
+        call    task_validate
+        jc      short message_handle_none
+        call    keyboard_of
+        inc     ax
+        jmp     short message_handle_push
+message_handle_task_objectq:
+        cmp     word ptr ss:[bp+10],0
+        jne     short message_handle_null
+        mov     ax,word ptr ss:[bp+12]
+        call    task_validate
+        jc      short message_handle_null
+        call    keyboard_of
+        inc     ax
         mov     word ptr ss:[bp+12],ax
         jmp     short message_handle_done
 message_handle_keyboard:
@@ -1488,11 +1539,17 @@ message_new_scan:
         je      short message_new_found
         add     si,2
         loop    message_new_scan
-        jmp     short message_new_done
+        jmp     message_new_done
 message_new_found:
         mov     word ptr cs:timer_used[si],1
         mov     word ptr cs:timer_open[si],0
         mov     word ptr cs:timer_state[si],0
+        mov     word ptr cs:timer_noted[si],0
+        push    ax
+        call    caller_tag
+        xor     ah,ah
+        mov     word ptr cs:timer_owner[si],ax
+        pop     ax
         mov     ax,word ptr cs:timer_handle_segments[si]
         mov     word ptr cs:message_result_ptr_seg,ax
         jmp     short message_new_done
@@ -1749,6 +1806,7 @@ timer_start_store:
         mov     word ptr cs:timer_duration_hi[si],dx
         mov     word ptr cs:timer_open[si],1
         mov     word ptr cs:timer_state[si],1
+        mov     word ptr cs:timer_noted[si],0
 timer_add_done:
         pop     si
         pop     dx
@@ -2673,6 +2731,9 @@ mailbox_readinto_source_ready:
         mov     al,byte ptr cs:mailbox_message_status[bx]
         mov     word ptr cs:mailbox_status[si],ax
         dec     word ptr cs:mailbox_count[si]
+        cmp     word ptr cs:mailbox_noted[si],0
+        je      short $+7
+        dec     word ptr cs:mailbox_noted[si]
         inc     word ptr cs:mailbox_head[si]
         cmp     word ptr cs:mailbox_head[si],MAILBOX_QUEUE_DEPTH
         jb      short mailbox_readinto_head_ready
@@ -3420,6 +3481,7 @@ mailbox_validate_done:
 ; not be scrubbed because no public pointer exposes resident queue storage.
 mailbox_clear_queue:
         mov     word ptr cs:mailbox_count[si],0
+        mov     word ptr cs:mailbox_noted[si],0
         mov     word ptr cs:mailbox_head[si],0
         mov     word ptr cs:mailbox_tail[si],0
         mov     word ptr cs:mailbox_bytes[si],0
@@ -3982,6 +4044,107 @@ keyboard_validate_no:
         stc
         ret
 
+; AX an OBJECTQ handle of a live task:  CF clear, AX = its tag; else CF.
+objectq_validate:
+        push    ax
+        dec     ax
+        call    keyboard_validate
+        jc      short objectq_validate_no
+        sub     ax,word ptr cs:keyboard_objects_base
+        shr     ax,1
+        inc     ax
+        add     sp,2
+        clc
+        ret
+objectq_validate_no:
+        pop     ax
+        stc
+        ret
+
+; READ of the task's OBJECTQ (BL=07h, 06h with the own task handle, 00h with
+; its OBJECTQ handle):  waits for an object of the task with input and gives
+; its handle (pushed for 07h, in place of the stacked one else), as
+; DESQview 2.80:  a timer of the task that expired, a mailbox of the task
+; with a message not given yet, the task's keyboard with a key; each
+; expiry and message once.  PAUSE while waiting.
+int15_message_objectq_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+objectq_read_wait:
+        call    caller_tag
+        xor     ah,ah
+        mov     dx,ax                 ; DX = the tag
+        xor     si,si
+        mov     cx,TIMER_SLOT_COUNT
+objectq_read_timer:
+        cmp     word ptr cs:timer_used[si],0
+        je      short objectq_read_timer_next
+        cmp     word ptr cs:timer_owner[si],dx
+        jne     short objectq_read_timer_next
+        cmp     word ptr cs:timer_noted[si],0
+        jne     short objectq_read_timer_next
+        push    dx
+        call    timer_elapsed         ; (expired:  state 2)
+        pop     dx
+        cmp     word ptr cs:timer_state[si],2
+        jne     short objectq_read_timer_next
+        mov     word ptr cs:timer_noted[si],1
+        mov     ax,word ptr cs:timer_handle_segments[si]
+        jmp     short objectq_read_found
+objectq_read_timer_next:
+        add     si,2
+        loop    objectq_read_timer
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+objectq_read_mailbox:
+        cmp     word ptr cs:mailbox_used[si],0
+        je      short objectq_read_mailbox_next
+        cmp     word ptr cs:mailbox_owner[si],dx
+        jne     short objectq_read_mailbox_next
+        mov     ax,word ptr cs:mailbox_noted[si]
+        cmp     ax,word ptr cs:mailbox_count[si]
+        jae     short objectq_read_mailbox_next
+        inc     word ptr cs:mailbox_noted[si]
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
+        jmp     short objectq_read_found
+objectq_read_mailbox_next:
+        add     si,2
+        loop    objectq_read_mailbox
+        mov     ah,1                  ; a key
+        int     16h
+        jz      short objectq_read_pause
+        mov     ax,dx
+        call    keyboard_of
+        jmp     short objectq_read_found
+objectq_read_pause:
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        jmp     objectq_read_wait
+objectq_read_found:
+        mov     word ptr cs:message_result_ptr_off,0
+        mov     word ptr cs:message_result_ptr_seg,ax
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        cmp     bl,7
+        jne     short objectq_read_replace
+        pop     ax
+        jmp     message_push4
+objectq_read_replace:
+        mov     word ptr ss:[bp+10],0
+        mov     word ptr ss:[bp+12],ax
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+
 ; AX = the keyboard of the task with tag AX (task_validate's).
 keyboard_of:
         dec     ax
@@ -4310,7 +4473,8 @@ initialize_task_loop:
         pop     ax
         ret
 
-; One keyboard object per task:  task N's is keyboard_objects_base + 2 * N.
+; One keyboard object per task:  task N's is keyboard_objects_base + 2 * N,
+; its OBJECTQ the paragraph after it.
 initialize_keyboard_objects:
         push    ax
         push    bx
@@ -4330,6 +4494,14 @@ initialize_keyboard_loop:
         mov     word ptr [bx+0Ah],ax
         mov     word ptr [bx+0Ch],0
         mov     word ptr [bx+0Eh],ax
+        inc     ax                    ; its second paragraph:  the task's
+        mov     word ptr [bx+14h],0FEDCh ; OBJECTQ (type 0Ch)
+        mov     word ptr [bx+16h],0Ch
+        mov     word ptr [bx+18h],0
+        mov     word ptr [bx+1Ah],ax
+        mov     word ptr [bx+1Ch],0
+        mov     word ptr [bx+1Eh],ax
+        dec     ax
         add     bx,TASK_OBJECT_SIZE
         add     ax,TASK_OBJECT_SIZE / 16
         loop    initialize_keyboard_loop
@@ -4688,6 +4860,8 @@ timer_used     dw TIMER_SLOT_COUNT dup(0)
 timer_handle_segments dw TIMER_SLOT_COUNT dup(0)
 timer_open     dw TIMER_SLOT_COUNT dup(0)
 timer_state    dw TIMER_SLOT_COUNT dup(0)
+timer_owner    dw TIMER_SLOT_COUNT dup(0) ; caller_tag at NEW
+timer_noted    dw TIMER_SLOT_COUNT dup(0) ; 1:  its expiry was in the OBJECTQ
 timer_start_lo dw TIMER_SLOT_COUNT dup(0)
 timer_start_hi dw TIMER_SLOT_COUNT dup(0)
 timer_duration_lo dw TIMER_SLOT_COUNT dup(0)
@@ -4703,6 +4877,7 @@ mailbox_sender dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_flags  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_name_length dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_noted  dw MAILBOX_SLOT_COUNT dup(0) ; of them, given by the OBJECTQ
 mailbox_head   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_tail   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_bytes  dw MAILBOX_SLOT_COUNT dup(0)

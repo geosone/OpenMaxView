@@ -71,6 +71,7 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   objq  the task's OBJECTQ (tests/obqprb.asm)
 #   kbd   the task's keyboard object (tests/kbdprb.asm):  READ waits for a
 #         key, gives its character (F1:  00)
 #   objs  DESQview objects of a task that ends (tests/leakprb.asm):  the
@@ -91,7 +92,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -435,6 +436,19 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+objq)
+    echo "== objq:  the task's OBJECTQ (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\OBQPRB.COM C:\\Q1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/Q.BAT"
+    CMD="C:\\Q.BAT" END="wait:MVRUN:_done:120 sleep:3" run objq 20 "" "$OUT/Q.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/OBQPRB.COM $TICK" \
+        "wait:obqprb_ready:60 sleep:3 key:x"
+    q1=$(file objq Q1.TXT | tr '\n' '|')
+    echo "  Q1: $q1"
+    h() { echo "$q1" | sed -n "s/.*$1 \([0-9A-F:]*\)|.*/\1/p" | head -1; }
+    kbd=$(h kbd); mbx=$(h mbx); tmr=$(h tmr)
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/objq/end.txt'"
+    check "HANDLE 07h:  an OBJECTQ beside the keyboard" "echo '$q1' | grep -q '^obq [0-9A-F]*:0000|' && [ -n '$kbd' ]"
+    check "READ 07h:  timer, mailbox, keyboard, timer again (as DV)" "echo '$q1' | grep -q '|r1 4 $tmr|r2 4 $mbx|r3 4 $kbd|r4 4 $tmr|'"
     ;;
 kbd)
     echo "== kbd:  the task's keyboard object (as under DV)"
