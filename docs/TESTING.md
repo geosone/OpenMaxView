@@ -82,6 +82,26 @@ checks:
 Temporary DOS trees are created below `build/`. The test does not touch a
 real DOS installation or proprietary reference media.
 
+## Multitasking tests on Open 386MAX
+
+`tests/qemu/mvtest.sh` boots MS-DOS 6.22 with Open 386MAX in QEMU through
+Open386MAX's `linux/test/dosboot.sh` (`MAXROOT`, default `../Open386MAX`,
+needs its `build/bin` and `build/TESTS`). The cases follow Open386MAX's
+DESQview test:
+
+| Case | Checks |
+|---|---|
+| `two` | two TICK tasks count side by side, COM1 output of one |
+| `mem` | each task its own conventional memory (same PSP, patterns kept) |
+| `serial` | a background task receives COM1 by IRQ4 and echoes 3000 bytes |
+| `keys` | screen and keys only for the foreground; Ctrl+Alt+n; waiting tasks yield |
+| `kill` | killed tasks end through DOS, a new one starts in a freed slot |
+| `crit` | a background critical error comes to the front |
+| `desk` | MAXVIEW.EXE starts programs as tasks, Alt, task list, exit |
+
+`MVDEBUG=1` assembles the core with trace characters on port E9h; the
+script stores them as `build/test-qemu/<case>.e9`.
+
 ## Before a release
 
 Run the complete build and test sequence from a clean tree:

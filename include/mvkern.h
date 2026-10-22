@@ -39,5 +39,9 @@ unsigned mvk_fg(void);
 /* End the task's programs (DOS terminates them, files closed); it is DONE
  * soon after, exit FFh.  0 or MVE_x. */
 int mvk_kill(unsigned task);
+/* The other tasks now (call while waiting). */
+void mvk_yield(void);
+/* on:  Alt pressed and released alone switches to task 0 (DESQview). */
+void mvk_dvkey(unsigned on);
 
 #endif

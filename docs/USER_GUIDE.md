@@ -49,6 +49,28 @@ Use the cursor keys to select a catalogue entry and Enter to launch it. If
 directly. The launcher returns after the DOS child exits. Esc requests exit;
 `CONFIRM_EXIT` controls whether confirmation is required.
 
+### Several programs at once
+
+On Open 386MAX (or QEMM) the launcher runs each program as a task of its
+own, with its own conventional memory, screen and keyboard, while the
+others go on in the background. A started program gets the full screen.
+
+* **Alt** pressed and released alone returns to the launcher, as in
+  DESQview; **Ctrl+Alt+0** does the same.
+* **Ctrl+Alt+1** to **Ctrl+Alt+7** switch directly to task 1 to 7.
+* **T** in the launcher lists the running programs: Enter switches to one,
+  **C** closes it (DOS ends it as if it had exited).
+* A program that ends gives the screen back to the launcher, which shows
+  its exit code.
+* A DOS critical error ("Abort, Retry, ...") of a background program comes
+  to the front by itself and must be answered first.
+* Leaving the launcher closes all running programs after a confirmation.
+
+Without QPI the launcher runs one program at a time as before. Up to seven
+programs can run at once. Known limits of this first version: the current
+directory is shared by all programs, only the first text page is kept per
+program, and graphics screens are not yet saved.
+
 Press F2 to inspect the selected program's launch fields and retained DVP
 process profile. The resource-contract line distinguishes requested feature
 classes from those currently enforced; a pending bit is never silently

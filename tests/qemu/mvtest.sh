@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -33,6 +33,10 @@
 #         error prompt comes to the foreground and keeps it (Ctrl+Alt+1
 #         ignored; meanwhile all tasks wait, as under DOS), Ignore ("u"
 #         German, "i" English) answers it, CRITPRB ends, TICK counts on
+#   desk  MAXVIEW.EXE itself (with its resident services):  TICK and
+#         KEYPROBE started from the menu, Alt back to the menu, the task
+#         list switches to KEYPROBE, which ends; exit closes TICK, DOS
+#         works afterwards
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -43,11 +47,11 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit}
+CASES=${*:-two mem serial keys kill crit desk}
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
-    build/KEYPROBE.COM build/CRITPRB.COM || exit 2
+    build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -56,10 +60,10 @@ run() {     # case, seconds, MVRUN task list, more files, steps before the end
     rm -rf "$dir"; mkdir -p "$dir"
     KEEP=1 ACCEL="-accel tcg" XFILES="$ROOT/build/MVRUN.EXE ${4:-}" \
         QEMU_EXTRA="-debugcon file:$OUT/$1.e9 ${SERIAL:--serial file:$OUT/$1.com1}" \
-        AUTO="C:\\MVRUN ${FG:-}$2 $3" \
-        STEPS="${5:-} wait:MVRUN:_done:$(($2 * 3 + 120)) text:end" TESTDIR="$dir" \
+        AUTO="${CMD:-C:\\MVRUN ${FG:-}$2 $3}" \
+        STEPS="${5:-} ${END:-wait:MVRUN:_done:$(($2 * 3 + 120))} text:end" TESTDIR="$dir" \
         "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/$1.log" 2>&1
-    grep -q "MVRUN: done" "$dir/end.txt" 2>/dev/null ||
+    [ -n "${END:-}" ] || grep -q "MVRUN: done" "$dir/end.txt" 2>/dev/null ||
         { echo "  MVRUN did not end:"; grep -v '^\s*$' "$dir/fail.txt" 2>/dev/null | tail -4; }
 }
 
@@ -163,6 +167,26 @@ crit)
     check "Ctrl+Alt+1 ignored meanwhile" "grep -q 'critprobe start' '$d/crit2.txt' && ! grep -q 'MVRUN' '$d/crit2.txt'"
     check "answered:  CRITPRB went on" "[ \"\${c2#open }\" != \"\$c2\" ]"
     check "TICK counts on" "[ $t1 -ge 20 ]"
+    ;;
+desk)
+    echo "== desk:  MAXVIEW.EXE runs programs as tasks"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'T|Tick counter|C:\\TICK.EXE C:\\T1.TXT||64|640\r\nK|Key probe|C:\\KEYPROBE.COM C:\\K2.TXT D||64|640\r\n' > "$cfg"
+    CMD="C:\\MAXVIEW" END="wait:desk_end:30" run desk 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" \
+        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Open_Program:20 text:desk1 key:down key:ret wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Open_Program:20 key:t wait:Enter:_switch:10 text:tasks key:down key:ret wait:keyprobe_D_ready:20 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:esc wait:exit_to_DOS:10 text:confirm key:y gone:Open_Program:20 sleep:2 type:echo_desk_end"
+    d=$OUT/desk
+    k2=$(file desk K2.TXT); t1=$(last desk T1.TXT tick)
+    echo "  K2 '$k2', T1 $t1"
+    check "desktop up, multitasking" "grep -q 'Open Program' '$d/desk0.txt' && ! grep -q 'One program at a time' '$d/desk0.txt'"
+    check "TICK on its own screen" "[ -f '$d/tick.txt' ] && ! grep -q 'Open Program' '$d/tick.txt'"
+    check "Alt back to the desktop" "grep -q 'as task 1' '$d/desk1.txt'"
+    check "task list" "grep -q 'Tick counter' '$d/tasks.txt' && grep -q 'Key probe' '$d/tasks.txt'"
+    check "KEYPROBE got its keys" "[ '$k2' = xyz ]"
+    check "end reported" "grep -q 'Key probe ended' '$d/ended.txt' && grep -q 'code 0' '$d/ended.txt'"
+    check "exit closes TICK" "grep -q 'Close 1 running' '$d/confirm.txt'"
+    check "TICK counted meanwhile" "[ $t1 -ge 10 ]"
+    check "DOS works afterwards" "grep -q '^desk end' '$d/end.txt'"
     ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac

@@ -15,51 +15,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mvhost.h"
 #include "mvkern.h"
 
-extern unsigned _psp;
-
-static const char *errtext(int e)
-{
-    switch (e) {
-    case MVE_NOQPI: return "no QPI (Open 386MAX or QEMM needed)";
-    case MVE_BASE:  return "no free memory block at the task base";
-    case MVE_SDA:   return "no DOS swappable data area";
-    case MVE_FULL:  return "too many tasks";
-    case MVE_MEM:   return "QPI memory or context call failed";
-    case MVE_IRQ:   return "QPI IRQ calldowns failed";
-    case MVE_STATE: return "not allowed now";
-    }
-    return "error";
-}
+#define errtext mvhost_error
 
 static unsigned long ticks(void)
 {
     return *(unsigned long far *)MK_FP(0x40, 0x6c);
-}
-
-/* Shrink our block so that the next MCB lies on a 4KB boundary:  the
- * task base.  Small model:  code, then DGROUP of at most 64KB. */
-static unsigned set_base(void)
-{
-    union REGS r;
-    struct SREGS s;
-    unsigned dg, base;
-
-    segread(&s);
-    dg = s.ds;
-    base = (unsigned)(((unsigned long)dg + 0x1000u + 0xffu) & 0xff00u);
-    if ((unsigned long)dg + 0x1000u + 0xffu > 0xffffu)
-        return 0;
-    r.h.ah = 0x4a;
-    /* our MCB is at P-1, a block of N paragraphs from P puts the next
-     * MCB at P+N:  N = base - P */
-    r.x.bx = base - _psp;
-    s.es = _psp;
-    intdosx(&r, &r, &s);
-    if (r.x.cflag)
-        return 0;
-    return base;
 }
 
 int main(int argc, char **argv)
@@ -68,7 +31,6 @@ int main(int argc, char **argv)
     static char ltail[128];
     const char *lprog = 0;
     int ntask = 0, i, t, rc, fg = 0, ksecs = 0;
-    unsigned base;
     unsigned long secs, start, n;
 
     while (argc > 1 && (argv[1][0] == '/' || argv[1][0] == '-')) {
@@ -86,12 +48,7 @@ int main(int argc, char **argv)
         return 2;
     }
     secs = strtoul(argv[1], 0, 10);
-    base = set_base();
-    if (base == 0) {
-        puts("MVRUN: cannot set the task base");
-        return 1;
-    }
-    rc = mvk_init(base);
+    rc = mvhost_init();
     if (rc != 0) {
         printf("MVRUN: %s\n", errtext(rc));
         return 1;

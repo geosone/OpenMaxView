@@ -30,7 +30,8 @@
 ; hardware alone (mode, cursor shape, page, palette; the CRTC cursor goes
 ; back to the foreground's).  IRQ1 runs the foreground's INT 09h with its
 ; key buffer; Ctrl+Alt+1..9 makes task 1..9 the foreground, Ctrl+Alt+0
-; task 0.  A task in a DOS critical error (INT 24h:  no switching until it
+; task 0; with mvk_dvkey also Alt pressed and released alone (DESQview's
+; key).  A task in a DOS critical error (INT 24h:  no switching until it
 ; is answered) becomes the foreground, and stays it until then.
 ;
 ; A task starts in TASK_ENTRY:  a stub PSP of its own at the task base,
@@ -129,6 +130,8 @@ origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
         public  mvk_setfg_
         public  mvk_fg_
         public  mvk_kill_
+        public  mvk_yield_
+        public  mvk_dvkey_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -155,6 +158,8 @@ fg       dw     0               ; foreground task
 newfg    dw     0               ; wanted (hotkey)
 wantsw   dw     0               ; scheduler:  switch tasks
 yieldf   dw     0               ; scheduler:  the task waits
+altpend  dw     0               ; Alt pressed, no other key since
+dvkey    dw     0               ; Alt alone:  task 0
 fgss     dw     0
 fgsp     dw     0
 old10    dd     0
@@ -1317,8 +1322,31 @@ irqd_other:
         call    irqd_ctx
         jmp     irqd_ret
 irqd_kbd:
-        ; Ctrl+Alt+1..9, 0:  that task to the foreground (key consumed)
         in      al,60h
+        ; Alt released alone:  task 0 (the break goes on to the foreground)
+        cmp     al,0B8h
+        jne     ik_alt
+        xor     bx,bx
+        xchg    bx,cs:altpend   ; pressed alone?
+        or      bx,bx
+        jz      irqk_fg
+        cmp     cs:dvkey,0
+        je      irqk_fg
+        les     bx,cs:sda_ptr   ; not during a critical error
+        cmp     byte ptr es:[bx],0
+        jne     irqk_fg
+        mov     cs:newfg,0
+        dbg     'A'
+        jmp     irqk_fg
+ik_alt: test    al,80h          ; another key pressed:  no Alt alone
+        jnz     ik_ctl
+        xor     bx,bx
+        cmp     al,38h
+        jne     @F
+        inc     bx
+@@:     mov     cs:altpend,bx
+ik_ctl:
+        ; Ctrl+Alt+1..9, 0:  that task to the foreground (key consumed)
         cmp     al,02h
         jb      irqk_fg
         cmp     al,0Bh
@@ -1668,6 +1696,21 @@ mvk_kill_ proc near
 kl_ret: pop     bx
         ret
 mvk_kill_ endp
+
+; void mvk_yield(void):  the other tasks now (a waiting task)
+mvk_yield_ proc near
+        cmp     cs:running,0
+        je      @F
+        call    yield
+@@:     ret
+mvk_yield_ endp
+
+; void mvk_dvkey(unsigned on):  Alt pressed and released alone switches to
+; task 0
+mvk_dvkey_ proc near
+        mov     cs:dvkey,ax
+        ret
+mvk_dvkey_ endp
 
 ; unsigned mvk_fg(void):  the foreground task
 mvk_fg_ proc near

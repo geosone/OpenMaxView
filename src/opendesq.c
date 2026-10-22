@@ -9,6 +9,8 @@
 
 #include "catalog.h"
 #include "maxbackend.h"
+#include "mvhost.h"
+#include "mvkern.h"
 #include "mvprocess.h"
 #include "odqapi.h"
 #include "scheduler.h"
@@ -29,6 +31,14 @@
 #define ATTR_SHADOW       0x08
 #define MAXVANSI_MUX_QUERY     0xd710
 #define MAXVANSI_MUX_SIGNATURE 0x4e41
+
+/* Multitasking (kernel/mvkern.asm on Open 386MAX or QEMM):  each program
+ * a task of its own, full screen; we are task 0, Alt alone comes back.
+ * Without QPI programs run one at a time in the foreground. */
+static int mv_on;
+static char task_title[MVK_MAXTASK][ODQ_TITLE_LEN + 1];
+static unsigned char task_live[MVK_MAXTASK];
+static unsigned tasks_open(void);
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
 
@@ -309,8 +319,12 @@ static void show_diagnostics(const mv_scheduler *scheduler)
         write_at(13, 12, "Open 386MAX MaxView backend: not detected",
                  ATTR_ACTIVE);
     }
-    sprintf(line, "Task ledger: %u runnable; foreground execution",
-            mv_scheduler_runnable(scheduler));
+    if (mv_on)
+        sprintf(line, "Multitasking: %u program(s), %lu switches",
+                tasks_open(), mvk_switches());
+    else
+        sprintf(line, "Task ledger: %u runnable; foreground execution",
+                mv_scheduler_runnable(scheduler));
     write_at(16, 12, line, ATTR_ACTIVE);
     write_at(18, 12, "Press any key to return.", ATTR_ACTIVE);
     getch();
@@ -381,6 +395,10 @@ static void show_help(void)
     write_at(11, 16, "F2            Program information", ATTR_ACTIVE);
     write_at(12, 16, "D             System diagnostics", ATTR_ACTIVE);
     write_at(13, 16, "Esc or Q      Exit Open MaxView", ATTR_ACTIVE);
+    if (mv_on) {
+        write_at(14, 16, "T             Running programs", ATTR_ACTIVE);
+        write_at(15, 16, "Alt (alone)   Back here from a program", ATTR_ACTIVE);
+    }
     write_at(16, 16, "Press any key to return.", ATTR_ACTIVE);
     getch();
 }
@@ -388,8 +406,15 @@ static void show_help(void)
 static int confirm_exit(void)
 {
     int key;
+    char line[40];
+
     frame(8, 17, 15, 62, "Leave Open MaxView");
-    write_at(10, 21, "Exit to DOS?", ATTR_ACTIVE);
+    if (tasks_open() != 0) {
+        sprintf(line, "Close %u running program(s) and", tasks_open());
+        write_at(10, 21, line, ATTR_ACTIVE);
+        write_at(11, 21, "exit to DOS?", ATTR_ACTIVE);
+    } else
+        write_at(10, 21, "Exit to DOS?", ATTR_ACTIVE);
     write_at(12, 21, "Press Y to exit or N to continue.", ATTR_ACTIVE);
     do {
         key = toupper(getch());
@@ -434,6 +459,157 @@ static void reload_catalog_after_child(odq_catalog *catalog,
         *selected = 0;
     else if (*selected >= catalog->count)
         *selected = catalog->count - 1;
+}
+
+static unsigned tasks_open(void)
+{
+    unsigned t, n = 0;
+
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t])
+            ++n;
+    return n;
+}
+
+static void start_multitasking(char *status)
+{
+    int rc = mvhost_init();
+
+    if (rc == 0)
+        rc = mvk_start(2);
+    if (rc != 0) {
+        mvk_stop();
+        sprintf(status, "One program at a time: %.40s.", mvhost_error(rc));
+        return;
+    }
+    mvk_dvkey(1);
+    mv_on = 1;
+}
+
+/* ask the tasks to end, wait for them (5 s at most), stop the core */
+static void stop_multitasking(void)
+{
+    unsigned long start = *(unsigned long far *)MK_FP(0x40, 0x6c);
+    unsigned t;
+
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t])
+            mvk_kill(t);
+    while (*(unsigned long far *)MK_FP(0x40, 0x6c) - start < 91) {
+        for (t = 1; t < MVK_MAXTASK; ++t)
+            if (task_live[t] && mvk_state(t) == MVK_READY)
+                break;
+        if (t == MVK_MAXTASK)
+            break;
+        mvk_yield();
+    }
+    mvk_stop();
+    mv_on = 0;
+}
+
+/* tasks that ended:  status, 1 */
+static int poll_tasks(char *status)
+{
+    unsigned t;
+
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t] && mvk_state(t) != MVK_READY) {
+            task_live[t] = 0;
+            sprintf(status, "%.40s ended, code %u.", task_title[t],
+                    mvk_exit(t) & 0xff);
+            return 1;
+        }
+    return 0;
+}
+
+/* a key; -1:  a task ended (redraw) */
+static int wait_key(char *status)
+{
+    while (!kbhit()) {
+        if (!mv_on)
+            continue;
+        if (poll_tasks(status))
+            return -1;
+        mvk_yield();
+    }
+    return getch();
+}
+
+static int launch_task(const odq_program *program, char *status)
+{
+    static char tail[ODQ_COMMAND_LEN + 8];
+    const char *shell = getenv("COMSPEC");
+    int t;
+
+    if (shell == NULL)
+        shell = "C:\\COMMAND.COM";
+    /* the current directory is not per task yet:  it stays changed */
+    if (program->directory[0] != '\0' && chdir(program->directory) != 0) {
+        sprintf(status, "Cannot change to %.52s", program->directory);
+        return -1;
+    }
+    sprintf(tail, " /C %.120s", program->command);
+    t = mvk_create(shell, tail);
+    if (t < 0) {
+        sprintf(status, "%.30s: %.40s.", program->title, mvhost_error(-t));
+        return -1;
+    }
+    strcpy(task_title[t], program->title);
+    task_live[t] = 1;
+    sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
+    mvk_setfg(t);
+    return 0;
+}
+
+static void show_tasks(char *status)
+{
+    unsigned list[MVK_MAXTASK], n, i, t, sel = 0;
+    int key;
+    char line[60];
+
+    for (;;) {
+        poll_tasks(status);
+        n = 0;
+        for (t = 1; t < MVK_MAXTASK; ++t)
+            if (task_live[t])
+                list[n++] = t;
+        if (n != 0 && sel >= n)
+            sel = n - 1;
+        frame(4, 10, 19, 69, "Tasks");
+        if (n == 0)
+            write_at(8, 14, "No programs are running.", ATTR_ACTIVE);
+        for (i = 0; i < n; ++i) {
+            sprintf(line, " %u  %-38s Ctrl+Alt+%u ", list[i],
+                    task_title[list[i]], list[i]);
+            write_at(6 + i, 13, line, i == sel ? ATTR_QUICK : ATTR_ACTIVE);
+        }
+        write_at(17, 14, "Enter: switch to  C: close  Esc: back",
+                 ATTR_ACTIVE);
+        key = wait_key(status);
+        if (key == -1)
+            continue;
+        if (key == 0 || key == 0xe0) {
+            key = getch();
+            if (key == 72 && sel > 0)
+                --sel;
+            else if (key == 80 && sel + 1 < n)
+                ++sel;
+            continue;
+        }
+        key = toupper(key);
+        if (key == 27)
+            return;
+        if (n == 0)
+            continue;
+        if (key == 13) {
+            mvk_setfg(list[sel]);
+            return;
+        }
+        if (key == 'C') {
+            mvk_kill(list[sel]);
+            sprintf(status, "%.40s is being closed.", task_title[list[sel]]);
+        }
+    }
 }
 
 static int launch(const odq_program *program, char *status,
@@ -523,11 +699,14 @@ int main(void)
     reload_settings(&settings);
 
     apply_resident_services(&settings, status);
+    start_multitasking(status);
     initialise_video();
 
     for (;;) {
         show_desktop(&catalog, selected, status, &settings);
-        key = getch();
+        key = wait_key(status);
+        if (key == -1)
+            continue;
         if (key == 0 || key == 0xe0) {
             key = getch();
             if (key == 59)
@@ -543,12 +722,21 @@ int main(void)
         }
         key = toupper(key);
         if (key == 'Q' || key == 27) {
-            if (!settings.confirm_exit || confirm_exit())
+            if ((!settings.confirm_exit && tasks_open() == 0) ||
+                confirm_exit())
                 break;
+            continue;
+        }
+        if (key == 'T' && mv_on) {
+            show_tasks(status);
             continue;
         }
         if (key == 'D') {
             show_diagnostics(&scheduler);
+            continue;
+        }
+        if (key == 13 && catalog.count != 0 && mv_on) {
+            launch_task(&catalog.programs[selected], status);
             continue;
         }
         if (key == 13 && catalog.count != 0) {
@@ -563,6 +751,10 @@ int main(void)
             for (index = 0; index < catalog.count; ++index)
                 if (catalog.programs[index].hotkey == key) {
                     selected = index;
+                    if (mv_on) {
+                        launch_task(&catalog.programs[selected], status);
+                        break;
+                    }
                     launch(&catalog.programs[selected], status, &scheduler);
                     reload_settings(&settings);
                     apply_resident_services(&settings, status);
@@ -571,6 +763,8 @@ int main(void)
                 }
         }
     }
+    if (mv_on)
+        stop_multitasking();
     prepare_child_screen();
     return 0;
 }
