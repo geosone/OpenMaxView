@@ -71,6 +71,8 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   records numbered field records (tests/numprb.asm)
+#   selects select fields by key (tests/selprb.asm)
 #   fields input fields in field mode (tests/fldprb.asm)
 #   objq  the task's OBJECTQ (tests/obqprb.asm)
 #   kbd   the task's keyboard object (tests/kbdprb.asm):  READ waits for a
@@ -93,7 +95,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -437,6 +439,29 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+records)
+    echo "== records:  numbered field records, modes 10b/11b (as under DV)"
+    for m in 2 3; do
+        printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\NUMPRB.COM %s C:\\N%s.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' $m $m > "$OUT/N$m.BAT"
+        k=b; [ $m = 3 ] && k=c
+        CMD="C:\\N$m.BAT" END="wait:MVRUN:_done:120 sleep:3" run records$m 20 "" "$OUT/N$m.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/NUMPRB.COM $TICK" \
+            "wait:numprb_ready:60 sleep:3 key:a sleep:1 key:$k sleep:1 key:ret"
+    done
+    n2=$(file records2 N2.TXT | tr '\n' '|'); n3=$(file records3 N3.TXT | tr '\n' '|')
+    echo "  N2: $n2"; echo "  N3: $n3"
+    check "mode 10b:  all three, 'b' typed into field 1 (as DV)" "echo '$n2' | grep -q '^r 00000012 01 05 00 61 62 .. .. .. 02 01 00 4E 03 03 00 .. .. ..|st 00000000|hdr 03 42 01 00 70 1F 81 C0 80|'"
+    check "mode 11b:  only the modified field 1 (as DV)" "echo '$n3' | grep -q '^r 00000008 01 05 00 61 63 .. .. ..|st 00000000|hdr 03 43 01 00 70 1F 81 C0 80|'"
+    ;;
+selects)
+    echo "== selects:  select fields by key (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\SELPRB.COM C:\\S1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/S.BAT"
+    CMD="C:\\S.BAT" END="wait:MVRUN:_done:120 sleep:3" run selects 20 "" "$OUT/S.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/SELPRB.COM $TICK" \
+        "wait:selprb_ready:60 sleep:3 key:x sleep:1 key:b"
+    s1=$(file selects S1.TXT | tr '\n' '|')
+    echo "  S1: $s1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/selects/end.txt'"
+    check "x ignored, b:  N Y N, status 1, field 2 in 1Fh and C3h (as DV)" "[ '$s1' = 'r 00000003 4E 59 4E|st 00000001|at 07 1F 07|hdr 03 41 00 00 70 1F C0 C3 C0|' ]"
     ;;
 fields)
     echo "== fields:  input fields in field mode (as under DV)"

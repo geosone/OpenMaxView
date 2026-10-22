@@ -2184,8 +2184,10 @@ window_field_op:
         add     ax,6
         add     si,ax
         cmp     si,di
-        jbe     field_op_ok
+        jbe     short field_op_ff_paint
         mov     si,di
+field_op_ff_paint:
+        call    field_paint_selects
         jmp     field_op_ok
 field_op_not_ff:
         cmp     al,0FDh               ; FDh, FEh:  modified / and selected
@@ -2578,7 +2580,12 @@ field_read_not_tab:
         jmp     short field_read_key
 field_read_not_btab:
         or      si,si
-        jz      short field_read_key  ; in no field:  nothing
+        jnz     short field_read_in_field
+        call    field_select_key      ; outside a fill-in field:  a select
+        jnc     short field_read_key  ; field's key selects it, returns with
+        mov     al,1                  ; status 1; others nothing
+        jmp     field_read_done
+field_read_in_field:
         mov     cx,si
         push    ax
         mov     al,cl
@@ -2702,6 +2709,110 @@ field_read_result:
         pop     ax
         ret
 
+; The select fields (class 11b) in their colour:  the header's selected
+; attribute when selected, else their own (entry byte 6), as DESQview.
+field_paint_selects:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        call    field_count
+        jc      short field_paint_ret
+        mov     dl,1
+field_paint_one:
+        mov     al,dl
+        call    field_entry
+        call    field_paint
+        inc     dl
+        loop    field_paint_one
+field_paint_ret:
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; field ES:BX, if a select field, in its colour.
+field_paint:
+        push    ax
+        mov     al,byte ptr es:[bx+4]
+        and     al,0C0h
+        cmp     al,0C0h
+        jne     short field_paint_done
+        mov     al,byte ptr es:[bx+6]
+        test    byte ptr es:[bx+4],02h
+        jz      short field_paint_attr
+        push    es
+        push    bx
+        les     bx,dword ptr cs:field_header
+        mov     al,byte ptr es:[bx+5]
+        pop     bx
+        pop     es
+field_paint_attr:
+        call    field_fill_attr
+field_paint_done:
+        pop     ax
+        ret
+
+; key AL:  with keyboard selection (header bit 6) the select field with
+; that activation key (either case) selected and modified, painted; CF set
+; then.
+field_select_key:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        or      al,al
+        jz      short field_select_no
+        cmp     al,'a'
+        jb      short field_select_case
+        cmp     al,'z'
+        ja      short field_select_case
+        sub     al,20h
+field_select_case:
+        mov     ah,al
+        les     bx,dword ptr cs:field_header
+        test    byte ptr es:[bx+1],40h
+        jz      short field_select_no
+        call    field_count
+        jc      short field_select_no
+        mov     dl,1
+field_select_one:
+        mov     al,dl
+        call    field_entry
+        mov     al,byte ptr es:[bx+4]
+        and     al,0C0h
+        cmp     al,0C0h
+        jne     short field_select_next
+        mov     al,byte ptr es:[bx+5]
+        cmp     al,'a'
+        jb      short field_select_cmp
+        cmp     al,'z'
+        ja      short field_select_cmp
+        sub     al,20h
+field_select_cmp:
+        cmp     al,ah
+        jne     short field_select_next
+        or      byte ptr es:[bx+4],03h
+        call    field_paint
+        stc
+        jmp     short field_select_ret
+field_select_next:
+        inc     dl
+        loop    field_select_one
+field_select_no:
+        clc
+field_select_ret:
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; SI = the fill-in field the cursor is in (0:  none).
 field_current:
         push    ax
@@ -2771,23 +2882,67 @@ field_step_ret:
         ret
 
 ; CX = the bytes of all fields' characters (packed, in field order) in
-; field_buffer (FIELD_BUFFER_SIZE at most); the cursor kept.
+; field_buffer (FIELD_BUFFER_SIZE at most), as numbered records in the
+; header's modes 10b/11b; the cursor kept.
 field_data:
         push    ax
         push    bx
         push    dx
+        push    si
         push    di
         push    es
         call    field_cursor_get
         push    dx
         mov     di,offset field_buffer
         call    field_count
-        jc      short field_data_end
+        jc      field_data_end
         mov     al,1
 field_data_field:
         push    cx
         push    ax
         call    field_entry
+        xor     si,si                 ; modes 10b/11b:  numbered records,
+        push    es                    ; byte field, word length, the data
+        push    bx                    ; (11b:  modified fields only)
+        les     bx,dword ptr cs:field_header
+        mov     ah,byte ptr es:[bx+1]
+        pop     bx
+        pop     es
+        test    ah,02h
+        jz      short field_data_plain
+        test    ah,01h
+        jz      short field_data_record
+        test    byte ptr es:[bx+4],01h
+        jz      short field_data_next
+field_data_record:
+        cmp     di,offset field_buffer + FIELD_BUFFER_SIZE - 3
+        ja      short field_data_next
+        mov     si,di
+        mov     byte ptr cs:[di],al
+        add     di,3
+field_data_plain:
+        mov     ah,byte ptr es:[bx+4] ; a select field:  "Y" / "N" (header
+        and     ah,0C0h               ; bit 3 clear)
+        cmp     ah,0C0h
+        jne     short field_data_chars
+        push    es
+        push    bx
+        les     bx,dword ptr cs:field_header
+        test    byte ptr es:[bx+1],08h
+        pop     bx
+        pop     es
+        jnz     short field_data_chars
+        cmp     di,offset field_buffer + FIELD_BUFFER_SIZE
+        jae     short field_data_next
+        mov     al,'N'
+        test    byte ptr es:[bx+4],02h
+        jz      short field_data_yn
+        mov     al,'Y'
+field_data_yn:
+        mov     byte ptr cs:[di],al
+        inc     di
+        jmp     short field_data_next
+field_data_chars:
         call    field_first_cell
 field_data_cell:
         cmp     di,offset field_buffer + FIELD_BUFFER_SIZE
@@ -2803,10 +2958,19 @@ field_data_cell:
         call    field_next_cell
         loop    field_data_cell
 field_data_next:
+        or      si,si
+        jz      short field_data_unnumbered
+        mov     ax,di
+        sub     ax,si
+        sub     ax,3
+        mov     word ptr cs:[si+1],ax
+field_data_unnumbered:
         pop     ax
         pop     cx
         inc     al
-        loop    field_data_field
+        dec     cx
+        jz      short field_data_end
+        jmp     field_data_field
 field_data_end:
         pop     dx
         call    field_cursor_set
@@ -2814,6 +2978,7 @@ field_data_end:
         sub     cx,offset field_buffer
         pop     es
         pop     di
+        pop     si
         pop     dx
         pop     bx
         pop     ax
