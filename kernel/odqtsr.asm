@@ -62,6 +62,8 @@
 ;   INT 2Fh AX=D707h                 per-task state block (for the core)
 ;                                    with the GETMEM pool
 ;   INT 2Fh AX=D708h, BX=task        a task ended:  free its objects
+;   INT 2Fh AX=D709h, BX=1/0         the multitasking core switches / no
+;                                    longer:  READ of an empty mailbox waits
 
 DV_VERSION     equ 0250h        ; 2.80:  BH major, BL minor in binary (as DV)
 MUX_STATUS     equ 0D700h
@@ -73,6 +75,7 @@ MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
 MUX_TASK_STATE equ 0D707h
 MUX_TASK_END   equ 0D708h
+MUX_CORE       equ 0D709h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
 MUX_VERSION    equ 0024h
 CAPABILITIES   equ 0FFFFh
@@ -255,6 +258,10 @@ int15_handler:
         je      short int15_message_dispatch
         jmp     int15_not_message
 int15_message_dispatch:
+        cmp     bl,3                  ; the current task's mailbox
+        jne     short message_dispatch_go
+        jmp     message_default_mailbox
+message_dispatch_go:
         cmp     bh,0                  ; HANDLE
         je      short int15_dispatch_handle
         cmp     bh,1                  ; NEW
@@ -1251,6 +1258,8 @@ mailbox_read_valid:
 mailbox_read_open:
         cmp     word ptr cs:mailbox_count[si],0
         jne     short mailbox_read_available
+        call    mailbox_wait
+        jnc     mailbox_read_open
         jmp     mailbox_read_done
 mailbox_read_available:
         mov     dx,si
@@ -1342,9 +1351,9 @@ int15_message_handle:
         je      short message_handle_stacked
         cmp     bl,1                  ; current task's window
         je      short message_handle_current
-        cmp     bl,3                  ; current task's mailbox, keyboard,
-        je      short message_handle_none ; OBJECTQ, parent:  not there
-        cmp     bl,5
+        cmp     bl,3                  ; current task's mailbox
+        je      short message_handle_mailbox
+        cmp     bl,5                  ; keyboard, OBJECTQ, parent:  not there
         je      short message_handle_none
         cmp     bl,7
         je      short message_handle_none
@@ -1364,6 +1373,11 @@ message_handle_stacked:
         jmp     short message_handle_done
 message_handle_current:
         mov     ax,word ptr cs:task_handle_segment
+        jmp     short message_handle_push
+message_handle_mailbox:
+        call    task_mailbox
+        jc      short message_handle_none
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
         jmp     short message_handle_push
 message_handle_none:
         xor     ax,ax
@@ -1658,6 +1672,7 @@ timer_add_mailbox:
         jne     short timer_add_done
         call    mailbox_validate
         jc      short timer_add_done
+        call    message_swap22
         call    mailbox_add_value
         pop     si
         pop     dx
@@ -1670,6 +1685,7 @@ timer_add_mailbox:
 timer_write_mailbox:
         call    mailbox_validate
         jc      short timer_write_mailbox_done
+        call    message_swap18
         call    mailbox_write_value
 timer_write_mailbox_done:
         pop     si
@@ -1696,6 +1712,7 @@ int15_message_mailbox_ref:
         mov     ax,word ptr ss:[bp+12]
         call    mailbox_validate
         jc      short mailbox_ref_done
+        call    message_swap22
         call    mailbox_add_reference
 mailbox_ref_done:
         pop     si
@@ -1739,6 +1756,7 @@ message_erase_done:
 int15_message_mailbox_setname:
         push    bp
         mov     bp,sp
+        call    message_swap18
         push    ax
         push    bx
         push    cx
@@ -1817,8 +1835,8 @@ int15_message_window_at:
         ja      short window_at_done
         cmp     word ptr ss:[bp+18],00FFh
         ja      short window_at_done
-        mov     dh,byte ptr ss:[bp+14]
-        mov     dl,byte ptr ss:[bp+18]
+        mov     dl,byte ptr ss:[bp+14] ; column on top, as DESQview
+        mov     dh,byte ptr ss:[bp+18]
         jmp     short window_at_apply
 window_at_default:
         cmp     word ptr ss:[bp+12],0
@@ -1829,8 +1847,8 @@ window_at_default:
         ja      short window_at_done
         cmp     word ptr ss:[bp+14],00FFh
         ja      short window_at_done
-        mov     dh,byte ptr ss:[bp+10]
-        mov     dl,byte ptr ss:[bp+14]
+        mov     dl,byte ptr ss:[bp+10]
+        mov     dh,byte ptr ss:[bp+14]
 window_at_apply:
         mov     si,dx
         mov     ah,0Fh
@@ -1877,6 +1895,7 @@ window_at_shift_default:
 int15_message_mailbox_getname:
         push    bp
         mov     bp,sp
+        call    message_swap18
         push    ax
         push    bx
         push    cx
@@ -1945,6 +1964,7 @@ mailbox_getname_done:
 int15_message_mailbox_readinto:
         push    bp
         mov     bp,sp
+        call    message_swap18
         push    ax
         push    bx
         push    cx
@@ -1977,6 +1997,8 @@ mailbox_readinto_handle_ok:
 mailbox_readinto_open:
         cmp     word ptr cs:mailbox_count[si],0
         jne     short mailbox_readinto_available
+        call    mailbox_wait
+        jnc     mailbox_readinto_open
         jmp     mailbox_readinto_done
 mailbox_readinto_available:
         or      dx,dx
@@ -2722,6 +2744,11 @@ int15_ustack:
         iret
 
 int15_handled:
+        cmp     byte ptr cs:message_bl3,0 ; (BL as the caller passed it)
+        je      short int15_handled_bl
+        mov     bl,3
+        mov     byte ptr cs:message_bl3,0
+int15_handled_bl:
         popf
         iret
 int15_chain:
@@ -3144,9 +3171,162 @@ message_push4:
         mov     ax,word ptr cs:message_saved_ax
         jmp     int15_handled
 
+; BL = 03h, the current task's mailbox, for a mailbox message:  its handle
+; goes on the caller's stack as if the caller had pushed it, with BL = 00h,
+; and the message takes it as any (BL is 03h again at the return).  HANDLE,
+; NEW, FREE and the messages without a mailbox meaning go on unchanged, as
+; when there is no mailbox for the task (the pool is full).
+message_default_mailbox:
+        cmp     bh,3
+        jb      short message_default_go
+        cmp     bh,6
+        je      short message_default_go
+        cmp     bh,7
+        je      short message_default_go
+        cmp     bh,10h
+        je      short message_default_go
+        cmp     bh,14h
+        je      short message_default_go
+        cmp     bh,16h
+        ja      short message_default_go
+        push    ax
+        push    si
+        call    task_mailbox
+        jc      short message_default_none
+        mov     ax,word ptr cs:mailbox_handle_segments[si]
+        pop     si
+        push    bp
+        mov     bp,sp                 ; BP, AX, PUSHF, IP, CS, FLAGS
+        sub     sp,4
+        push    si
+        mov     si,word ptr ss:[bp]
+        mov     word ptr ss:[bp-4],si
+        mov     si,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp-2],si
+        mov     si,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp],si
+        mov     si,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+2],si
+        mov     si,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+4],si
+        mov     si,word ptr ss:[bp+10]
+        mov     word ptr ss:[bp+6],si
+        mov     word ptr ss:[bp+8],0  ; the handle, where the caller's
+        mov     word ptr ss:[bp+10],ax ; stack top was
+        pop     si
+        pop     bp
+        pop     ax
+        xor     bl,bl
+        mov     byte ptr cs:message_bl3,1
+        jmp     message_dispatch_go
+message_default_none:
+        pop     si
+        pop     ax
+message_default_go:
+        jmp     message_dispatch_go
+
+; SI = the word index of the calling task's own mailbox, CF:  none.  Made
+; (open, as DESQview gives every task one) at its first use; it goes when
+; the task ends (D708h).
+task_mailbox:
+        push    ax
+        push    cx
+        call    caller_tag
+        xor     ah,ah
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+task_mailbox_scan:
+        cmp     word ptr cs:mailbox_used[si],0
+        je      short task_mailbox_next
+        cmp     word ptr cs:mailbox_default[si],0
+        je      short task_mailbox_next
+        cmp     word ptr cs:mailbox_owner[si],ax
+        je      short task_mailbox_done
+task_mailbox_next:
+        add     si,2
+        loop    task_mailbox_scan
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+task_mailbox_free:
+        cmp     word ptr cs:mailbox_used[si],0
+        je      short task_mailbox_new
+        add     si,2
+        loop    task_mailbox_free
+        stc
+        jmp     short task_mailbox_ret
+task_mailbox_new:
+        mov     word ptr cs:mailbox_used[si],1
+        mov     word ptr cs:mailbox_owner[si],ax
+        mov     word ptr cs:mailbox_default[si],1
+        mov     word ptr cs:mailbox_open[si],1
+        mov     word ptr cs:mailbox_status[si],0
+        mov     word ptr cs:mailbox_sender[si],0
+        mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_name_length[si],0
+        call    mailbox_clear_queue
+task_mailbox_done:
+        clc
+task_mailbox_ret:
+        pop     cx
+        pop     ax
+        ret
+
+; READ and READINTO of an empty open mailbox wait for a message, as under
+; DESQview, while the multitasking core switches (D709h):  one PAUSE, then
+; the mailbox (BP+10, the explicit handle) again.  CF:  no wait (no core,
+; or the mailbox is gone or closed); else SI is its index again.
+mailbox_wait:
+        cmp     byte ptr cs:core_running,0
+        je      short mailbox_wait_no
+        push    ax
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short mailbox_wait_gone
+        cmp     word ptr cs:mailbox_open[si],1
+        jne     short mailbox_wait_gone
+        pop     ax
+        clc
+        ret
+mailbox_wait_gone:
+        pop     ax
+mailbox_wait_no:
+        stc
+        ret
+
+; DESQview's order of the DWORDs below a mailbox handle (RBIL's, top
+; first:  length on the address, status on length and address) is not the
+; one these handlers read:  swap the DWORDs at BP+14 and BP+18 (WRITE,
+; SETNAME, GETNAME, READINTO), or at BP+14 and BP+22 (ADDTO, SUBFROM),
+; so they find them where they look.
+message_swap18:
+        push    ax
+        mov     ax,word ptr ss:[bp+14]
+        xchg    ax,word ptr ss:[bp+18]
+        mov     word ptr ss:[bp+14],ax
+        mov     ax,word ptr ss:[bp+16]
+        xchg    ax,word ptr ss:[bp+20]
+        mov     word ptr ss:[bp+16],ax
+        pop     ax
+        ret
+message_swap22:
+        push    ax
+        mov     ax,word ptr ss:[bp+14]
+        xchg    ax,word ptr ss:[bp+22]
+        mov     word ptr ss:[bp+14],ax
+        mov     ax,word ptr ss:[bp+16]
+        xchg    ax,word ptr ss:[bp+24]
+        mov     word ptr ss:[bp+16],ax
+        pop     ax
+        ret
+
 ; Release the mailbox with word index SI.
 mailbox_release:
         mov     word ptr cs:mailbox_used[si],0
+        mov     word ptr cs:mailbox_default[si],0
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_sender[si],0
@@ -3381,6 +3561,13 @@ int2f_not_sound_info:
         jne     short int2f_not_task_end
         jmp     int2f_task_end
 int2f_not_task_end:
+        cmp     ax,MUX_CORE
+        jne     short int2f_not_core
+        mov     byte ptr cs:core_running,bl
+        xor     ax,ax
+        popf
+        iret
+int2f_not_core:
         cmp     ax,MUX_TASK_STATE
         jne     short int2f_not_task_state
         push    cs
@@ -3543,6 +3730,7 @@ task_stack_return_cs dw 0
 task_stack_return_flags dw 0
 message_saved_ax dw 0
 message_saved_bp dw 0
+message_bl3    db 0                   ; BL was 03h (the task's mailbox)
 message_result_len_lo dw 0
 message_result_len_hi dw 0
 message_result_ptr_off dw 0
@@ -3579,6 +3767,8 @@ timer_duration_lo dw TIMER_SLOT_COUNT dup(0)
 timer_duration_hi dw TIMER_SLOT_COUNT dup(0)
 mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_owner  dw MAILBOX_SLOT_COUNT dup(0) ; caller_tag at NEW
+mailbox_default dw MAILBOX_SLOT_COUNT dup(0) ; 1:  its owner's own mailbox
+core_running   db 0                   ; D709h
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)

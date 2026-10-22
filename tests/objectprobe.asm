@@ -211,7 +211,8 @@ enumerate_loop:
         jne     failed
         add     si,2
         loop    enumerate_loop
-        mov     ax,0DE2Bh
+enumerate_rest:                       ; then mailboxes at most (a task's own
+        mov     ax,0DE2Bh             ; lives as long as the task), then null
         int     15h
         or      ax,ax
         jnz     failed
@@ -219,7 +220,13 @@ enumerate_loop:
         jnz     failed
         mov     ax,es
         or      ax,ax
-        jnz     failed
+        jz      short enumerate_done
+        mov     ax,0DE14h
+        int     15h
+        cmp     bl,09h
+        je      enumerate_rest
+        jmp     failed
+enumerate_done:
 
         ; FREE invalidates one handle and NEW deterministically reuses it.
         mov     ax,word ptr timer_segments+2

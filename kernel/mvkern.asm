@@ -2613,6 +2613,11 @@ start_k proc near
         mov     cs:running,1
         dbg     'S'
         sti
+        push    bx              ; MAXVTSR:  READ may wait now
+        mov     bx,1
+        mov     ax,0D709h
+        int     2Fh
+        pop     bx
         xor     ax,ax
         jmp     short st_ret
 st_irqbad:
@@ -2646,6 +2651,11 @@ stop_k proc near
         mov     cs:newfg,dx
         mov     cs:running,0
         sti
+        push    bx              ; MAXVTSR:  no more waits
+        xor     bx,bx
+        mov     ax,0D709h
+        int     2Fh
+        pop     bx
         mov     ax,1C00h
         qpi
         xor     ax,ax

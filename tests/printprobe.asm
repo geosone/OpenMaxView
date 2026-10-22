@@ -30,13 +30,13 @@ start:
 
         ; Selector 01h positions the current task's default window.
         xor     ax,ax
+        push    ax                    ; row high word (the column on top,
+        mov     ax,2                  ; as DESQview)
+        push    ax                    ; row low word
+        xor     ax,ax
         push    ax                    ; column high word
         mov     ax,2
         push    ax                    ; column low word
-        xor     ax,ax
-        push    ax                    ; row high word
-        mov     ax,2
-        push    ax                    ; row low word
         mov     ax,1200h
         mov     bx,1101h
         int     15h
@@ -48,13 +48,13 @@ start:
 
         ; Selector 00h accepts the explicit foreground-window handle.
         xor     ax,ax
+        push    ax                    ; row high word (the column on top,
+        mov     ax,2                  ; as DESQview)
+        push    ax                    ; row low word
+        xor     ax,ax
         push    ax                    ; column high word
         mov     ax,3
         push    ax                    ; column low word
-        xor     ax,ax
-        push    ax                    ; row high word
-        mov     ax,2
-        push    ax                    ; row low word
         push    word ptr window_segment
         xor     ax,ax
         push    ax                    ; window offset

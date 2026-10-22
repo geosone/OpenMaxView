@@ -261,21 +261,23 @@ window). They work
 with `IS_OBJECT`, `OBJECT_TYPE`, `OBJNEXT`, `HANDLE` selector `00h`, `FREE`,
 `OPEN`, `CLOSE`, `ERASE` and `STATUS`. Capability
 `ODQ_CAP3_MAILBOX_QUEUE` adds a bounded by-value `ADDTO` queue. Each mailbox
-holds four messages of at most 128 bytes. Push the status, length and source
-address first, followed by the mailbox handle so the handle is on top:
+holds four messages of at most 128 bytes. The arguments below the handle are
+in DESQview's order, top first as RBIL lists them (measured under DESQview
+2.80):  push the source address first, then the length, then the status,
+and the mailbox handle last so it is on top:
 
 ```asm
-        xor     ax,ax
-        push    ax                    ; status high word
-        mov     ax,7
-        push    ax                    ; status low byte is significant
+        push    ds                    ; source segment
+        mov     ax,offset message
+        push    ax                    ; source offset
         xor     ax,ax
         push    ax                    ; length high word must be zero
         mov     ax,message_end-message
         push    ax                    ; length low word
-        push    ds                    ; source segment
-        mov     ax,offset message
-        push    ax                    ; source offset
+        xor     ax,ax
+        push    ax                    ; status high word
+        mov     ax,7
+        push    ax                    ; status low byte is significant
         push    es                    ; mailbox segment
         push    di                    ; mailbox offset (currently zero)
         mov     ax,1200h
@@ -291,19 +293,20 @@ nonempty record, or a length above 128 bytes returns Carry set without
 changing the queue.
 `STATUS` is reserved for the status of the last message read and remains zero
 until a message is consumed. When `ODQ_CAP3_MAILBOX_READINTO` is set, push the
-destination capacity first, then its far pointer, then the mailbox handle and
-send `BH=13h`. The service consumes the handle and pointer, leaving the
-capacity DWORD replaced by the number of bytes copied. It consumes the oldest
+destination far pointer first, then its capacity, then the mailbox handle and
+send `BH=13h`. The service consumes the handle and capacity, leaving the
+pointer DWORD replaced by the number of bytes copied. It consumes the oldest
 record and exposes that record's low-byte status through `STATUS`. If the
 buffer is short, the copy is truncated and the whole record is consumed.
 
 When `ODQ_CAP3_MAILBOX_WRITE` is set, `WRITE` (`BH=05h`) provides the shorter
-status-zero mailbox form. Push the length DWORD, source far pointer and
-mailbox handle in that order. It has the same copy, size, open/full and Carry
+status-zero mailbox form. Push the source far pointer, the length DWORD and
+the mailbox handle in that order (the length on the address, as DESQview). It has the same copy, size, open/full and Carry
 rules as `ADDTO`, but consumes 12 stack bytes and records status zero.
 
 Capability `ODQ_CAP3_MAILBOX_REFERENCE` enables `SUBFROM` (`BH=0Bh`). Its
-stack layout matches `ADDTO`: status, length, far address and mailbox handle.
+stack layout matches `ADDTO`: mailbox handle on top, then status, length and
+far address.
 Unlike `ADDTO`, the payload is not copied. Keep the complete source range
 allocated and valid until a read or destructive mailbox operation removes
 the record. `READ` returns that same pointer; `READINTO` dereferences it when
@@ -323,10 +326,37 @@ current single-task implementation records the foreground task, but callers
 should treat the returned value as an opaque task handle so they remain ready
 for multi-context senders.
 
-An empty `READ` or `READINTO` currently returns zero/null with Carry set.
-Original DESQview blocks in that case; compatible waiting requires the future
-scheduler. Task-default selectors remain unavailable. Do not infer blocking
-behavior from queue capability bit 4, ready-copy bit 5 or pointer-read bit 9.
+An empty `READ` or `READINTO` waits for a message, as under DESQview, while
+the multitasking core runs tasks (MVRUN, MAXVIEW:  it reports that with
+`D709h`); it gives up its time slice with `PAUSE` meanwhile and returns
+zero/null with Carry set when the mailbox is freed or closed. Without the
+core (a sole program) it returns zero/null with Carry set at once.
+
+Every task has a mailbox of its own, as under DESQview:  `HANDLE` selector
+`03h` pushes it, and `BL=03h` instead of a handle on the stack selects it for
+the mailbox messages (`READ`, `WRITE`, `ADDTO`, `SUBFROM`, `SIZEOF`, `LEN`,
+`OPEN`, `CLOSE`, `ERASE`, `STATUS`, `SETNAME`, `GETNAME`, `READINTO`,
+`SETFLAGS`, `GETFLAGS`). It is made, open, from the shared pool at its first
+use and goes when the task ends. A server names it and waits:
+
+```asm
+        push    ds                    ; name address
+        push    offset name
+        push    0                     ; name length (on top)
+        push    name_end-name
+        mov     ax,1200h
+        mov     bx,1103h              ; SETNAME, own mailbox
+        int     15h
+        mov     ax,1200h
+        mov     bx,0403h              ; READ own mailbox:  waits
+        int     15h
+        pop     cx                    ; length (low, high)
+        pop     dx
+        pop     si                    ; address (offset, segment)
+        pop     es
+```
+
+and a client finds it with `FINDMAIL` (`DE0Eh`) and sends with `WRITE`.
 
 Capability `ODQ_CAP3_MAILBOX_FLAGS` enables `SETFLAGS` (`BH=15h`) and
 `GETFLAGS` (`BH=16h`) for explicit mailbox handles. The supported bits are
@@ -339,36 +369,36 @@ not request DV/X stream or expanded-memory flags: they are masked out.
 
 Capability `ODQ_CAP3_MAILBOX_NAMES` enables bounded mailbox naming. Names are
 explicit byte strings of at most `ODQ_MAILBOX_NAME_MAX` bytes, not C strings.
-For `SETNAME` (`BH=11h`), push the length DWORD, far source pointer and mailbox
-handle in that order; the call consumes all three. For `GETNAME` (`BH=12h`),
-push the destination capacity, far destination pointer and handle. The call
-consumes the pointer and handle and replaces the capacity DWORD with the
-number of bytes copied; it does not append a NUL.
+For `SETNAME` (`BH=11h`), push the far source pointer, the length DWORD and
+the mailbox handle in that order; the call consumes all three. For `GETNAME`
+(`BH=12h`), push the far destination pointer, the capacity and the handle.
+The call consumes the capacity and handle and replaces the pointer DWORD with
+the number of bytes copied; it does not append a NUL.
 
 To locate a named mailbox, pass its address in `ES:DI`, byte length in `CX`
 and call `INT 15h` with `AX=DE0Eh`. `BX=1` returns the handle in `DS:SI`;
 `BX=0` means no exact match. Current 0.x matching is case-sensitive and scans
-the two live mailbox slots in stable order. A zero-length name clears a
+the eight live mailbox slots in stable order. A zero-length name clears a
 mailbox through `SETNAME` but is not a searchable name.
 
 ## Text video
 
 Window `AT` (`AH=12h`, `BH=11h`) positions the logical text cursor. For the
-task-default window, push a column DWORD and then a row DWORD and use
-`BL=01h`; the call consumes eight bytes. For an explicit window, additionally
+task-default window, push a row DWORD and then a column DWORD (the column on
+top, as DESQview) and use `BL=01h`; the call consumes eight bytes. For an explicit window, additionally
 push its handle last and use `BL=00h`; the call consumes twelve bytes. The
 current foreground implementation accepts valid coordinates on the active
 BIOS text page. Both high words must be zero.
 
 ```asm
         xor     ax,ax
-        push    ax                    ; column high
-        mov     ax,20
-        push    ax                    ; column low
-        xor     ax,ax
         push    ax                    ; row high
         mov     ax,5
         push    ax                    ; row low
+        xor     ax,ax
+        push    ax                    ; column high
+        mov     ax,20
+        push    ax                    ; column low
         mov     ax,1200h
         mov     bx,1101h              ; AT task-default window
         int     15h

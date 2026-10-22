@@ -60,10 +60,9 @@ start:
         or      ax,ax
         jnz     failed
 
-        ; Selector 03h remains null until a task-default mailbox exists.
-        xor     ax,ax
-        push    ax
-        push    ax
+        ; Selector 03h pushes the task's own mailbox (made at its first use,
+        ; as DESQview gives every task one):  a mailbox object, the same
+        ; handle again.
         mov     ax,1200h
         mov     bx,0003h
         int     15h
@@ -73,7 +72,20 @@ start:
         jnz     failed
         mov     ax,es
         or      ax,ax
-        jnz     failed
+        jz      failed
+        mov     word ptr own_mailbox,ax
+        mov     ax,0DE14h             ; OBJECT TYPE:  mailbox
+        int     15h
+        cmp     bl,09h
+        jne     failed
+        mov     ax,1200h
+        mov     bx,0003h
+        int     15h
+        pop     di
+        pop     es
+        mov     ax,es
+        cmp     ax,word ptr own_mailbox
+        jne     failed
 
         mov     dx,offset passed_msg
         mov     ah,09h
@@ -89,6 +101,7 @@ failed:
         int     21h
 
 expected_segment dw 0
+own_mailbox dw 0
 passed_msg db 'MAXVTSR HANDLE message passed.',13,10,'$'
 failed_msg db 'MAXVTSR HANDLE message failed.',13,10,'$'
 

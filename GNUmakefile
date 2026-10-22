@@ -104,6 +104,12 @@ $(BUILD)/dvtask.obj: tests/dvtask.asm | $(BUILD)
 $(BUILD)/DVTASK.COM: $(BUILD)/dvtask.obj
 	cd $(BUILD) && $(JWLINK) format dos com name DVTASK.COM option quiet option map=DVTASK.MAP file dvtask.obj
 
+$(BUILD)/ipcprb.obj: tests/ipcprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/IPCPRB.COM: $(BUILD)/ipcprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name IPCPRB.COM option quiet option map=IPCPRB.MAP file ipcprb.obj
+
 $(BUILD)/leakprb.obj: tests/leakprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

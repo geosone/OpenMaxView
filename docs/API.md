@@ -33,21 +33,22 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=01h BL=09h` | Pushes a mailbox handle or null | `NEW`; bounded eight-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, object DWORD on caller stack | Releases a live timer or mailbox and pops the DWORD; invalid handles are ignored | `FREE`; bounded dynamic objects |
 | `INT 15h AH=12h BH=03h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with the sender task handle of the last consumed record | Mailbox `ADDR`; null before the first successful read |
-| `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length followed by a resident pointer DWORD | Mailbox `READ`; Carry on empty instead of blocking |
+| `INT 15h AH=12h BL=03h` (`BH` a mailbox message) | The current task's own mailbox (made, open, at its first use) in place of a handle on the stack | As DESQview's task mailbox; `HANDLE 03h` pushes it |
+| `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length (on top) followed by a resident pointer DWORD | Mailbox `READ`; waits on empty while the multitasking core runs (D709h), else Carry |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
-| `INT 15h AH=12h BH=05h BL=00h`, length, address and mailbox DWORDs on caller stack | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |
+| `INT 15h AH=12h BH=05h BL=00h`, mailbox, length, address DWORDs (top first) | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=08h BL=00h`, object DWORD on caller stack | Replaces handle with elapsed hundredths or queued-message count | Timer/mailbox `SIZEOF` |
 | `INT 15h AH=12h BH=09h BL=00h`, object DWORD on caller stack | Replaces handle with remaining hundredths or total queued bytes | Timer/mailbox `LEN` |
 | `INT 15h AH=12h BH=0Ah BL=00h`, timer then duration DWORDs on caller stack | Starts a relative timer and pops both DWORDs | Timer `ADDTO`; duration below handle |
-| `INT 15h AH=12h BH=0Ah BL=00h`, status, length, address and mailbox DWORDs on caller stack | Copies and queues up to 128 bytes; pops all four DWORDs | Mailbox `ADDTO`; four-entry queue, Carry on failure |
-| `INT 15h AH=12h BH=0Bh BL=00h`, status, length, address and mailbox DWORDs on caller stack | Queues a caller-owned far pointer and pops all four DWORDs | Mailbox `SUBFROM`; four-entry queue, Carry on failure |
+| `INT 15h AH=12h BH=0Ah BL=00h`, mailbox, status, length, address DWORDs (top first) | Copies and queues up to 128 bytes; pops all four DWORDs | Mailbox `ADDTO`; four-entry queue, Carry on failure |
+| `INT 15h AH=12h BH=0Bh BL=00h`, mailbox, status, length, address DWORDs (top first) | Queues a caller-owned far pointer and pops all four DWORDs | Mailbox `SUBFROM`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=0Ch/0Dh BL=00h`, object DWORD on caller stack | Opens/closes timer or mailbox and pops handle | `OPEN`/`CLOSE`; mailbox close discards queued mail |
 | `INT 15h AH=12h BH=0Eh BL=00h`, object DWORD on caller stack | Cancels a timer or empties a mailbox and pops handle | `ERASE` |
 | `INT 15h AH=12h BH=0Fh BL=00h`, object DWORD on caller stack | Replaces handle with state/status DWORD | Timer state or retained mailbox last-read status |
-| `INT 15h AH=12h BH=11h BL=00h/01h`, column and row DWORDs, plus explicit window DWORD for selector 00h | Positions the foreground logical text cursor and pops the arguments | Window `AT`; explicit or task-default foreground window |
-| `INT 15h AH=12h BH=11h BL=00h`, length, address and mailbox DWORDs on caller stack | Copies up to 32 name bytes and pops all three DWORDs | Mailbox `SETNAME`; zero length clears |
-| `INT 15h AH=12h BH=12h BL=00h`, capacity, destination and mailbox DWORDs on caller stack | Copies a non-terminated name and leaves a DWORD byte count | Mailbox `GETNAME`; bounded explicit handle |
-| `INT 15h AH=12h BH=13h BL=00h`, size, destination and mailbox DWORDs on caller stack | Copies and consumes the oldest message; leaves a DWORD byte count | Mailbox `READINTO`; Carry on empty/invalid instead of blocking |
+| `INT 15h AH=12h BH=11h BL=00h/01h`, column (on top) and row DWORDs, below the explicit window DWORD for selector 00h | Positions the foreground logical text cursor and pops the arguments | Window `AT`; explicit or task-default foreground window |
+| `INT 15h AH=12h BH=11h BL=00h`, mailbox, length, address DWORDs (top first) | Copies up to 32 name bytes and pops all three DWORDs | Mailbox `SETNAME`; zero length clears |
+| `INT 15h AH=12h BH=12h BL=00h`, mailbox, capacity, destination DWORDs (top first) | Copies a non-terminated name and leaves a DWORD byte count in the destination's place | Mailbox `GETNAME`; bounded explicit handle |
+| `INT 15h AH=12h BH=13h BL=00h`, mailbox, size, destination DWORDs (top first) | Copies and consumes the oldest message; leaves a DWORD byte count in the destination's place | Mailbox `READINTO`; Carry on empty/invalid instead of blocking |
 | `INT 15h AH=12h BH=15h BL=00h`, flags then mailbox DWORDs on caller stack | Stores supported low flag bits and pops both DWORDs | Mailbox `SETFLAGS`; bits 0-2 only |
 | `INT 15h AH=12h BH=16h BL=00h`, mailbox DWORD on caller stack | Replaces handle with current supported flags | Mailbox `GETFLAGS` |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
@@ -250,6 +251,7 @@ applications expecting the DESQview interface.
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
 | `D705h` | `BX=3FFFh` extended compatibility capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
+| `D709h` | `BX=1`:  the multitasking core switches tasks now, `BX=0`:  no longer (it calls it); `READ`/`READINTO` of an empty mailbox wait only meanwhile |
 | `D708h` | `BX` = a task that ended (the multitasking core calls it):  its mailboxes are freed (the owner is the task's `APPNUM` at `NEW`; its `GETMEM` pool goes with its state block), its common memory and timers stay, as DESQview 2.80 when a window is closed |
 | `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, OSTACK state and stack, then the `GETMEM` pool), `CX` = its size, `DX` = the part a new task inherits (the pool starts free); the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window |
 

@@ -579,7 +579,8 @@ mailbox_addr:
         ret
 
 ; AX is the mailbox segment, DX the status, CX the byte length and DS:SI the
-; message address. ADDTO consumes status, length, address and handle DWORDs.
+; message address. ADDTO consumes handle, status, length and address DWORDs
+; (top first).
 mailbox_add_value:
         push    bp
         mov     bp,sp
@@ -587,12 +588,12 @@ mailbox_add_value:
         push    di
         mov     di,ax
         xor     ax,ax
-        push    ax                    ; status high word
+        push    ds                    ; message segment (DESQview's order:
+        push    si                    ; message offset   the address deepest,
+        push    ax                    ; length high word then the length, the
+        push    cx                    ; length low word  status, the mailbox
+        push    ax                    ; status high word on top)
         push    dx                    ; status low word
-        push    ax                    ; length high word
-        push    cx                    ; length low word
-        push    ds                    ; message segment
-        push    si                    ; message offset
         push    di                    ; mailbox segment
         push    ax                    ; mailbox offset
         mov     ax,1200h
@@ -612,12 +613,12 @@ mailbox_add_reference:
         push    di
         mov     di,ax
         xor     ax,ax
-        push    ax                    ; status high word
+        push    ds                    ; message segment (DESQview's order:
+        push    si                    ; message offset   the address deepest,
+        push    ax                    ; length high word then the length, the
+        push    cx                    ; length low word  status, the mailbox
+        push    ax                    ; status high word on top)
         push    dx                    ; status low word
-        push    ax                    ; length high word
-        push    cx                    ; length low word
-        push    ds                    ; message segment
-        push    si                    ; message offset
         push    di                    ; mailbox segment
         push    ax                    ; mailbox offset
         mov     ax,1200h
@@ -635,10 +636,10 @@ mailbox_write_value:
         push    di
         mov     di,ax
         xor     ax,ax
+        push    ds                    ; message segment (the length on the
+        push    si                    ; message offset   address, as DESQview)
         push    ax                    ; length high word
         push    cx                    ; length low word
-        push    ds                    ; message segment
-        push    si                    ; message offset
         push    di                    ; mailbox segment
         push    ax                    ; mailbox offset
         mov     ax,1200h
@@ -681,10 +682,10 @@ mailbox_readinto:
         push    si
         mov     si,ax
         xor     ax,ax
-        push    ax                    ; capacity high word
-        push    cx                    ; capacity low word / result storage
-        push    es                    ; destination segment
-        push    di                    ; destination offset
+        push    es                    ; destination segment / result storage
+        push    di                    ; destination offset  (the capacity on
+        push    ax                    ; capacity high word   it, as DESQview)
+        push    cx                    ; capacity low word
         push    si                    ; mailbox segment
         push    ax                    ; mailbox offset
         mov     ax,1200h
@@ -722,10 +723,10 @@ mailbox_setname:
         push    di
         mov     di,ax
         xor     ax,ax
+        push    ds                    ; name segment (the length on the
+        push    si                    ; name offset   address, as DESQview)
         push    ax                    ; length high word
         push    cx                    ; length low word
-        push    ds                    ; name segment
-        push    si                    ; name offset
         push    di                    ; mailbox segment
         push    ax                    ; mailbox offset
         mov     ax,1200h
@@ -742,10 +743,10 @@ mailbox_getname:
         push    si
         mov     si,ax
         xor     ax,ax
-        push    ax                    ; capacity high word
-        push    cx                    ; capacity low word / result storage
-        push    es                    ; destination segment
-        push    di                    ; destination offset
+        push    es                    ; destination segment / result storage
+        push    di                    ; destination offset  (the capacity on
+        push    ax                    ; capacity high word   it, as DESQview)
+        push    cx                    ; capacity low word
         push    si                    ; mailbox segment
         push    ax                    ; mailbox offset
         mov     ax,1200h

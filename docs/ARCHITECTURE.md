@@ -243,8 +243,8 @@ network-specific ABI is to be added to Open 386MAX.
 | Task-private API stack | bounded foreground implementation | `OSTACK`/`USTACK` switch to 512 resident bytes and restore exact user `SS:SP` |
 | Foreground DOS EXEC | implemented | Ordinary COM/EXE/BAT programs run one at a time |
 | Object messages | partial | `HANDLE` stack ABI plus bounded timer control and mailbox writes; blocking messages planned |
-| Timers | nonblocking subset implemented | Four identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
-| Mailboxes | bounded nonblocking queue subset implemented | Two identities, four copied messages each, lifecycle/query/read, erase and base `SETFLAGS`/`GETFLAGS`; empty blocking wait planned |
+| Timers | nonblocking subset implemented | Sixteen identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
+| Mailboxes | bounded queue subset implemented | Eight identities (a task's own among them), four copied messages each, lifecycle/query/read, erase and base `SETFLAGS`/`GETFLAGS`; READ waits while the multitasking core runs |
 | Panels and further mailbox operations | planned | DESQview-specific dynamic object API |
 | Scheduler policy | bounded foundation | 16 generation-tagged lifecycle slots, saved V86 register/PIC images, context ownership, round-robin dispatch and critical exclusion |
 | VM context lifecycle | bounded foundation | Current-task activation, fail-closed root/Windows transition and ordered context teardown over the single owned QPI clone |

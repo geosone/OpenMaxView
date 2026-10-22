@@ -65,6 +65,8 @@
 #   deskmany  MAXVIEW.EXE with 12 programs (11 TICKs, KEYPROBE):  the task
 #         list scrolls (10 rows), IDs 1-9 then A, B, C; Enter on the last
 #         one (C) gives it screen and keys
+#   ipc   task mailboxes (tests/ipcprb.asm):  a server names its own
+#         mailbox and waits in READ, a client finds it and writes to it
 #   objs  DESQview objects of a task that ends (tests/leakprb.asm):  the
 #         stack effect of NEW/HANDLE/FREE as DESQview 2.80; a task takes a
 #         GETMEM and a GETCOMMON block, a mailbox and a timer and ends:  the
@@ -83,7 +85,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -91,7 +93,7 @@ EXPECT_VDSFUNC='physical = linear FAIL'
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
-    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM || exit 2
+    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -366,6 +368,21 @@ objs)
     check "common block and timer kept (as DV)" "[ '$(get "$c2" com)' = \$(( $(get "$c1" com) - 1 )) ] && [ '$(get "$c2" tmr)' = \$(( $(get "$c1" tmr) - 1 )) ]"
     check "the same after MVRUN" "[ '$c3' = '$c2' ]"
     check "GETMEM per task:  all for one, all for the other at once" "[ '$h1' = 'hold 8 ' ] && [ '$(get "$d2" sys)' = 8 ]"
+    ;;
+ipc)
+    echo "== ipc:  task mailboxes, a server and a client (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN 15 C:\\IPCPRB.COM S C:\\S1.TXT ; C:\\IPCPRB.COM C C:\\C2.TXT\r\n' > "$OUT/I.BAT"
+    CMD="C:\\I.BAT" END="wait:MVRUN:_done:120 sleep:3" run ipc 15 "" "$OUT/I.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/IPCPRB.COM"
+    s1=$(file ipc S1.TXT | tr '\n' '|'); c2=$(file ipc C2.TXT | tr '\n' '|')
+    echo "  S1: $s1"; echo "  C2: $c2"
+    m1=$(echo "$s1" | sed -n 's/^mine \([0-9A-F:]*\)|.*/\1/p')
+    m2=$(echo "$c2" | sed -n 's/^mine \([0-9A-F:]*\)|.*/\1/p')
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/ipc/end.txt'"
+    check "a mailbox per task (HANDLE 03h)" "[ -n '$m1' ] && [ -n '$m2' ] && [ '$m1' != '$m2' ] && [ '${m1%%:*}' != 0000 ]"
+    check "AT:  the column on top (as DV)" "echo '$s1' | grep -q '|at 10 5|'"
+    check "SETNAME 03h:  the length on top (as DV)" "echo '$s1' | grep -q '|named.* 2|'"
+    check "FINDMAIL finds the server's mailbox" "echo '$c2' | grep -q '|find 1 $m1|sent|'"
+    check "READ 03h waits, gets length on top, then the text" "echo '$s1' | grep -q '|got 00000005 [0-9A-F]* hello|'"
     ;;
 many)
     echo "== many:  16 task slots, 15 TICK tasks"
