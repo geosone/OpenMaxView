@@ -87,9 +87,14 @@ task has the keys.
 
 Without QPI the launcher runs one program at a time as before. Up to seven
 programs can run at once. Each has its own current drive and directories,
-its own EMS page frame mapping and all eight colour text pages. Known
-limits of this version: graphics screens are not saved (run graphics
-programs in the foreground), and a monochrome adapter's text memory
+its own EMS page frame mapping, all eight colour text pages and its own
+video mode: switching sets the mode of the program brought to the front
+(text modes with 25, 43 or 50 rows, CGA, VGA and VESA graphics). A text
+program in the background keeps writing to its own screen even while the
+display shows graphics or another number of rows. A program in VGA or
+VESA graphics is held while it is in the background and, like under
+DESQview, finds a blank screen when it is back: most programs redraw it
+(a graphics picture is not saved). A monochrome adapter's text memory
 (B0000h) is shared.
 
 Press F2 to inspect the selected program's launch fields and retained DVP

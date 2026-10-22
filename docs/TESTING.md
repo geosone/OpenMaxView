@@ -102,6 +102,7 @@ DESQview test:
 | `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |
 | `cwd` | current directory per task (CDS), MVRUN's unchanged |
 | `ems` | EMS page frame mapping per task, with 47h/48h save/restore |
+| `gfx` | VGA mode 13h task and text task:  each one's mode on switching, graphics held in the background, drawn again |
 | `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |
 
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the

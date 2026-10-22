@@ -116,6 +116,12 @@ $(BUILD)/emsprobe.obj: tests/emsprobe.asm | $(BUILD)
 $(BUILD)/EMSPROBE.COM: $(BUILD)/emsprobe.obj
 	cd $(BUILD) && $(JWLINK) format dos com name EMSPROBE.COM option quiet option map=EMSPROBE.MAP file emsprobe.obj
 
+$(BUILD)/gfxprobe.obj: tests/gfxprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/GFXPROBE.COM: $(BUILD)/gfxprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name GFXPROBE.COM option quiet option map=GFXPROBE.MAP file gfxprobe.obj
+
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 

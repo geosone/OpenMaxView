@@ -102,6 +102,10 @@ T_NPG   dw      ?               ; # private pages
 T_EXIT  dw      ?               ; EXEC result:  AX of 4Dh, FFFFh = EXEC failed
 T_KILL  dw      ?               ; 1:  end it, 2:  Ctrl-C sent
 T_CRIT  dw      ?               ; DESQview critical sections open
+T_MODE  db      ?               ; video mode (40:49) and rows - 1 (40:84)
+T_ROWS  db      ?               ;   when it was last the foreground
+T_VESA  dw      ?               ; VESA mode set (4F02h), 0:  none
+T_HOLD  dw      ?               ; 1:  graphics in the background, held
 T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
@@ -187,6 +191,23 @@ dvkey    dw     0               ; Alt alone:  task 0
 fgss     dw     0
 fgsp     dw     0
 old10    dd     0
+in10     dw     0               ; calls in the video BIOS
+insched  dw     0               ; setfg running (it calls the video BIOS)
+hwmode   db     0               ; the display's mode, rows and VESA mode as
+hwrows   db     0               ;   the last foreground left them
+hwvesa   dw     0
+vidsave  db     VIDLEN dup (0)  ; cursor data over a mode set
+ecols    dw     0               ; emu10:  the task's text layout
+erows    dw     0
+epsize   dw     0               ;   page size
+eattr    dw     0               ;   attribute to write, FFFFh:  keep
+edir     db     0               ;   scroll:  0 up, 1 down
+etop     db     0
+ebot     db     0
+eleft    db     0
+ewid     dw     0
+ecnt     db     0
+eatr     db     0
 old13    dd     0
 old16    dd     0
 old28    dd     0
@@ -340,6 +361,17 @@ mvk_init_ proc near
         call    vpg_alloc       ; its text pages while in the background
         mov     ax,MVE_MEM
         jc      init_ret
+        push    es
+        mov     ax,40h
+        mov     es,ax
+        mov     al,es:[49h]
+        and     al,7Fh
+        mov     [bx].T_MODE,al
+        mov     al,es:[84h]
+        mov     [bx].T_ROWS,al
+        pop     es
+        mov     [bx].T_VESA,0
+        mov     [bx].T_HOLD,0
         mov     [bx].T_STATE,TS_READY
         mov     ax,cs:root_pt
         mov     [bx].T_PT,ax
@@ -416,6 +448,20 @@ cr_have:
         mov     [di].T_NPG,0
         mov     [di].T_PT,0
         mov     [di].T_VPG,0    ; (vpg_alloc fills them all)
+        mov     [di].T_VESA,0
+        mov     [di].T_HOLD,0
+        push    es              ; video mode:  the text mode of now, else 80x25
+        mov     ax,40h
+        mov     es,ax
+        mov     al,es:[49h]
+        and     al,7Fh
+        mov     ah,es:[84h]
+        pop     es
+        cmp     al,3
+        jbe     @F
+        mov     ax,1803h
+@@:     mov     [di].T_MODE,al
+        mov     [di].T_ROWS,ah
         mov     [di].T_EXIT,0FFFFh
         ; program and tail
         mov     si,[bp-2]
@@ -837,6 +883,159 @@ setctx  proc near
 @@:     ret
 setctx  endp
 
+; the foreground (TASK at DI) leaves the display:  its mode recorded; in
+; VGA graphics it is held (the screen is another's now)
+fgleave proc near
+        push    ax
+        push    es
+        mov     ax,40h
+        mov     es,ax
+        mov     al,es:[49h]
+        and     al,7Fh
+        mov     [di].T_MODE,al
+        mov     cs:hwmode,al
+        mov     al,es:[84h]
+        mov     [di].T_ROWS,al
+        mov     cs:hwrows,al
+        mov     ax,[di].T_VESA
+        mov     cs:hwvesa,ax
+        call    isgfx
+        jnc     @F
+        mov     [di].T_HOLD,1
+        mov     cs:wantsw,1
+@@:     pop     es
+        pop     ax
+        ret
+fgleave endp
+
+; CF:  the TASK at DI is in VGA (or VESA) graphics
+isgfx   proc near
+        cmp     [di].T_VESA,0
+        jne     @F
+        cmp     [di].T_MODE,0Dh
+        cmc
+        ret
+@@:     stc
+        ret
+isgfx   endp
+
+; the text (or CGA) mode of the TASK at DI, unless the display has it
+; (memory kept:  the pages are copied after)
+txtmode proc near
+        pusha
+        cmp     cs:hwvesa,0
+        jne     @F
+        mov     al,[di].T_MODE
+        cmp     al,cs:hwmode
+        jne     @F
+        mov     al,[di].T_ROWS
+        cmp     al,cs:hwrows
+        je      tm_ret
+@@:     call    vidkeep
+        cmp     [di].T_MODE,3
+        ja      tm_mode
+        mov     ax,1202h        ; scan lines:  400 (25, 50 rows), 350 (43)
+        cmp     [di].T_ROWS,24
+        je      tm_scan
+        cmp     [di].T_ROWS,49
+        je      tm_scan
+        mov     ax,1201h
+        cmp     [di].T_ROWS,42
+        jne     tm_mode
+tm_scan:
+        mov     bl,30h
+        call    bios10
+tm_mode:
+        mov     al,[di].T_MODE
+        or      al,80h
+        xor     ah,ah
+        call    bios10
+        cmp     [di].T_MODE,3
+        ja      tm_vid
+        cmp     [di].T_ROWS,42  ; 43 or 50 rows:  the 8x8 font
+        je      @F
+        cmp     [di].T_ROWS,49
+        jne     tm_vid
+@@:     mov     ax,1112h
+        xor     bl,bl
+        call    bios10
+tm_vid: call    vidback
+tm_ret: popa
+        ret
+txtmode endp
+
+; the graphics mode of the TASK at DI (a blank screen:  it draws again)
+gfxmode proc near
+        pusha
+        call    vidkeep
+        mov     bx,[di].T_VESA
+        mov     ax,4F02h
+        or      bx,bx
+        jnz     @F
+        mov     al,[di].T_MODE
+        xor     ah,ah
+@@:     call    bios10
+        call    vidback
+        popa
+        ret
+gfxmode endp
+
+; the video BIOS (AX, BX as for INT 10h), counted
+bios10  proc near
+        inc     cs:in10
+        pushf
+        call    dword ptr cs:old10
+        dec     cs:in10
+        ret
+bios10  endp
+
+; the cursor data of the running task (40:50-61) over a mode set
+vidkeep proc near
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     ax,cs
+        mov     es,ax
+        mov     ax,40h
+        mov     ds,ax
+        mov     si,50h
+        mov     di,offset vidsave
+        mov     cx,VIDLEN
+        cld
+        rep     movsb
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        ret
+vidkeep endp
+
+vidback proc near
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     ax,cs
+        mov     ds,ax
+        mov     ax,40h
+        mov     es,ax
+        mov     si,offset vidsave
+        mov     di,50h
+        mov     cx,VIDLEN
+        cld
+        rep     movsb
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        ret
+vidback endp
+
 ; text page BX (0:  B8000h) <-> vbuf (DS = kernel data)
 scr2buf proc near
         push    cx
@@ -892,11 +1091,13 @@ setfg   proc near
         mov     cs:kfocus,dx    ; full screen:  the keys too
         cmp     dx,cs:fg
         je      sfg_ret
+        inc     cs:insched
         push    cs:actpt        ; the context to come back to
         push    dx
         mov     bx,cs:fg
         call    taskptr
         mov     di,bx
+        call    fgleave
         mov     dx,[di].T_PT    ; the old foreground:  its pages private
         call    setctx
         xor     bx,bx
@@ -917,7 +1118,10 @@ setfg   proc near
         push    bx
         call    taskptr
         mov     di,bx
-        mov     dx,[di].T_PT
+        call    isgfx           ; text and CGA:  its mode before the pages
+        jc      sfg_t1          ; (memory kept), graphics after them
+        call    txtmode
+sfg_t1: mov     dx,[di].T_PT
         call    setctx
         xor     bx,bx
 @@:     call    scr2buf
@@ -930,11 +1134,16 @@ setfg   proc near
         inc     bx
         cmp     bx,NVPG
         jb      @B
+        call    isgfx
+        jnc     sfg_g1
+        call    gfxmode
+sfg_g1: mov     [di].T_HOLD,0
         pop     dx
         mov     cs:fg,dx
         pop     dx
         call    setctx
         call    fgcursor
+        dec     cs:insched
 sfg_ret:
         pop     es
         popa
@@ -1124,6 +1333,8 @@ irq0    proc far
         dbg     '.'
         cmp     cs:running,0
         je      irq0_out
+        cmp     cs:insched,0    ; in setfg (a video BIOS mode set)
+        jne     irq0_out
         mov     cs:yieldf,0
         dec     cs:qleft
         jz      irq0_q
@@ -1161,6 +1372,8 @@ sched:: pushad
         cmp     ax,cs:qpi_seg
         je      sc_nofg
         cmp     cs:idepth,0
+        jne     sc_nofg
+        cmp     cs:in10,0       ; (setfg may set a video mode)
         jne     sc_nofg
         mov     cs:fgss,ss
         mov     cs:fgsp,sp
@@ -1219,7 +1432,12 @@ irq0_chk:
         mov     bx,dx
         call    taskptr
         cmp     [bx].T_STATE,TS_READY
+        jne     irq0_skip
+        cmp     [bx].T_HOLD,0   ; held:  only to end it
         je      irq0_found
+        cmp     [bx].T_KILL,0
+        jne     irq0_found
+irq0_skip:
         loop    @B
         dbg     'n'
         jmp     irq0_no
@@ -1282,6 +1500,16 @@ irq0_no:
 irq0_out:
         iret
 irq0    endp
+
+; the running task (TASK at BX, DS = kernel data) is held until it is the
+; foreground again (setfg sets its mode then)
+hold    proc near
+        mov     [bx].T_HOLD,1
+@@:     call    yield
+        cmp     [bx].T_HOLD,0
+        jne     @B
+        ret
+hold    endp
 
 ; a task waits:  the others now (IRET frame to the caller)
 yield   proc near
@@ -1470,7 +1698,9 @@ int10   proc far
         mov     ax,cs:cur
         cmp     ax,cs:fg
         pop     ax
-        je      i10_old
+        je      i10_fg
+        cmp     ax,4F02h
+        je      i10_vesa
         cmp     ah,00h
         je      i10_mode
         cmp     ah,01h
@@ -1483,25 +1713,54 @@ int10   proc far
         je      i10_ret
         cmp     ah,11h
         je      i10_ret
+        call    emuchk          ; the display in another mode:  ours
+        jc      emu10
+i10_bios:
+        inc     cs:in10
         pushf
         call    dword ptr cs:old10
         pushf
+        dec     cs:in10
         push    ds
         mov     ds,cs:kseg
         call    fgcursor
         pop     ds
         popf
         retf    2
-i10_mode:                       ; mode set:  a blank screen
-        push    ax
+i10_mode:                       ; mode set:  recorded for the foreground;
+        push    ax              ; text and CGA:  a blank screen, VGA
+        push    bx              ; graphics:  held until then
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,cs:cur
+        call    taskptr
+        mov     ah,al
+        and     al,7Fh
+        mov     [bx].T_MODE,al
+        mov     [bx].T_ROWS,24
+        mov     [bx].T_VESA,0
+        cmp     al,0Dh
+        jb      i10_blank
+        call    hold
+        jmp     short i10_mx
+i10_blank:
+        test    ah,80h          ; memory kept
+        jnz     i10_mx
         push    cx
         push    di
         push    es
-        mov     ax,0B800h
+        mov     cx,4000
+        mov     bx,0720h
+        cmp     al,4
+        jb      @F
+        cmp     al,6
+        ja      @F
+        mov     cx,8000
+        xor     bx,bx
+@@:     mov     ax,0B800h
         mov     es,ax
         xor     di,di
-        mov     ax,0720h
-        mov     cx,2000
+        mov     ax,bx
         cld
         rep     stosw
         mov     ax,40h
@@ -1510,7 +1769,55 @@ i10_mode:                       ; mode set:  a blank screen
         pop     es
         pop     di
         pop     cx
+i10_mx: pop     ds
+        pop     bx
         pop     ax
+        iret
+i10_vesa:                       ; VESA mode set:  held for the foreground
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        and     bx,3FFFh
+        push    bx
+        mov     bx,cs:cur
+        call    taskptr
+        pop     [bx].T_VESA
+        call    hold
+        pop     ds
+        pop     bx
+        mov     ax,004Fh
+        iret
+i10_fg: push    ax              ; the foreground:  the BIOS, then its VESA
+        inc     cs:in10         ; mode recorded
+        pushf
+        call    dword ptr cs:old10
+        pushf
+        dec     cs:in10
+        push    bp
+        mov     bp,sp           ; [bp+2] flags, [bp+4] AX, [bp+6] IRET
+        push    bx
+        push    ds
+        cmp     byte ptr [bp+5],0
+        je      i10_f0
+        cmp     word ptr [bp+4],4F02h
+        jne     i10_fx
+        cmp     ax,004Fh
+        jne     i10_fx
+        and     bx,3FFFh
+        cmp     bx,100h
+        jae     i10_f1
+i10_f0: xor     bx,bx
+i10_f1: mov     ds,cs:kseg
+        push    bx
+        mov     bx,cs:cur
+        call    taskptr
+        pop     [bx].T_VESA
+i10_fx: mov     bx,[bp+2]       ; the BIOS's flags to the caller
+        mov     [bp+10],bx
+        pop     ds
+        pop     bx
+        pop     bp
+        add     sp,4
         iret
 i10_shape:
         push    es
@@ -1524,7 +1831,412 @@ i10_ret:
         iret
 i10_old:
         jmp     dword ptr cs:old10
+
+; the text functions of a background task whose mode the display has not
+; (VGA graphics, other rows or columns):  on its own pages, in its own
+; layout, interrupts off (the e.. variables)
+emu10:  cli
+        push    ds
+        push    es
+        pushad
+        mov     bp,sp           ; EDI ESI EBP ESP EBX EDX ECX EAX, ES, DS
+        call    elayout
+        mov     ah,[bp+29]
+        cmp     ah,02h
+        je      e_setcur
+        cmp     ah,03h
+        je      e_getcur
+        cmp     ah,06h
+        je      e_scroll
+        cmp     ah,07h
+        je      e_scroll
+        cmp     ah,08h
+        je      e_read
+        cmp     ah,09h
+        je      e_wca
+        cmp     ah,0Ah
+        je      e_wc
+        cmp     ah,0Eh
+        je      e_tty
+        cmp     ah,0Fh
+        je      e_mode
+        cmp     ah,13h
+        je      e_str
+        popad                   ; the others:  the BIOS
+        pop     es
+        pop     ds
+        jmp     i10_bios
+e_setcur:
+        mov     bl,[bp+17]
+        mov     dx,[bp+20]
+        call    putcur
+        jmp     e_done
+e_getcur:
+        mov     bl,[bp+17]
+        call    getcur
+        mov     [bp+20],dx
+        push    40h
+        pop     es
+        mov     ax,es:[60h]
+        mov     [bp+24],ax
+        jmp     e_done
+e_scroll:
+        mov     al,[bp+29]
+        sub     al,6
+        mov     cs:edir,al
+        mov     al,[bp+28]
+        mov     bh,[bp+17]
+        mov     cx,[bp+24]
+        mov     dx,[bp+20]
+        call    escroll
+        jmp     e_done
+e_read: mov     bl,[bp+17]
+        call    getcur
+        call    eaddr
+        mov     ax,es:[di]
+        mov     [bp+28],ax
+        jmp     e_done
+e_wca:  mov     bl,[bp+17]
+        call    getcur
+        call    eaddr
+        mov     al,[bp+28]
+        mov     ah,[bp+16]
+        mov     cx,[bp+24]
+        cld
+        rep     stosw
+        jmp     e_done
+e_wc:   mov     bl,[bp+17]
+        call    getcur
+        call    eaddr
+        mov     al,[bp+28]
+        mov     cx,[bp+24]
+        jcxz    @F
+e_wc1:  mov     es:[di],al
+        add     di,2
+        loop    e_wc1
+@@:     jmp     e_done
+e_tty:  xor     bl,bl           ; (the BIOS:  the active page)
+        call    getcur
+        mov     cs:eattr,0FFFFh
+        mov     al,[bp+28]
+        call    eput
+        call    putcur
+        jmp     e_done
+e_mode: mov     ds,cs:kseg
+        mov     bx,cs:cur
+        call    taskptr
+        mov     al,[bx].T_MODE
+        mov     [bp+28],al
+        mov     al,byte ptr cs:ecols
+        mov     [bp+29],al
+        mov     byte ptr [bp+17],0
+        jmp     e_done
+e_str:  mov     bl,[bp+17]      ; page
+        mov     dx,[bp+20]      ; position
+        mov     cx,[bp+24]
+        mov     si,[bp+8]       ; ES:BP string
+        mov     fs,[bp+32]
+        mov     al,[bp+16]
+        xor     ah,ah
+        mov     cs:eattr,ax
+        or      cx,cx
+        jz      e_strend
+e_strc: mov     al,fs:[si]
+        inc     si
+        test    byte ptr [bp+28],2
+        jz      @F
+        mov     ah,fs:[si]      ; char, attribute pairs
+        inc     si
+        mov     byte ptr cs:eattr,ah
+@@:     call    eput
+        dec     cx
+        jnz     e_strc
+e_strend:
+        test    byte ptr [bp+28],1
+        jz      e_done
+        call    putcur
+e_done: popad
+        pop     es
+        pop     ds
+        iret
 int10   endp
+
+; CF:  the running (background) task's text output must not go to the
+; video BIOS:  it is in a text mode the display has not
+emuchk  proc near
+        push    ax
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,cs:fg
+        call    taskptr
+        mov     ax,[bx].T_VESA
+        mov     bx,cs:cur
+        call    taskptr
+        cmp     [bx].T_MODE,3
+        ja      ec_no
+        or      ax,ax
+        jnz     ec_yes
+        push    es
+        mov     ax,40h
+        mov     es,ax
+        mov     al,es:[49h]
+        and     al,7Fh
+        mov     ah,es:[84h]
+        pop     es
+        cmp     al,[bx].T_MODE
+        jne     ec_yes
+        cmp     ah,[bx].T_ROWS
+        jne     ec_yes
+ec_no:  clc
+        jmp     short ec_ret
+ec_yes: stc
+ec_ret: pop     ds
+        pop     bx
+        pop     ax
+        ret
+emuchk  endp
+
+; the running task's text layout:  ecols, erows, epsize
+elayout proc near
+        push    ax
+        push    bx
+        push    dx
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,cs:cur
+        call    taskptr
+        mov     ax,80
+        cmp     [bx].T_MODE,1
+        ja      @F
+        mov     ax,40
+@@:     mov     cs:ecols,ax
+        movzx   ax,[bx].T_ROWS
+        inc     ax
+        cmp     ax,2
+        jae     @F
+        mov     ax,25
+@@:     mov     cs:erows,ax
+        mul     cs:ecols
+        shl     ax,1
+        add     ax,2047
+        and     ax,not 2047
+        mov     cs:epsize,ax
+        pop     ds
+        pop     dx
+        pop     bx
+        pop     ax
+        ret
+elayout endp
+
+; BL page, DH row, DL column -> ES:DI
+eaddr   proc near
+        push    ax
+        push    cx
+        push    dx
+        mov     cx,dx
+        movzx   ax,bl
+        and     al,7
+        mul     cs:epsize
+        shr     ax,4
+        add     ax,0B800h
+        mov     es,ax
+        movzx   ax,ch
+        mul     cs:ecols
+        movzx   cx,cl
+        add     ax,cx
+        shl     ax,1
+        mov     di,ax
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+eaddr   endp
+
+; cursor of page BL:  DX (DH row, DL column) from, to the BIOS data
+getcur  proc near
+        push    bx
+        push    es
+        push    40h
+        pop     es
+        and     bx,7
+        shl     bx,1
+        mov     dx,es:[50h+bx]
+        pop     es
+        pop     bx
+        ret
+getcur  endp
+
+putcur  proc near
+        push    bx
+        push    es
+        push    40h
+        pop     es
+        and     bx,7
+        shl     bx,1
+        mov     es:[50h+bx],dx
+        pop     es
+        pop     bx
+        ret
+putcur  endp
+
+; character AL on page BL at DX (eattr:  its attribute, FFFFh the one
+; there) as TTY output:  BEL, BS, CR, LF; DX moved, the page scrolled
+eput    proc near
+        push    ax
+        push    di
+        push    es
+        cmp     al,7
+        je      ep_ret
+        cmp     al,8
+        jne     @F
+        or      dl,dl
+        jz      ep_ret
+        dec     dl
+        jmp     short ep_ret
+@@:     cmp     al,13
+        jne     @F
+        xor     dl,dl
+        jmp     short ep_ret
+@@:     cmp     al,10
+        je      ep_lf
+        call    eaddr
+        mov     es:[di],al
+        cmp     cs:eattr,0FFFFh
+        je      @F
+        mov     ah,byte ptr cs:eattr
+        mov     es:[di+1],ah
+@@:     inc     dl
+        cmp     dl,byte ptr cs:ecols
+        jb      ep_ret
+        xor     dl,dl
+ep_lf:  inc     dh
+        cmp     dh,byte ptr cs:erows
+        jb      ep_ret
+        dec     dh
+        push    cx
+        push    dx
+        push    bx
+        mov     cs:edir,0       ; the whole page up a line
+        mov     al,1
+        mov     bh,07h
+        xor     cx,cx
+        mov     dh,byte ptr cs:erows
+        dec     dh
+        mov     dl,byte ptr cs:ecols
+        dec     dl
+        call    escrollp
+        pop     bx
+        pop     dx
+        pop     cx
+ep_ret: pop     es
+        pop     di
+        pop     ax
+        ret
+eput    endp
+
+; scroll (edir) the window CH,CL - DH,DL of page 0 (escrollp:  page BL)
+; by AL lines (0:  clear), new lines in attribute BH
+escroll proc near
+        xor     bl,bl
+escrollp::
+        pushad
+        push    ds
+        push    es
+        cmp     dl,byte ptr cs:ecols
+        jb      @F
+        mov     dl,byte ptr cs:ecols
+        dec     dl
+@@:     cmp     dh,byte ptr cs:erows
+        jb      @F
+        mov     dh,byte ptr cs:erows
+        dec     dh
+@@:     cmp     ch,dh
+        ja      es_ret
+        cmp     cl,dl
+        ja      es_ret
+        mov     ah,dh
+        sub     ah,ch
+        inc     ah              ; height
+        or      al,al
+        jz      @F
+        cmp     al,ah
+        jbe     es_n
+@@:     mov     al,ah
+es_n:   mov     cs:ecnt,al
+        mov     cs:eatr,bh
+        mov     cs:etop,ch
+        mov     cs:ebot,dh
+        mov     cs:eleft,cl
+        movzx   ax,dl
+        sub     al,cl
+        inc     ax
+        mov     cs:ewid,ax
+        push    dx
+        xor     dx,dx
+        call    eaddr           ; ES = the page
+        pop     dx
+        push    es
+        pop     ds
+        cld
+        mov     dh,cs:etop      ; up:  rows top..bottom
+        mov     dl,1
+        cmp     cs:edir,0
+        je      es_row
+        mov     dh,cs:ebot      ; down:  bottom..top
+        mov     dl,-1
+es_row: mov     al,dh           ; source row
+        add     al,cs:ecnt
+        cmp     dl,1
+        je      @F
+        mov     al,dh
+        sub     al,cs:ecnt
+        jc      es_fill
+        cmp     al,cs:etop
+        jb      es_fill
+        jmp     short es_copy
+@@:     jc      es_fill
+        cmp     al,cs:ebot
+        ja      es_fill
+es_copy:
+        push    dx
+        mov     dh,al
+        mov     dl,cs:eleft
+        call    eaddr
+        mov     si,di
+        pop     dx
+        push    dx
+        mov     dl,cs:eleft
+        call    eaddr
+        pop     dx
+        mov     cx,cs:ewid
+        rep     movsw
+        jmp     short es_next
+es_fill:
+        push    dx
+        mov     dl,cs:eleft
+        call    eaddr
+        pop     dx
+        mov     al,' '
+        mov     ah,cs:eatr
+        mov     cx,cs:ewid
+        rep     stosw
+es_next:
+        cmp     dl,1
+        jne     @F
+        cmp     dh,cs:ebot
+        je      es_ret
+        inc     dh
+        jmp     es_row
+@@:     cmp     dh,cs:etop
+        je      es_ret
+        dec     dh
+        jmp     es_row
+es_ret: pop     es
+        pop     ds
+        popad
+        ret
+escroll endp
 
 ; IRQ1-7:  to the task that hooked the vector (its IVT entry differs from
 ; the one at mvk_start), the current task first; none:  the current IVT

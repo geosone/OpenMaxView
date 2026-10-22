@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win|dvapi|progs|cwd|ems] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win|dvapi|progs|cwd|ems|gfx] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -58,6 +58,10 @@
 #   ems   EMS per task:  two EMSPROBEs (tests/emsprobe.asm) map 4 pages of
 #         their own each into the page frame and keep seeing their own
 #         pattern
+#   gfx   video modes per task:  GFXPROBE (tests/gfxprobe.asm) in VGA mode
+#         13h, KEYPROBE in text; switching between them sets each one's
+#         mode, the graphics task is held in the background and draws
+#         again when it is back
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -68,7 +72,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk win dvapi cwd ems progs}
+CASES=${*:-two mem serial keys kill crit desk win dvapi cwd ems gfx progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -76,7 +80,7 @@ EXPECT_VDSFUNC='physical = linear FAIL'
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
-    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM || exit 2
+    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -276,6 +280,29 @@ ems)
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/ems/end.txt'"
     check "task 1 keeps its EMS pages" "[ \"\$(echo \$e1)\" = 'ems A ok' ]"
     check "task 2 keeps its EMS pages" "[ \"\$(echo \$e2)\" = 'ems B ok' ]"
+    ;;
+gfx)
+    echo "== gfx:  video modes per task"
+    FG="/F1 " run gfx 45 "C:\\GFXPROBE.COM C:\\G1.TXT ; C:\\KEYPROBE.COM C:\\K2.TXT D" \
+        "$ROOT/build/GFXPROBE.COM $ROOT/build/KEYPROBE.COM" \
+        "sleep:6 shot:gfx1 key:ctrl-alt-2 wait:keyprobe_D_ready:20 text:fg2 sleep:6 key:ctrl-alt-1 sleep:4 shot:gfx3 key:dot sleep:4 key:ctrl-alt-2 sleep:2 key:dot"
+    g1=$(file gfx G1.TXT); d=$OUT/gfx
+    echo "  G1 '$g1'"
+    green() {   # share of colour 2 (0,170,0) in a screendump, percent
+        python3 -c "
+import sys
+from PIL import Image
+im=Image.open(sys.argv[1]).convert('RGB'); w,h=im.size
+n=sum(c for c,(r,g,b) in im.getcolors(w*h) if r<40 and g>150 and b<40)
+print(n*100//(w*h))" "$1" 2>/dev/null || echo 0
+    }
+    echo "  green: $(green $d/gfx1.png)% before, $(green $d/gfx3.png)% back"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$d/end.txt'"
+    check "graphics task draws in mode 13h" "[ \$(green $d/gfx1.png) -ge 90 ]"
+    check "text task's screen in text mode" "grep -q 'keyprobe D ready' '$d/fg2.txt'"
+    check "graphics task back, drawn again" "[ \$(green $d/gfx3.png) -ge 90 ]"
+    check "graphics task held in the background" "[ \$(echo $g1 | awk '{print \$5+0}') -ge 90 ]"
+    check "it drew again once" "[ \$(echo $g1 | awk '{print \$3+0}') -eq 1 ]"
     ;;
 progs)
     echo "== progs:  regression tests, each in a task of its own"
