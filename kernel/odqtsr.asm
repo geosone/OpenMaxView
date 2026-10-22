@@ -59,6 +59,7 @@
 ;   INT 2Fh AX=D704h                 extended capability query
 ;   INT 2Fh AX=D705h                 extended compatibility capabilities
 ;   INT 2Fh AX=D706h                 sound-queue diagnostic query
+;   INT 2Fh AX=D707h                 per-task state block (for the core)
 
 DV_VERSION     equ 0250h        ; 2.80:  BH major, BL minor in binary (as DV)
 MUX_STATUS     equ 0D700h
@@ -68,6 +69,7 @@ MUX_TASK_INFO  equ 0D703h
 MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
+MUX_TASK_STATE equ 0D707h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
 MUX_VERSION    equ 0024h
 CAPABILITIES   equ 0FFFFh
@@ -3305,6 +3307,16 @@ int2f_not_caps3:
         jne     short int2f_not_sound_info
         jmp     int2f_sound_info
 int2f_not_sound_info:
+        cmp     ax,MUX_TASK_STATE
+        jne     short int2f_not_task_state
+        push    cs
+        pop     es
+        mov     bx,offset task_state_begin
+        mov     cx,offset task_state_end - offset task_state_begin
+        xor     ax,ax
+        popf
+        iret
+int2f_not_task_state:
         jmp     int2f_chain
 int2f_status:
         mov     bx,MUX_SIGNATURE
@@ -3401,6 +3413,10 @@ old15          dd 0
 old1c          dd 0
 old21          dd 0
 old2f          dd 0
+; The state of the task calling (DESQview keeps it per window):  the
+; multitasking core saves and loads this block on each task switch
+; (D707h), the internal stack of OSTACK with it.
+task_state_begin label byte
 critical_depth dw 0
 api_level      dw 0100h
 task_flags     dw TASK_JUSTIFY
@@ -3419,6 +3435,15 @@ task_stack_saved_bp dw 0
 task_stack_return_ip dw 0
 task_stack_return_cs dw 0
 task_stack_return_flags dw 0
+message_saved_ax dw 0
+message_saved_bp dw 0
+message_result_len_lo dw 0
+message_result_len_hi dw 0
+message_result_ptr_off dw 0
+message_result_ptr_seg dw 0
+task_internal_stack db TASK_STACK_SIZE dup(0)
+task_internal_stack_top label byte
+task_state_end label byte
 sound_head     dw 0
 sound_tail     dw 0
 sound_count    dw 0
@@ -3431,12 +3456,6 @@ printc_columns db 80
 printc_last_row db 24
 task_handle_segment dw 0
 install_path   db 67 dup(0)
-message_saved_ax dw 0
-message_saved_bp dw 0
-message_result_len_lo dw 0
-message_result_len_hi dw 0
-message_result_ptr_off dw 0
-message_result_ptr_seg dw 0
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 common_used    db COMMON_SLOT_COUNT dup(0)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
@@ -3491,9 +3510,6 @@ timer_objects  db (TIMER_SLOT_COUNT * TIMER_OBJECT_SIZE) dup(0)
 MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
-
-task_internal_stack db TASK_STACK_SIZE dup(0)
-task_internal_stack_top label byte
 
 installed_msg  db 'Open MaxView resident API 0.36 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'

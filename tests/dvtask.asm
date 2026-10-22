@@ -12,6 +12,8 @@
 ;                     PAUSE calls:  D2 well above D1
 ;   "ica own|shared"  40:F0h (B writes there all the time):  own under
 ;                     DESQview (per window)
+;   "err own|shared"  the error-return policy (DE15h/DE16h):  A sets 1,
+;                     B sets 2 now and then
 ; and ends; B counts until it is stopped.
 
         .model tiny
@@ -97,6 +99,9 @@ start:
         cmp     ax,182
         jb      @B
 @@:     pop     es
+        mov     ax,0DE15h       ; error-return policy 1 (B sets 2)
+        mov     bl,1
+        int     15h
         ; critical section
         mov     ax,101Bh        ; BEGINC
         int     15h
@@ -159,6 +164,14 @@ start:
         mov     si,offset t_icashr
 @@:     call    puts
         call    putnl
+        mov     ax,0DE16h
+        int     15h
+        mov     si,offset t_errown
+        cmp     bl,1
+        je      @F
+        mov     si,offset t_errshr
+@@:     call    puts
+        call    putnl
         mov     ah,3Eh
         mov     bx,handle
         int     21h
@@ -176,6 +189,11 @@ count:  mov     ah,3Eh
         inc     eax
         call    putcnt
         sti
+        or      ax,ax           ; now and then:  policy 2
+        jnz     @B
+        mov     ax,0DE15h
+        mov     bl,2
+        int     15h
         jmp     @B
 
 usage:  mov     dx,offset utext
@@ -331,6 +349,8 @@ t_crit  db      'crit ',0
 t_pause db      'pause ',0
 t_icaown db     'ica own',0
 t_icashr db     'ica shared',0
+t_errown db     'err own',0
+t_errshr db     'err shared',0
 role    db      ?
 handle  dw      ?
 c0      dd      ?

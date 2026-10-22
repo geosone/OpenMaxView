@@ -4,7 +4,7 @@
 
 /* Open MaxView multitasking core (kernel/mvkern.asm). */
 
-#define MVK_MAXTASK 32
+#define MVK_MAXTASK 31
 
 #define MVK_FREE  0
 #define MVK_READY 1

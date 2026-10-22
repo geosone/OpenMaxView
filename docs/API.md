@@ -249,6 +249,7 @@ applications expecting the DESQview interface.
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
 | `D705h` | `BX=3FFFh` extended compatibility capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
+| `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, OSTACK state and stack), `CX` = its size; the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise

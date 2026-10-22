@@ -121,7 +121,7 @@ program; and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
 DESQview hung on EMS 47h/48h), fixed there.  Opening DOS windows (128K) until
 DESQview refused ("Not enough DESQview common memory", its default
 setup) gave 13 windows on Open 386MAX and 14 on QEMM 97:  MaxView has
-16 task slots in MAXVIEW.EXE (up to 32, `mvk_datasize`).
+16 task slots in MAXVIEW.EXE (up to 31, `mvk_datasize`).
 
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the
 script stores them as `build/test-qemu/<case>.e9`.

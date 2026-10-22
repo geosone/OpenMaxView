@@ -295,6 +295,7 @@ dvapi)
     check "BEGINC..ENDC:  no other task" "[ '$c0' = '$c1' ] && [ '$c0' != x ]"
     check "after ENDC the other task runs" "[ '$c2' != x ] && [ $c2 -gt $c1 ]"
     check "40:F0h per task (as DESQview)" "echo '$d1' | grep -q '^ica own'"
+    check "MAXVTSR state per task (error policy)" "echo '$d1' | grep -q '^err own'"
     check "PAUSE leaves the CPU (\$p2 > 3/2 \$p1)" "[ '$p2' != x ] && [ $p1 -gt 0 ] && [ $((p2 * 2)) -gt $((p1 * 3)) ]"
     ;;
 cwd)

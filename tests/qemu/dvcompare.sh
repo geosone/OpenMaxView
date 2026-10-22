@@ -113,7 +113,8 @@ dvapi)
     row "dvapi:  BEGINC..ENDC" "${crit_dv:-?}" "${crit_mv:-?}"
     row "dvapi:  PAUSE (other task's share)" "${pause_dv:-?}" "${pause_mv:-?}"
     row "dvapi:  DV version (2B01h)" "$(dvfile dvapi D1.TXT | awk '$1 == "app" {print $4}')" "$(mvfile dvapi D1.TXT | awk '$1 == "app" {print $4}')"
-    row "dvapi:  40:F0h" "$(dvfile dvapi D1.TXT | awk '$1 == "ica" {print $2}')" "$(mvfile dvapi D1.TXT | awk '$1 == "ica" {print $2}')" ;;
+    row "dvapi:  40:F0h" "$(dvfile dvapi D1.TXT | awk '$1 == "ica" {print $2}')" "$(mvfile dvapi D1.TXT | awk '$1 == "ica" {print $2}')"
+    row "dvapi:  error policy (DE15h)" "$(dvfile dvapi D1.TXT | awk '$1 == "err" {print $2}')" "$(mvfile dvapi D1.TXT | awk '$1 == "err" {print $2}')" ;;
 cwd)
     row "cwd:  window 1, 2" "$(dvfile cwd W1.TXT), $(dvfile cwd W2.TXT)" \
         "$(mvfile cwd W1.TXT), $(mvfile cwd W2.TXT)" ;;

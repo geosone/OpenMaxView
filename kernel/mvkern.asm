@@ -25,9 +25,11 @@
 ; DESQview), the DOS SDA
 ; (INT 21h 5D06h, the in-DOS size; the current drive is in it), the DOS
 ; current directories (the CDS), the BIOS key buffer and cursor data.
+; Also MAXVTSR's per-task state (its D707h block:  API level, critical
+; nesting, OSTACK, ...), as DESQview keeps it per window.
 ; CDS and SDA (4KB) are kept in the task's own memory, a block behind its
 ; stub PSP (task 0's in the kernel data):  the table holds 1.7KB a task,
-; up to MAXTASK (32) of them, as many as the caller asks (mvk_datasize).
+; up to MAXTASK (31) of them, as many as the caller asks (mvk_datasize).
 ; QPI 08h is called on a shared kernel stack:  the task's stack is gone
 ; once the context changes, and the SDA swap may overwrite a DOS stack.
 ;
@@ -59,15 +61,17 @@
         .model  small
         .386
 
-MAXTASK         equ 32          ; task 0 (the caller) + 31 at most (the
+MAXTASK         equ 31          ; task 0 (the caller) + 30 at most (the
                                 ; table has mvk_datasize's count)
 MAXPAGE         equ 160         ; private pages per task (640KB)
 STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
 KSTACK          equ 512         ; kernel stack (QPI 08h)
 SDAMAX          equ 2048        ; DOS SDA swapped
 CDSMAX          equ 26*58h      ; DOS current directories (CDS) swapped
-SAVEPARA        equ (CDSMAX + SDAMAX + 15) / 16 ; CDS and SDA saved, behind
-                                ; the stub PSP in each task's own memory
+DVSTMAX         equ 640         ; MAXVTSR's per-task state (INT 2Fh D707h)
+SAVEPARA        equ (CDSMAX + SDAMAX + DVSTMAX + 15) / 16 ; CDS, SDA and
+                                ; MAXVTSR's state saved, behind the stub PSP
+                                ; in each task's own memory
 NVPG            equ 8           ; text pages B8000h-BFFFFh private per task
 KBDLEN          equ 36          ; 40:1A-40:3D key buffer head, tail, buffer
 VIDLEN          equ 18          ; 40:50-40:61 cursor positions and shape
@@ -119,7 +123,8 @@ T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
 T_VPG   dw      NVPG dup (?)    ; private frames of the text pages B8000h..
-T_XSAVE dd      ?               ; its CDS, then SDA (at CDSMAX):  in its own
+T_XSAVE dd      ?               ; its CDS, SDA (at CDSMAX), MAXVTSR's state
+                                ; (at CDSMAX + SDAMAX):  in its own
                                 ; memory (seen only in its context)
 T_KBD   db      KBDLEN dup (?)
 T_VID   db      VIDLEN dup (?)
@@ -141,11 +146,13 @@ origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
                                 ; differs has hooked it
 cprog   db      80 dup (?)      ; mvk_create arguments
 ctail   db      128 dup (?)
-t0save  db      CDSMAX + SDAMAX dup (?) ; task 0's (root context) T_XSAVE
+t0save  db      CDSMAX + SDAMAX + DVSTMAX dup (?) ; task 0's (root context)
+                                ; T_XSAVE
+dvinit  db      DVSTMAX dup (?) ; MAXVTSR's state at mvk_init:  new tasks
 tasks   TASK    MAXTASK dup (<>) ; (last:  mvk_datasize's count of them)
 kdata_end label byte
 MVKDATA ends
-KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128 + CDSMAX + SDAMAX
+KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128 + CDSMAX + SDAMAX + 2 * DVSTMAX
         .erre   KDATASIZE LE 0FFF0h, <kernel data over 64KB:  MAXTASK, SDAMAX, CDSMAX>
 
         .code
@@ -187,6 +194,8 @@ root_pt  dw     0
 ntasks   dw     0
 cur      dw     0
 running  dw     0
+dvst_ptr dd     0               ; MAXVTSR's per-task state block
+dvst_size dw    0               ;   (0:  none)
 nslots   dw     8               ; slots in the table (mvk_datasize)
 quantum  dw     2
 fgquant  dw     6               ; for the task with the keys
@@ -398,6 +407,34 @@ mvk_init_ proc near
         mov     word ptr [bx].T_XSAVE+2,ax
         mov     [bx].T_NPG,0
         mov     cs:ntasks,1
+        ; MAXVTSR's per-task state (INT 2Fh D707h):  swapped as the SDA;
+        ; new tasks start with the state of now
+        mov     cs:dvst_size,0
+        push    es
+        mov     ax,0D707h
+        xor     cx,cx
+        int     2Fh
+        or      ax,ax
+        jnz     init_nodv
+        cmp     cx,DVSTMAX
+        ja      init_nodv
+        mov     word ptr cs:dvst_ptr,bx
+        mov     word ptr cs:dvst_ptr+2,es
+        mov     cs:dvst_size,cx
+        push    ds
+        push    si
+        push    di
+        mov     ax,ds
+        lds     si,cs:dvst_ptr
+        mov     es,ax
+        mov     di,offset dvinit
+        cld
+        rep     movsb
+        pop     di
+        pop     si
+        pop     ds
+init_nodv:
+        pop     es
         xor     ax,ax
         jmp     short init_ret
 init_sdabad:
@@ -646,6 +683,20 @@ cr_have:
         mov     [di].T_SP,bx
         ; IVT and SDA:  those of now; key buffer empty, cursors home
         call    save_ivtsda
+        mov     cx,cs:dvst_size ; MAXVTSR's state:  that of mvk_init
+        jcxz    cr_dvdone
+        push    si
+        push    di
+        push    es
+        les     di,[di].T_XSAVE
+        add     di,CDSMAX+SDAMAX
+        mov     si,offset dvinit
+        cld
+        rep     movsb
+        pop     es
+        pop     di
+        pop     si
+cr_dvdone:
         mov     ax,word ptr [di].T_KBD
         mov     word ptr [di].T_KBD+2,ax
         push    di
@@ -758,15 +809,21 @@ save_ivtsda proc near
         rep     movsw
         pop     di
         mov     es,cs:kseg
-        les     di,es:[di].T_XSAVE ; its save area:  CDS, then SDA
+        les     di,es:[di].T_XSAVE ; its save area:  CDS, SDA, MAXVTSR's
         push    di
         lds     si,cs:cds_ptr
         mov     cx,cs:cds_size
         rep     movsb
         pop     di
+        push    di
         add     di,CDSMAX
         lds     si,cs:sda_ptr
         mov     cx,cs:sda_size
+        rep     movsb
+        pop     di
+        add     di,CDSMAX+SDAMAX
+        lds     si,cs:dvst_ptr
+        mov     cx,cs:dvst_size
         rep     movsb
         pop     es
         pop     ds
@@ -811,15 +868,21 @@ load_ivtsda proc near
         pop     di
         push    di
         push    ds
-        lds     si,[di].T_XSAVE ; its save area:  CDS, then SDA
+        lds     si,[di].T_XSAVE ; its save area:  CDS, SDA, MAXVTSR's
         les     di,cs:cds_ptr
         mov     cx,cs:cds_size
         push    si
         rep     movsb
         pop     si
+        push    si
         add     si,CDSMAX
         les     di,cs:sda_ptr
         mov     cx,cs:sda_size
+        rep     movsb
+        pop     si
+        add     si,CDSMAX+SDAMAX
+        les     di,cs:dvst_ptr
+        mov     cx,cs:dvst_size
         rep     movsb
         pop     ds
         pop     di
