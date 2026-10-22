@@ -1822,12 +1822,7 @@ window_write_args:
         int     10h
         sti
         cld
-window_write_char:
-        lodsb
-        mov     ah,0Eh
-        mov     bl,07h
-        int     10h
-        loop    window_write_char
+        call    window_output
         cli
 window_write_done:
         pop     ds
@@ -1846,6 +1841,343 @@ window_write_pop8:
         pop     bp
         add     sp,8
         jmp     int15_handled
+
+; DS:SI, CX bytes to the task's window (BH = the page):  text as BIOS
+; teletype output, in the window colour once a stream set one; ESC and a
+; byte below 20h start a stream (type, length word, opcodes):  type 00h
+; (window) is interpreted (window_stream), the others are skipped.
+window_output:
+        push    ax
+        push    dx
+        push    di
+window_output_next:
+        jcxz    window_output_ret
+        lodsb
+        dec     cx
+        cmp     al,1Bh
+        jne     short window_output_text
+        jcxz    window_output_text
+        cmp     byte ptr [si],20h
+        jae     short window_output_text
+        cmp     cx,3
+        jb      short window_output_ret
+        mov     dl,byte ptr [si]      ; type
+        mov     di,word ptr [si+1]    ; length
+        add     si,3
+        sub     cx,3
+        cmp     di,cx
+        jbe     short window_output_length
+        mov     di,cx
+window_output_length:
+        sub     cx,di
+        add     di,si                 ; its end
+        or      dl,dl
+        jnz     short window_output_skip
+        call    window_stream
+window_output_skip:
+        mov     si,di
+        jmp     short window_output_next
+window_output_text:
+        call    window_text_char
+        jmp     short window_output_next
+window_output_ret:
+        pop     di
+        pop     dx
+        pop     ax
+        ret
+
+; AL as text:  teletype, or in the window colour (BEL, BS, LF and CR act).
+window_text_char:
+        cmp     byte ptr cs:window_color,0
+        je      short window_tty
+        cmp     al,07h
+        je      short window_tty
+        cmp     al,08h
+        je      short window_tty
+        cmp     al,0Ah
+        je      short window_tty
+        cmp     al,0Dh
+        je      short window_tty
+        push    ax
+        mov     ah,byte ptr cs:window_color
+        call    window_put
+        pop     ax
+        ret
+window_tty:
+        push    ax
+        push    bx
+        mov     ah,0Eh
+        mov     bl,07h
+        int     10h
+        pop     bx
+        pop     ax
+        ret
+
+; Character AL in attribute AH at the cursor, the cursor on (BH = page).
+window_put:
+        push    ax
+        push    bx
+        push    cx
+        mov     bl,ah
+        mov     ah,09h
+        mov     cx,1
+        int     10h
+        mov     ah,0Eh
+        int     10h
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; CX times character AL in attribute AH.
+window_run:
+        jcxz    window_run_ret
+window_run_one:
+        call    window_put
+        loop    window_run_one
+window_run_ret:
+        ret
+
+; AH = the window colour, or 07h before a stream set one.
+window_attr:
+        mov     ah,byte ptr cs:window_color
+        or      ah,ah
+        jnz     short window_attr_ret
+        mov     ah,07h
+window_attr_ret:
+        ret
+
+; AL = the next stream byte (SI up to DI), CF:  the stream ended.
+window_byte:
+        cmp     si,di
+        jae     short window_byte_end
+        lodsb
+        clc
+        ret
+window_byte_end:
+        stc
+        ret
+
+; DX = the cursor (BH = page); window_cursor_set sets it again.
+window_cursor_get:
+        push    ax
+        push    cx
+        mov     ah,03h
+        int     10h
+        pop     cx
+        pop     ax
+        ret
+window_cursor_set:
+        push    ax
+        mov     ah,02h
+        int     10h
+        pop     ax
+        ret
+
+; A window stream (type 00h) at SI up to DI, as DESQview's (RBIL table
+; 00440) for a window as large as the screen:  text and blanks (00h-9Fh),
+; the logical cursor (A0h/A1h, B0h/B1h, C0h, C8h), the output colour
+; (E2h), clear (E3h), redraw and no-op (E4h, E7h) and the name (EFh,
+; skipped); window geometry (A2h-AFh, B2h-BFh, C1h-C7h, C9h-CFh) has no
+; effect, as the window is the screen.  Another opcode ends the stream.
+window_stream:
+        push    ax
+        push    cx
+        push    dx
+window_stream_next:
+        call    window_byte
+        jnc     short window_stream_op
+        jmp     window_stream_ret
+window_stream_op:
+        mov     cl,al
+        and     cx,001Fh              ; N in the opcode (0:  32)
+        jnz     short window_stream_n
+        mov     cl,32
+window_stream_n:
+        cmp     al,20h
+        jb      short window_stream_blanks
+        cmp     al,40h
+        jb      short window_stream_repeat
+        cmp     al,60h
+        jb      short window_stream_attr_blanks
+        cmp     al,80h
+        jb      short window_stream_literal
+        cmp     al,0A0h
+        jae     short window_stream_not_counted
+        jmp     window_stream_counted
+window_stream_not_counted:
+        cmp     al,0B0h
+        jae     short window_stream_not_set
+        jmp     window_stream_set
+window_stream_not_set:
+        cmp     al,0C0h
+        jae     short window_stream_not_rel
+        jmp     window_stream_rel
+window_stream_not_rel:
+        cmp     al,0D0h
+        jae     short window_stream_not_pair
+        jmp     window_stream_pair
+window_stream_not_pair:
+        cmp     al,0E2h
+        je      short window_stream_color
+        cmp     al,0E3h
+        je      short window_stream_clear
+        cmp     al,0E4h
+        je      short window_stream_next
+        cmp     al,0E7h
+        je      short window_stream_next
+        cmp     al,0EFh
+        je      short window_stream_name
+        jmp     window_stream_ret
+window_stream_blanks:
+        mov     al,' '
+        call    window_attr
+        call    window_run
+        jmp     short window_stream_next
+window_stream_repeat:
+        call    window_byte
+        jc      short window_stream_end
+        call    window_attr
+        call    window_run
+        jmp     short window_stream_next
+window_stream_attr_blanks:
+        call    window_byte
+        jc      short window_stream_end
+        mov     ah,al
+        mov     al,' '
+        call    window_run
+        jmp     short window_stream_next
+window_stream_literal:
+        call    window_byte
+        jc      short window_stream_end
+        call    window_attr
+        call    window_put
+        loop    window_stream_literal
+        jmp     window_stream_next
+window_stream_color:
+        call    window_byte
+        jc      short window_stream_end
+        mov     byte ptr cs:window_color,al
+        jmp     window_stream_next
+window_stream_clear:
+        push    bx
+        push    cx
+        push    dx
+        push    es
+        call    window_attr
+        mov     bh,ah
+        mov     ax,40h
+        mov     es,ax
+        mov     dh,byte ptr es:[84h]  ; rows - 1 (EGA and later)
+        or      dh,dh
+        jnz     short window_clear_rows
+        mov     dh,24
+window_clear_rows:
+        mov     dl,byte ptr es:[4Ah]
+        dec     dl
+        xor     cx,cx
+        mov     ax,0600h
+        int     10h
+        pop     es
+        pop     dx
+        pop     cx
+        pop     bx
+        jmp     window_stream_next
+window_stream_end:
+        jmp     window_stream_ret
+window_stream_name:
+        call    window_byte
+        jc      short window_stream_end
+        mov     cl,al
+        xor     ch,ch
+        add     si,cx
+        cmp     si,di
+        jbe     short window_stream_name_done
+        mov     si,di
+window_stream_name_done:
+        jmp     window_stream_next
+window_stream_counted:
+        mov     dl,al                 ; 80h-9Fh:  N = 3 bits:  the next byte
+        mov     ch,al
+        and     ch,07h
+        call    window_byte
+        jc      short window_stream_end
+        mov     cl,al
+        or      cx,cx
+        jnz     short window_stream_counted_n
+        mov     cx,0800h
+window_stream_counted_n:
+        and     dl,18h
+        jz      window_stream_blanks
+        cmp     dl,08h
+        je      window_stream_repeat
+        cmp     dl,10h
+        je      window_stream_attr_blanks
+        jmp     window_stream_literal
+window_stream_set:
+        mov     dl,al                 ; A0h row, A1h column, others:  1 arg
+        call    window_byte
+        jc      short window_stream_end
+        cmp     dl,0A1h
+        ja      short window_stream_next_far
+        push    dx
+        mov     cl,al
+        call    window_cursor_get
+        pop     ax
+        cmp     al,0A0h
+        jne     short window_stream_set_col
+        mov     dh,cl
+        jmp     short window_stream_set_go
+window_stream_set_col:
+        mov     dl,cl
+window_stream_set_go:
+        call    window_cursor_set
+window_stream_next_far:
+        jmp     window_stream_next
+window_stream_rel:
+        mov     dl,al                 ; B0h rows, B1h columns, signed
+        call    window_byte
+        jc      short window_stream_end
+        cmp     dl,0B1h
+        ja      short window_stream_next_far
+        mov     cl,al
+        mov     al,dl
+        call    window_cursor_get
+        cmp     al,0B0h
+        jne     short window_stream_rel_col
+        add     dh,cl
+        jmp     short window_stream_set_go
+window_stream_rel_col:
+        add     dl,cl
+        jmp     short window_stream_set_go
+window_stream_pair:
+        cmp     al,0CEh               ; CEh, CFh:  no arguments
+        jae     short window_stream_next_far
+        mov     dl,al
+        call    window_byte
+        jc      window_stream_end
+        mov     ch,al
+        call    window_byte
+        jc      window_stream_end
+        mov     cl,al
+        mov     al,dl
+        cmp     al,0C0h
+        je      short window_stream_pair_set
+        cmp     al,0C8h
+        jne     short window_stream_next_far
+        call    window_cursor_get
+        add     dh,ch
+        add     dl,cl
+        jmp     short window_stream_set_go
+window_stream_pair_set:
+        mov     dh,ch
+        mov     dl,cl
+        jmp     short window_stream_set_go
+window_stream_ret:
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
 
 ; SUBFROM queues the caller's far pointer rather than copying its bytes. The
 ; producer must keep that storage valid until the record is read or erased.
@@ -4198,6 +4530,7 @@ task_internal_stack_top label byte
 task_state_pool label byte
 task_handle_segment dw 0              ; the task's own object (0:  not yet,
                                       ; int15_handler finds it)
+window_color   db 0                   ; window stream E2h (0:  none yet)
 keyboard_char  db 0                   ; the last key READ gave (its buffer)
 keyboard_scan  db 0                   ;   and its scan code (STATUS)
 system_used    db SYSTEM_SLOT_COUNT dup(0)

@@ -104,6 +104,12 @@ $(BUILD)/dvtask.obj: tests/dvtask.asm | $(BUILD)
 $(BUILD)/DVTASK.COM: $(BUILD)/dvtask.obj
 	cd $(BUILD) && $(JWLINK) format dos com name DVTASK.COM option quiet option map=DVTASK.MAP file dvtask.obj
 
+$(BUILD)/strprb.obj: tests/strprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/STRPRB.COM: $(BUILD)/strprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name STRPRB.COM option quiet option map=STRPRB.MAP file strprb.obj
+
 $(BUILD)/winprb.obj: tests/winprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 
