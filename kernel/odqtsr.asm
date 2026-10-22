@@ -1872,8 +1872,13 @@ window_output_length:
         sub     cx,di
         add     di,si                 ; its end
         or      dl,dl
-        jnz     short window_output_skip
+        jnz     short window_output_not_window
         call    window_stream
+        jmp     short window_output_skip
+window_output_not_window:
+        cmp     dl,01h
+        jne     short window_output_skip
+        call    window_query
 window_output_skip:
         mov     si,di
         jmp     short window_output_next
@@ -2177,6 +2182,133 @@ window_stream_ret:
         pop     dx
         pop     cx
         pop     ax
+        ret
+
+; A query stream (type 01h) at SI up to DI, as DESQview's (RBIL table
+; 00446):  the answers go into the caller's stream in place, for a window
+; that is the screen (origin 0,0, the screen's size, no frame).  A0h-ABh,
+; AFh and E2h fill the next byte, C0h-C5h the next two, D0h-DFh become the
+; flag of the state; another opcode ends the stream.
+window_query:
+        push    ax
+        push    cx
+        push    dx
+        push    es
+        mov     ax,40h
+        mov     es,ax
+        mov     ch,byte ptr es:[84h]  ; rows (EGA and later)
+        inc     ch
+        cmp     ch,1
+        ja      short window_query_rows
+        mov     ch,25
+window_query_rows:
+        mov     cl,byte ptr es:[4Ah]  ; columns
+window_query_next:
+        call    window_byte
+        jnc     short window_query_op
+        jmp     window_query_ret
+window_query_op:
+        cmp     al,0D0h
+        jb      short window_query_value
+        cmp     al,0E0h
+        jae     short window_query_value
+        ; flags:  the state's opcode in place of the asked one
+        and     al,0FEh
+        cmp     al,0D6h               ; framed / unframed:  no frame
+        jne     short window_query_flag
+        inc     al
+window_query_flag:
+        cmp     al,0D0h               ; may extend off-screen / always
+        jne     short window_query_flag_set ; fully displayed:  displayed
+        inc     al
+window_query_flag_set:
+        mov     byte ptr [si-1],al
+        jmp     short window_query_next
+window_query_value:
+        cmp     al,0C0h
+        jb      short window_query_one
+        cmp     al,0C5h
+        ja      short window_query_one
+        call    window_query_pair     ; DH, DL
+        cmp     si,di
+        jae     short window_query_ret
+        mov     byte ptr [si],dh
+        inc     si
+        cmp     si,di
+        jae     short window_query_ret
+        mov     byte ptr [si],dl
+        inc     si
+        jmp     short window_query_next
+window_query_one:
+        cmp     al,0E2h
+        je      short window_query_color
+        cmp     al,0AFh
+        je      short window_query_mode
+        cmp     al,0A0h
+        jb      short window_query_ret
+        cmp     al,0ABh
+        ja      short window_query_ret
+        push    ax                    ; A0h-ABh:  the pair's row (even)
+        and     al,0FEh               ; or column (odd)
+        sub     al,0A0h
+        shr     al,1
+        add     al,0C0h
+        call    window_query_pair
+        pop     ax
+        test    al,1
+        jz      short window_query_one_row
+        mov     dh,dl
+window_query_one_row:
+        mov     al,dh
+        jmp     short window_query_store
+window_query_color:
+        push    ax
+        call    window_attr
+        mov     al,ah
+        pop     dx
+        jmp     short window_query_store
+window_query_mode:
+        push    bx
+        mov     ah,0Fh                ; 44h in colour text, as DESQview 2.80
+        int     10h                   ; gave there, 0 else
+        pop     bx
+        cmp     al,2
+        jb      short window_query_mode_other
+        cmp     al,3
+        ja      short window_query_mode_other
+        mov     al,44h
+        jmp     short window_query_store
+window_query_mode_other:
+        xor     al,al
+window_query_store:
+        cmp     si,di
+        jae     short window_query_ret
+        mov     byte ptr [si],al
+        inc     si
+        jmp     window_query_next
+window_query_ret:
+        pop     es
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+
+; DH, DL = the pair of query opcode AL (C0h-C5h; CH, CL the screen's rows,
+; columns):  the cursor, the scroll origin, the window position, its size,
+; the viewport origin, the virtual screen's size.
+window_query_pair:
+        xor     dx,dx
+        cmp     al,0C0h
+        jne     short window_query_pair_size
+        jmp     window_cursor_get
+window_query_pair_size:
+        cmp     al,0C3h
+        je      short window_query_pair_screen
+        cmp     al,0C5h
+        jne     short window_query_pair_ret
+window_query_pair_screen:
+        mov     dx,cx
+window_query_pair_ret:
         ret
 
 ; SUBFROM queues the caller's far pointer rather than copying its bytes. The
