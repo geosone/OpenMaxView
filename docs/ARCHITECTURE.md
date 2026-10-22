@@ -37,9 +37,12 @@ DOS executable path. `GETDVPATH` can therefore answer from resident storage
 without invoking DOS from an interrupt handler.
 
 The resident also owns a deliberately bounded allocation foundation: eight
-256-byte task slots and four 256-byte common slots. Task slots are reclaimed
-at the foreground-task reset boundary; common slots remain global until their
-owner releases them. This supplies genuine backing memory for the documented
+256-byte task slots per task and eight global 256-byte common slots. The task
+slots are part of the per-task state block (`D707h`) the multitasking core
+swaps, as DESQview's system memory lives in the window's memory: every task
+has its own eight, and they go with the task (and at the foreground-task
+reset); common slots remain global until their owner releases them, also
+after the task ended, as under DESQview. This supplies genuine backing memory for the documented
 `GETMEM`, `PUTMEM`, `GETCOMMON` and `PUTCOMMON` calls without pretending that
 the variable-sized multi-task allocator already exists.
 

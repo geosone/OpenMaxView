@@ -60,6 +60,7 @@
 ;   INT 2Fh AX=D705h                 extended compatibility capabilities
 ;   INT 2Fh AX=D706h                 sound-queue diagnostic query
 ;   INT 2Fh AX=D707h                 per-task state block (for the core)
+;                                    with the GETMEM pool
 ;   INT 2Fh AX=D708h, BX=task        a task ended:  free its objects
 
 DV_VERSION     equ 0250h        ; 2.80:  BH major, BL minor in binary (as DV)
@@ -80,11 +81,11 @@ CAPABILITIES3  equ 3FFFh             ; object/window and task-stack services
 
 MEM_SLOT_SIZE      equ 0100h
 SYSTEM_SLOT_COUNT  equ 8
-COMMON_SLOT_COUNT  equ 4
+COMMON_SLOT_COUNT  equ 8
 COMMON_TOTAL       equ COMMON_SLOT_COUNT * MEM_SLOT_SIZE
-TIMER_SLOT_COUNT   equ 4
+TIMER_SLOT_COUNT   equ 16
 TIMER_OBJECT_SIZE  equ 32
-MAILBOX_SLOT_COUNT equ 2
+MAILBOX_SLOT_COUNT equ 8
 MAILBOX_OBJECT_SIZE equ 32
 MAILBOX_QUEUE_DEPTH equ 4
 MAILBOX_MESSAGE_SIZE equ 128
@@ -2395,8 +2396,7 @@ int15_getmem:
         push    cx
         push    si
         push    dx
-        call    caller_tag            ; (AX:  the function, set again by it)
-        mov     cs:alloc_tag,al
+        mov     byte ptr cs:alloc_tag,1 ; (the pool is the task's own)
         mov     si,offset system_used
         mov     di,offset system_pool
         mov     cx,SYSTEM_SLOT_COUNT
@@ -3155,8 +3155,8 @@ mailbox_release:
         jmp     mailbox_clear_queue
 
 ; AL = the calling task's tag:  its number (APPNUM, the multitasking core
-; answers it) + 1.  What it allocates with GETMEM and its mailboxes go when
-; the task ends (D708h), as DESQview frees them with the window.
+; answers it) + 1.  Its mailboxes go when the task ends (D708h), as
+; DESQview frees them with the window.
 caller_tag:
         push    bx
         push    cx
@@ -3387,7 +3387,9 @@ int2f_not_task_end:
         pop     es
         mov     bx,offset task_state_begin
         mov     cx,offset task_state_end - offset task_state_begin
-        xor     ax,ax
+        mov     dx,offset task_state_pool - offset task_state_begin
+        xor     ax,ax                 ; (DX:  what a new task inherits, the
+                                      ; rest starts zero)
         popf
         iret
 int2f_not_task_state:
@@ -3446,8 +3448,8 @@ int2f_reset:
         pop     ax
         popf
         iret
-; D708h, BX = task:  it ended (the multitasking core):  its GETMEM blocks
-; and mailboxes go; common memory and timers stay (DESQview keeps them too
+; D708h, BX = task:  it ended (the multitasking core):  its mailboxes go
+; (its GETMEM pool went with its state block); common memory and timers stay (DESQview keeps them too
 ; when a window is closed)
 int2f_task_end:
         push    ax
@@ -3456,15 +3458,6 @@ int2f_task_end:
         cli
         mov     al,bl
         inc     al                    ; its tag
-        mov     si,offset system_used
-        mov     cx,SYSTEM_SLOT_COUNT
-task_end_mem:
-        cmp     byte ptr cs:[si],al
-        jne     short task_end_mem_next
-        mov     byte ptr cs:[si],0
-task_end_mem_next:
-        inc     si
-        loop    task_end_mem
         xor     ah,ah
         xor     si,si
         mov     cx,MAILBOX_SLOT_COUNT
@@ -3556,6 +3549,11 @@ message_result_ptr_off dw 0
 message_result_ptr_seg dw 0
 task_internal_stack db TASK_STACK_SIZE dup(0)
 task_internal_stack_top label byte
+; GETMEM (system memory) per task, as DESQview's in the window's memory:
+; a new task starts with it all free, and it goes with the task
+task_state_pool label byte
+system_used    db SYSTEM_SLOT_COUNT dup(0)
+system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 task_state_end label byte
 sound_head     dw 0
 sound_tail     dw 0
@@ -3569,7 +3567,6 @@ printc_columns db 80
 printc_last_row db 24
 task_handle_segment dw 0
 install_path   db 67 dup(0)
-system_used    db SYSTEM_SLOT_COUNT dup(0) ; 0 free, else owner tag
 alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
@@ -3600,7 +3597,6 @@ mailbox_message_pointer_off dw MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_pointer_seg dw MAILBOX_ENTRY_COUNT dup(0)
 mailbox_message_data db (MAILBOX_ENTRY_COUNT * MAILBOX_MESSAGE_SIZE) dup(0)
 mailbox_names  db (MAILBOX_SLOT_COUNT * MAILBOX_NAME_SIZE) dup(0)
-system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 common_pool    db (COMMON_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
 
 ; Keep this label paragraph-aligned: GETFOREGROUND returns segment:0000.

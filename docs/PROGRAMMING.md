@@ -101,9 +101,10 @@ launcher resets task state after a foreground child.
 ## Resident memory
 
 The current allocator is deliberately bounded. `GET_MEMORY` accepts 1 to 256
-bytes and returns a zero-filled `ES:DI` block; eight task slots exist.
-`GET_COMMON` uses four global 256-byte slots. Common blocks survive a task
-reset and must be released explicitly.
+bytes and returns a zero-filled `ES:DI` block; each task has eight task slots
+of its own (seen only by that task, freed when it ends, as DESQview's system
+memory). `GET_COMMON` uses eight global 256-byte slots. Common blocks survive a
+task reset and the end of their task and must be released explicitly.
 The TopView `ODQ_DVC_GET_MEMORY_TV` (`AX=1001h`) and DESQview 2.40
 `ODQ_DVC_GET_MEMORY_EXT` (`AX=102Eh`) entry points share the same task pool and
 failure contract; release their blocks with `ODQ_DVC_PUT_MEMORY_TV`.
@@ -174,7 +175,8 @@ objects do not exist. Do not substitute private handles or assume that an
 integer is a valid object pointer.
 
 `NEW` takes nothing on the stack and pushes the new handle. Class `0Bh`
-returns one of four timer handles:
+returns one of sixteen timer handles (they are global and outlive the task
+that made them, as under DESQview):
 
 ```asm
         mov     ax,1200h
@@ -253,7 +255,9 @@ the private stack, or retain pointers to data placed there. The public API
 defines only one active switch. Open MaxView resets abandoned stack ownership
 at the normal child boundary, but that recovery is not a programming model.
 
-`NEW` class `09h` similarly allocates one of two mailbox identities. They work
+`NEW` class `09h` similarly allocates one of eight mailbox identities; the
+mailboxes of a task are freed when it ends (as DESQview frees them with the
+window). They work
 with `IS_OBJECT`, `OBJECT_TYPE`, `OBJNEXT`, `HANDLE` selector `00h`, `FREE`,
 `OPEN`, `CLOSE`, `ERASE` and `STATUS`. Capability
 `ODQ_CAP3_MAILBOX_QUEUE` adds a bounded by-value `ADDTO` queue. Each mailbox

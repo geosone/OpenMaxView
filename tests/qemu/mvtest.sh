@@ -349,11 +349,13 @@ print(n*100//(w*h))" "$1" 2>/dev/null || echo 0
     ;;
 objs)
     echo "== objs:  DESQview objects of a task that ends"
-    printf 'C:\\MAXVTSR.COM\r\nC:\\LEAKPRB.COM S C:\\S1.TXT\r\nC:\\LEAKPRB.COM C C:\\C1.TXT\r\nC:\\MVRUN /K6 15 C:\\LEAKPRB.COM L C:\\L1.TXT ; C:\\LEAKPRB.COM C C:\\C2.TXT\r\nC:\\LEAKPRB.COM C C:\\C3.TXT\r\n' > "$OUT/O.BAT"
-    CMD="C:\\O.BAT" run objs 15 "" "$OUT/O.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/LEAKPRB.COM"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\LEAKPRB.COM S C:\\S1.TXT\r\nC:\\LEAKPRB.COM C C:\\C1.TXT\r\nC:\\MVRUN /K6 15 C:\\LEAKPRB.COM L C:\\L1.TXT ; C:\\LEAKPRB.COM C C:\\C2.TXT\r\nC:\\LEAKPRB.COM C C:\\C3.TXT\r\nC:\\MVRUN 10 C:\\LEAKPRB.COM H C:\\H1.TXT ; C:\\LEAKPRB.COM D C:\\D2.TXT\r\n' > "$OUT/O.BAT"
+    CMD="C:\\O.BAT" END="wait:MVRUN:_done:120 sleep:2 wait:MVRUN:_done:120 sleep:3" run objs 15 "" "$OUT/O.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/LEAKPRB.COM"
     s1=$(file objs S1.TXT | tr '\n' ' '); c1=$(file objs C1.TXT | tr '\n' ' ')
     l1=$(file objs L1.TXT | tr '\n' ' '); c2=$(file objs C2.TXT | tr '\n' ' ')
     c3=$(file objs C3.TXT | tr '\n' ' ')
+    h1=$(file objs H1.TXT | tr '\n' ' '); d2=$(file objs D2.TXT | tr '\n' ' ')
+    echo "  H1: $h1"; echo "  D2: $d2"
     echo "  S1: $s1"; echo "  C1: $c1"; echo "  L1: $l1"; echo "  C2: $c2"; echo "  C3: $c3"
     get() { echo "$1" | awk -v w="$2" '{for (i = 1; i < NF; i++) if ($i == w) print $(i + 1)}'; }
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/objs/end.txt'"
@@ -363,6 +365,7 @@ objs)
     check "its mailbox back" "[ -n '$(get "$c1" mbx)' ] && [ '$(get "$c2" mbx)' = '$(get "$c1" mbx)' ]"
     check "common block and timer kept (as DV)" "[ '$(get "$c2" com)' = \$(( $(get "$c1" com) - 1 )) ] && [ '$(get "$c2" tmr)' = \$(( $(get "$c1" tmr) - 1 )) ]"
     check "the same after MVRUN" "[ '$c3' = '$c2' ]"
+    check "GETMEM per task:  all for one, all for the other at once" "[ '$h1' = 'hold 8 ' ] && [ '$(get "$d2" sys)' = 8 ]"
     ;;
 many)
     echo "== many:  16 task slots, 15 TICK tasks"

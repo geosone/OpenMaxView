@@ -29,8 +29,8 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AX=102Eh BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | DESQview 2.40 extended `GETMEM` alias |
 | `INT 15h AH=12h BH=00h BL=selector` | Selectors 00h, 02h, 04h, 06h, 0Ch take a DWORD on the caller stack and replace it; 01h, 03h, 05h, 07h, 0Dh take none and push the result (as DESQview 2.80) | `HANDLE`; selector 00h validates task/timer/mailbox handles, selector 01h returns the current window, the others null |
-| `INT 15h AH=12h BH=01h BL=0Bh` | Pushes a timer handle or null (nothing taken from the stack, as DESQview 2.80) | `NEW`; bounded four-object timer pool |
-| `INT 15h AH=12h BH=01h BL=09h` | Pushes a mailbox handle or null | `NEW`; bounded two-object mailbox pool |
+| `INT 15h AH=12h BH=01h BL=0Bh` | Pushes a timer handle or null (nothing taken from the stack, as DESQview 2.80) | `NEW`; bounded sixteen-object timer pool |
+| `INT 15h AH=12h BH=01h BL=09h` | Pushes a mailbox handle or null | `NEW`; bounded eight-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, object DWORD on caller stack | Releases a live timer or mailbox and pops the DWORD; invalid handles are ignored | `FREE`; bounded dynamic objects |
 | `INT 15h AH=12h BH=03h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with the sender task handle of the last consumed record | Mailbox `ADDR`; null before the first successful read |
 | `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length followed by a resident pointer DWORD | Mailbox `READ`; Carry on empty instead of blocking |
@@ -94,8 +94,9 @@ error dialog. The selected error policy is observable now. Allocation failure
 returns a null pointer/status in foreground mode; it does not display an
 interactive DESQview error dialog.
 
-The current bounded allocator provides eight 256-byte task-memory slots and
-four 256-byte common-memory slots. Requests from 1 through 256 bytes occupy
+The current bounded allocator provides eight 256-byte task-memory slots per
+task (in the per-task state block, `D707h`) and eight global 256-byte
+common-memory slots. Requests from 1 through 256 bytes occupy
 one slot and are zero-filled; larger requests fail without partial
 allocation. `D702h` releases every task-memory slot when the launcher resets
 the foreground task. Common memory deliberately survives a task reset and
@@ -147,7 +148,7 @@ not nestable: a second `OSTACK` must be preceded by `USTACK`. Open MaxView
 keeps invalid repeated `OSTACK` and unmatched `USTACK` calls as safe no-ops,
 but portable programs must not depend on that extension.
 
-The foreground task, four timer slots and two mailbox slots have paragraph-aligned,
+The foreground task, sixteen timer slots and eight mailbox slots have paragraph-aligned,
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,
 `DOSUSER`, `ISOBJ`, `OBJNEXT`, `WININFO` and the object-type query therefore
@@ -159,9 +160,9 @@ The `HANDLE` message implements the original caller-stack ABI. Selector `00h`
 validates and returns a live task or timer pointer already in the DWORD;
 selector `01h` returns the current task's window. Selectors `02h` through
 `07h` return `0000:0000` because task-default mailbox, keyboard and OBJECTQ
-objects do not exist yet. `NEW` classes `09h` and `0Bh` allocate one of two
-mailboxes or four timers, and `FREE` class
-`00h` releases it. A fifth allocation returns null, released handles stop
+objects do not exist yet. `NEW` classes `09h` and `0Bh` allocate one of eight
+mailboxes or sixteen timers, and `FREE` class
+`00h` releases it. One more allocation returns null, released handles stop
 passing `ISOBJ`, and task reset reclaims every timer. `OPEN`, `CLOSE`, absolute
 `WRITE` and relative `ADDTO` control timers; `SIZEOF`, `LEN` and `STATUS` query
 them using the BIOS clock without a resident DOS call. Deadlines and durations
@@ -249,8 +250,8 @@ applications expecting the DESQview interface.
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
 | `D705h` | `BX=3FFFh` extended compatibility capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
-| `D708h` | `BX` = a task that ended (the multitasking core calls it):  its `GETMEM` blocks and mailboxes are freed, its common memory and timers stay, as DESQview 2.80 frees them when a window is closed; the owner is the task's `APPNUM` at allocation |
-| `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, OSTACK state and stack), `CX` = its size; the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window |
+| `D708h` | `BX` = a task that ended (the multitasking core calls it):  its mailboxes are freed (the owner is the task's `APPNUM` at `NEW`; its `GETMEM` pool goes with its state block), its common memory and timers stay, as DESQview 2.80 when a window is closed |
+| `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, OSTACK state and stack, then the `GETMEM` pool), `CX` = its size, `DX` = the part a new task inherits (the pool starts free); the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise

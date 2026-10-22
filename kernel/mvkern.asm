@@ -29,7 +29,7 @@
 ; nesting, OSTACK, ...), as DESQview keeps it per window.
 ; CDS and SDA (4KB) are kept in the task's own memory, a block behind its
 ; stub PSP (task 0's in the kernel data):  the table holds 1.7KB a task,
-; up to MAXTASK (31) of them, as many as the caller asks (mvk_datasize).
+; up to MAXTASK (30) of them, as many as the caller asks (mvk_datasize).
 ; QPI 08h is called on a shared kernel stack:  the task's stack is gone
 ; once the context changes, and the SDA swap may overwrite a DOS stack.
 ;
@@ -61,14 +61,16 @@
         .model  small
         .386
 
-MAXTASK         equ 31          ; task 0 (the caller) + 30 at most (the
+MAXTASK         equ 30          ; task 0 (the caller) + 29 at most (the
                                 ; table has mvk_datasize's count)
 MAXPAGE         equ 160         ; private pages per task (640KB)
 STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
 KSTACK          equ 512         ; kernel stack (QPI 08h)
 SDAMAX          equ 2048        ; DOS SDA swapped
 CDSMAX          equ 26*58h      ; DOS current directories (CDS) swapped
-DVSTMAX         equ 640         ; MAXVTSR's per-task state (INT 2Fh D707h)
+DVSTMAX         equ 3072        ; MAXVTSR's per-task state (INT 2Fh D707h)
+DVINITMAX       equ 640         ;   the part a new task inherits (the rest,
+                                ;   its GETMEM pool, starts zero)
 SAVEPARA        equ (CDSMAX + SDAMAX + DVSTMAX + 15) / 16 ; CDS, SDA and
                                 ; MAXVTSR's state saved, behind the stub PSP
                                 ; in each task's own memory
@@ -148,11 +150,11 @@ cprog   db      80 dup (?)      ; mvk_create arguments
 ctail   db      128 dup (?)
 t0save  db      CDSMAX + SDAMAX + DVSTMAX dup (?) ; task 0's (root context)
                                 ; T_XSAVE
-dvinit  db      DVSTMAX dup (?) ; MAXVTSR's state at mvk_init:  new tasks
+dvinit  db      DVINITMAX dup (?) ; MAXVTSR's state at mvk_init:  new tasks
 tasks   TASK    MAXTASK dup (<>) ; (last:  mvk_datasize's count of them)
 kdata_end label byte
 MVKDATA ends
-KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128 + CDSMAX + SDAMAX + 2 * DVSTMAX
+KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128 + CDSMAX + SDAMAX + DVSTMAX + DVINITMAX
         .erre   KDATASIZE LE 0FFF0h, <kernel data over 64KB:  MAXTASK, SDAMAX, CDSMAX>
 
         .code
@@ -196,6 +198,7 @@ cur      dw     0
 running  dw     0
 dvst_ptr dd     0               ; MAXVTSR's per-task state block
 dvst_size dw    0               ;   (0:  none)
+dvst_init dw    0               ;   what new tasks inherit of it
 nslots   dw     8               ; slots in the table (mvk_datasize)
 quantum  dw     2
 fgquant  dw     6               ; for the task with the keys
@@ -418,9 +421,15 @@ mvk_init_ proc near
         jnz     init_nodv
         cmp     cx,DVSTMAX
         ja      init_nodv
+        cmp     dx,DVINITMAX
+        ja      init_nodv
+        cmp     dx,cx
+        ja      init_nodv
         mov     word ptr cs:dvst_ptr,bx
         mov     word ptr cs:dvst_ptr+2,es
         mov     cs:dvst_size,cx
+        mov     cs:dvst_init,dx
+        mov     cx,dx
         push    ds
         push    si
         push    di
@@ -683,8 +692,9 @@ cr_have:
         mov     [di].T_SP,bx
         ; IVT and SDA:  those of now; key buffer empty, cursors home
         call    save_ivtsda
-        mov     cx,cs:dvst_size ; MAXVTSR's state:  that of mvk_init
-        jcxz    cr_dvdone
+        mov     cx,cs:dvst_init ; MAXVTSR's state:  that of mvk_init, its
+        cmp     cs:dvst_size,0  ; GETMEM pool free
+        je      cr_dvdone
         push    si
         push    di
         push    es
@@ -693,6 +703,10 @@ cr_have:
         mov     si,offset dvinit
         cld
         rep     movsb
+        mov     cx,cs:dvst_size
+        sub     cx,cs:dvst_init
+        xor     al,al
+        rep     stosb
         pop     es
         pop     di
         pop     si

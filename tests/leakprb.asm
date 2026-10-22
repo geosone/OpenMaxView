@@ -14,6 +14,10 @@
 ;                     of that window, its DWORD pushed), "free N" (FREE of that
 ;                     mailbox, its DWORD pushed):  N = bytes pushed (4) or
 ;                     popped (-4) by the call, 0:  none
+;   LEAKPRB H file    takes all GETMEM blocks (16 at most), writes "hold
+;                     N" and waits (PAUSE) until it is ended
+;   LEAKPRB D file    as C, 3 s later (with H in another task:  the blocks
+;                     it gets are its own if the pool is per task)
 ; Run C, then L in a task that ends, then C again:  the same counts if
 ; the end of a task frees its objects.
 
@@ -49,6 +53,10 @@ start:
         cmp     role,'L'
         je      @F
         cmp     role,'S'
+        je      @F
+        cmp     role,'H'
+        je      @F
+        cmp     role,'D'
         jne     usage
 @@:     mov     ah,3Ch
         xor     cx,cx
@@ -61,7 +69,22 @@ start:
         je      leak
         cmp     role,'S'
         je      stk
-        ; count
+        cmp     role,'H'
+        je      hold
+        cmp     role,'D'
+        jne     docount
+        push    es              ; D:  3 s first
+        push    40h
+        pop     es
+        mov     bx,es:[6Ch]
+@@:     mov     ax,1000h
+        int     15h
+        mov     ax,es:[6Ch]
+        sub     ax,bx
+        cmp     ax,55
+        jb      @B
+        pop     es
+docount:        ; count
         mov     si,offset t_sys
         call    puts
         mov     bp,0DE0Ch
@@ -123,6 +146,27 @@ done:   mov     ah,3Eh
         int     21h
         mov     ax,4C00h
         int     21h
+
+hold:   mov     si,offset t_hold
+        call    puts
+        xor     cx,cx
+@@:     push    cx
+        mov     bp,0DE0Ch
+        call    getblk
+        pop     cx
+        jz      @F
+        inc     cx
+        cmp     cx,NMAX
+        jb      @B
+@@:     mov     ax,cx
+        call    putdec
+        call    putnl
+        mov     ah,3Eh
+        mov     bx,handle
+        int     21h
+@@:     mov     ax,1000h        ; until it is ended
+        int     15h
+        jmp     @B
 
 stk:    mov     si,offset t_new
         call    puts
@@ -365,13 +409,14 @@ putdec  proc near
         ret
 putdec  endp
 
-utext   db      'LEAKPRB C|L|S file',13,10,'$'
+utext   db      'LEAKPRB C|L|S|H|D file',13,10,'$'
 t_sys   db      'sys ',0
 t_com   db      'com ',0
 t_mbx   db      'mbx ',0
 t_tmr   db      'tmr ',0
 t_cfree db      'cfree ',0
 t_leak  db      'leak',0
+t_hold  db      'hold ',0
 t_new   db      'new ',0
 t_handle db     'handle ',0
 t_free  db      'free ',0

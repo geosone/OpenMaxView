@@ -6,31 +6,33 @@
         .code
         org     100h
 
+TIMERS  equ     16                    ; MAXVTSR's timer pool
+
 start:
         push    cs
         pop     ds
 
-        ; Allocate the complete four-object timer pool.
+        ; Allocate the complete timer pool.
         xor     si,si
-        mov     cx,4
+        mov     cx,TIMERS
 allocate_loop:
         call    new_timer
         or      dx,dx                 ; public handles are segment:0000
         jnz     failed
         or      ax,ax
         jz      failed
-        cmp     si,0
-        je      short allocate_unique
-        cmp     ax,word ptr timer_segments
+        push    cx                    ; unlike all before it
+        mov     cx,si
+        shr     cx,1
+        xor     bx,bx
+        jcxz    allocate_first
+unique_loop:
+        cmp     ax,word ptr timer_segments[bx]
         je      failed
-        cmp     si,2
-        je      short allocate_unique
-        cmp     ax,word ptr timer_segments+2
-        je      failed
-        cmp     si,4
-        je      short allocate_unique
-        cmp     ax,word ptr timer_segments+4
-        je      failed
+        add     bx,2
+        loop    unique_loop
+allocate_first:
+        pop     cx
 allocate_unique:
         mov     word ptr timer_segments[si],ax
         add     si,2
@@ -148,7 +150,7 @@ absolute_ready:
         or      dx,dx
         jnz     failed
 
-        ; A fifth timer fails cleanly with a null pointer.
+        ; One more timer fails cleanly with a null pointer.
         call    new_timer
         or      ax,ax
         jnz     failed
@@ -196,7 +198,7 @@ absolute_ready:
         or      ax,ax
         jz      failed
         xor     si,si
-        mov     cx,4
+        mov     cx,TIMERS
 enumerate_loop:
         mov     ax,0DE2Bh
         int     15h
@@ -243,7 +245,7 @@ enumerate_loop:
         mov     ax,0D702h
         int     2Fh
         xor     si,si
-        mov     cx,4
+        mov     cx,TIMERS
 reset_validate_loop:
         mov     ax,word ptr timer_segments[si]
         mov     es,ax
@@ -384,7 +386,7 @@ current_time:
         pop     bx
         ret
 
-timer_segments dw 4 dup(0)
+timer_segments dw TIMERS dup(0)
 passed_msg db 'MAXVTSR timer object lifecycle passed.',13,10,'$'
 failed_msg db 'MAXVTSR timer object lifecycle failed.',13,10,'$'
 

@@ -6,6 +6,8 @@
         .code
         org 100h
 
+MAILBOXES equ   8                     ; MAXVTSR's mailbox pool
+
 start:
         push    cs
         pop     ds
@@ -28,11 +30,37 @@ start:
         cmp     ax,word ptr mailbox_one
         je      failed
         mov     word ptr mailbox_two,ax
+        ; The rest of the pool, then one more fails cleanly with a null
+        ; pointer; the rest goes back at once.
+        mov     cx,MAILBOXES-2
+        mov     si,offset extra_boxes
+fill_pool:
+        push    cx
+        push    si
+        call    new_mailbox
+        pop     si
+        pop     cx
+        or      ax,ax
+        jz      failed
+        mov     [si],ax
+        add     si,2
+        loop    fill_pool
         call    new_mailbox
         or      ax,ax
         jnz     failed
         or      dx,dx
         jnz     failed
+        mov     cx,MAILBOXES-2
+        mov     si,offset extra_boxes
+empty_pool:
+        push    cx
+        push    si
+        mov     ax,[si]
+        call    free_mailbox
+        pop     si
+        pop     cx
+        add     si,2
+        loop    empty_pool
 
         ; Names are copied by SETNAME, returned without a terminator by
         ; GETNAME, and discoverable through DESQview FINDMAIL.
@@ -731,6 +759,7 @@ mailbox_getname:
 
 mailbox_one dw 0
 mailbox_two dw 0
+extra_boxes dw MAILBOXES-2 dup(0)
 expected_sender dw 0
 sample_message db 'HELLO'
 later_message db 'LATER'
