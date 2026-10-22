@@ -98,6 +98,7 @@ DESQview test:
 | `kill` | killed tasks end through DOS, a new one starts in a freed slot |
 | `crit` | a background critical error comes to the front |
 | `desk` | MAXVIEW.EXE starts programs as tasks, Alt, task list, exit |
+| `deskmany` | MAXVIEW.EXE with 12 programs:  the task list scrolls, IDs 1-9 then A-C, Ctrl+Alt only for 1-9, Enter on C gives KEYPROBE the keys, all TICKs count |
 | `win` | MAXVIEW windows: two tasks on one screen, typing, move, zoom, close |
 | `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |
 | `cwd` | current directory per task (CDS), MVRUN's unchanged |

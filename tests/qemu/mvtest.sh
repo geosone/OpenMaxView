@@ -62,6 +62,9 @@
 #         13h, KEYPROBE in text; switching between them sets each one's
 #         mode, the graphics task is held in the background and draws
 #         again when it is back
+#   deskmany  MAXVIEW.EXE with 12 programs (11 TICKs, KEYPROBE):  the task
+#         list scrolls (10 rows), IDs 1-9 then A, B, C; Enter on the last
+#         one (C) gives it screen and keys
 #   many  16 task slots (MVRUN /N16, its list from a file):  15 TICKs all
 #         count side by side, a 16th program finds the table full
 #
@@ -74,7 +77,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk win dvapi cwd ems gfx many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -224,6 +227,36 @@ desk)
     check "exit closes TICK" "grep -q 'Close 1 running' '$d/confirm.txt'"
     check "TICK counted meanwhile" "[ $t1 -ge 10 ]"
     check "DOS works afterwards" "grep -q '^desk end' '$d/end.txt'"
+    ;;
+deskmany)
+    echo "== deskmany:  MAXVIEW.EXE with 12 programs"
+    cfg=$OUT/MAXVIEW.CFG
+    : > "$cfg"
+    for i in $(seq 1 11); do   # (hotkeys must differ)
+        printf '%s|Tick %d|C:\\TICK.EXE C:\\T%d.TXT||64|640\r\n' $(echo 1234567890X | cut -c$i) $i $i >> "$cfg"
+    done
+    printf 'Z|Key probe|C:\\KEYPROBE.COM C:\\K12.TXT D||64|640\r\n' >> "$cfg"
+    st="wait:Open_Program:60 key:ret sleep:3"
+    for i in $(seq 2 12); do
+        # (the menu keeps the last selection:  one down to the next)
+        st="$st key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret sleep:3"
+    done
+    st="$st wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:t wait:Enter:_switch:10 text:list1"
+    for j in $(seq 1 11); do st="$st key:down"; done
+    st="$st sleep:1 text:list2 key:ret sleep:2 key:k key:dot wait:Key_probe_ended:20 text:ended sleep:2 key:esc wait:exit_to_DOS:10 text:confirm key:y gone:Open_Program:30 sleep:2 type:echo_deskmany_end"
+    CMD="C:\\MAXVIEW" END="wait:deskmany_end:60" run deskmany 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" "$st"
+    d=$OUT/deskmany
+    k=$(file deskmany K12.TXT); n=0
+    for i in $(seq 1 11); do [ $(last deskmany T$i.TXT tick) -ge 5 ] && n=$((n + 1)); done
+    echo "  K12 '$k', TICKs counting $n of 11"
+    check "list:  the first 10 rows" "grep -q ' 1  Tick 1 ' '$d/list1.txt' && grep -q ' A  Tick 10 ' '$d/list1.txt' && ! grep -q 'Key probe' '$d/list1.txt'"
+    check "list scrolled:  B, C at the end" "grep -q ' B  Tick 11 ' '$d/list2.txt' && grep -q ' C  Key probe ' '$d/list2.txt' && ! grep -q ' 1  Tick 1 ' '$d/list2.txt'"
+    check "Ctrl+Alt only for 1-9" "grep -q 'Tick 9 .*Ctrl+Alt+9' '$d/list1.txt' && ! grep -q 'Tick 10 .*Ctrl+Alt' '$d/list1.txt'"
+    check "Enter on C:  KEYPROBE gets the keys" "[ '$k' = k ]"
+    check "11 TICKs count" "[ $n -eq 11 ]"
+    check "exit closes 11" "grep -q 'Close 11 running' '$d/confirm.txt'"
+    check "DOS works afterwards" "grep -q '^deskmany end' '$d/end.txt'"
     ;;
 win)
     echo "== win:  windows of several tasks"
