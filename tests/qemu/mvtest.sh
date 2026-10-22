@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -17,6 +17,12 @@
 #         goes to task 1 also while task 2 runs.  Open386MAX's
 #         linux/test/serfeed.py sends 3000 bytes at 50 bytes/s and checks
 #         the echo
+#   keys  foreground and background:  KEYPROBE (tests/keyprobe.asm) task 1
+#         reads by INT 16h, task 2 by DOS, task 3 TICK; task 1 starts in
+#         the foreground (MVRUN /F1), Ctrl+Alt+2 and Ctrl+Alt+1 switch.
+#         Each screen shows only its own task, each task gets only the keys
+#         typed while it is the foreground, and the waiting tasks leave
+#         the CPU to TICK
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -27,20 +33,21 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial}
+CASES=${*:-two mem serial keys}
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
-make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM || exit 2
+make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
+    build/KEYPROBE.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
-run() {     # case, seconds, MVRUN task list, more files
+run() {     # case, seconds, MVRUN task list, more files, steps before the end
     local dir=$OUT/$1
     rm -rf "$dir"; mkdir -p "$dir"
     KEEP=1 ACCEL="-accel tcg" XFILES="$ROOT/build/MVRUN.EXE ${4:-}" \
         QEMU_EXTRA="-debugcon file:$OUT/$1.e9 ${SERIAL:--serial file:$OUT/$1.com1}" \
-        AUTO="C:\\MVRUN $2 $3" \
-        STEPS="wait:MVRUN:_done:$(($2 * 3 + 120)) text:end" TESTDIR="$dir" \
+        AUTO="C:\\MVRUN ${FG:-}$2 $3" \
+        STEPS="${5:-} wait:MVRUN:_done:$(($2 * 3 + 120)) text:end" TESTDIR="$dir" \
         "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/$1.log" 2>&1
     grep -q "MVRUN: done" "$dir/end.txt" 2>/dev/null ||
         { echo "  MVRUN did not end:"; grep -v '^\s*$' "$dir/fail.txt" 2>/dev/null | tail -4; }
@@ -98,6 +105,24 @@ serial)
     check "every byte echoed unchanged" "[ \"\${feed% ok}\" != \"\$feed\" ]"
     check "SERECHO counted 3000 bytes" "[ $rx -eq 3000 ]"
     check "task 2 counts" "[ $t2 -ge 100 ]"
+    ;;
+keys)
+    echo "== keys:  foreground task gets screen and keys"
+    kp="$ROOT/build/KEYPROBE.COM"
+    FG="/F1 " run keys 60 \
+        "C:\\KEYPROBE.COM C:\\K1.TXT B ; C:\\KEYPROBE.COM C:\\K2.TXT D ; C:\\TICK.EXE C:\\T3.TXT" \
+        "$kp $TICK" \
+        "wait:keyprobe_B_ready:60 sleep:3 text:fg1 key:a,b,c sleep:2 key:ctrl-alt-2 wait:keyprobe_D_ready:20 sleep:2 text:fg2 key:x,y,z sleep:2 key:dot sleep:2 key:ctrl-alt-1 wait:abc:20 text:fg3 key:dot"
+    k1=$(file keys K1.TXT); k2=$(file keys K2.TXT); t3=$(last keys T3.TXT tick)
+    d=$OUT/keys
+    echo "  K1 '$k1', K2 '$k2', TICK $t3"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$d/end.txt'"
+    check "task 1 screen alone" "grep -q 'keyprobe B ready' '$d/fg1.txt' && ! grep -q 'keyprobe D' '$d/fg1.txt'"
+    check "task 2 screen after Ctrl+Alt+2" "grep -q 'keyprobe D ready' '$d/fg2.txt' && ! grep -q 'keyprobe B' '$d/fg2.txt'"
+    check "task 1 screen back, with its echo" "grep -q 'abc' '$d/fg3.txt' && ! grep -q 'xyz' '$d/fg3.txt'"
+    check "task 1 got its keys (INT 16h)" "[ '$k1' = abc ]"
+    check "task 2 got its keys (DOS)" "[ '$k2' = xyz ]"
+    check "TICK counts meanwhile" "[ $t3 -ge 45 ]"
     ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac

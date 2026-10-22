@@ -3,9 +3,10 @@
  * (kernel/mvkern.asm) for the given time, then stops them.  A developer
  * and test tool for the multitasking core until the launcher uses it.
  *
- *   MVRUN seconds prog [args] [; prog [args]] ...
+ *   MVRUN [/Fn] seconds prog [args] [; prog [args]] ...
  *
- * prog is a full path.  Prints the switch count and each task's state and
+ * prog is a full path.  /Fn:  task n is the foreground at the start
+ * (default 0, MVRUN itself); Ctrl+Alt+n switches.  Prints the switch count and each task's state and
  * ends with "MVRUN: done". */
 #include <dos.h>
 #include <stdio.h>
@@ -62,12 +63,18 @@ static unsigned set_base(void)
 int main(int argc, char **argv)
 {
     static char tail[128];
-    int ntask = 0, i, t, rc;
+    int ntask = 0, i, t, rc, fg = 0;
     unsigned base;
     unsigned long secs, start, n;
 
+    if (argc > 1 && (argv[1][0] == '/' || argv[1][0] == '-') &&
+        (argv[1][1] == 'F' || argv[1][1] == 'f')) {
+        fg = atoi(argv[1] + 2);
+        argv++;
+        argc--;
+    }
     if (argc < 3) {
-        puts("MVRUN seconds prog [args] [; prog [args]] ...");
+        puts("MVRUN [/Fn] seconds prog [args] [; prog [args]] ...");
         return 2;
     }
     secs = strtoul(argv[1], 0, 10);
@@ -108,6 +115,8 @@ int main(int argc, char **argv)
         mvk_stop();
         return 1;
     }
+    if (fg != 0 && mvk_setfg(fg) != 0)
+        printf("MVRUN: no task %d\n", fg);
     start = ticks();
     while (ticks() - start < secs * 182 / 10) {
         for (t = 1; t <= ntask; ++t)

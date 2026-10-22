@@ -30,5 +30,9 @@ unsigned mvk_state(unsigned task);
 unsigned mvk_exit(unsigned task);
 unsigned long mvk_switches(void);
 unsigned mvk_base(void);
+/* The task shown on the screen and getting the keys (from task 0); the
+ * user switches with Ctrl+Alt+1..9 (Ctrl+Alt+0:  task 0).  0 or MVE_x. */
+int mvk_setfg(unsigned task);
+unsigned mvk_fg(void);
 
 #endif

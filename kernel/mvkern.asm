@@ -16,9 +16,21 @@
 ; interrupted code not 386MAX's own V86 code (its segment is the QPI entry
 ; segment):  an IRQ taken while 386MAX works in protected mode returns
 ; through such a stub, and that frame belongs to the interrupted task.
-; Per task:  all registers (on the task's stack), the IVT and the DOS SDA
-; area that is swapped always (INT 21h 5D06h).  QPI 08h is called on a
-; shared kernel stack:  the task's stack is gone once the context changes.
+; A task that waits (INT 16h read without a key, DOS idle INT 28h) yields
+; at once; then DOS may be busy with console input, safe as the whole SDA
+; (with the DOS stacks) is swapped.
+; Per task:  all registers (on the task's stack), the IVT, the DOS SDA
+; (INT 21h 5D06h, the in-DOS size), the BIOS key buffer and cursor data.
+; QPI 08h is called on a shared kernel stack:  the task's stack is gone
+; once the context changes, and the SDA swap may overwrite a DOS stack.
+;
+; Screen and keys:  one task is the foreground.  The text page B8000h of
+; every other task is a private page (QPI 0Ah); a foreground change copies
+; the screens and remaps them.  INT 10h of a background task leaves the
+; hardware alone (mode, cursor shape, page, palette; the CRTC cursor goes
+; back to the foreground's).  IRQ1 runs the foreground's INT 09h with its
+; key buffer; Ctrl+Alt+1..9 makes task 1..9 the foreground, Ctrl+Alt+0
+; task 0.
 ;
 ; A task starts in TASK_ENTRY:  a stub PSP of its own at the task base,
 ; then DOS EXEC of its program; when that ends, the task is DONE.
@@ -32,7 +44,10 @@
 MAXTASK         equ 8           ; task 0 (the caller) + 7
 MAXPAGE         equ 160         ; private pages per task (640KB)
 STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
-KSTACK          equ 256         ; kernel stack (QPI 08h)
+KSTACK          equ 512         ; kernel stack (QPI 08h)
+SDAMAX          equ 2048        ; DOS SDA swapped
+KBDLEN          equ 36          ; 40:1A-40:3D key buffer head, tail, buffer
+VIDLEN          equ 18          ; 40:50-40:61 cursor positions and shape
 ISTACK          equ 1024        ; IRQ stack (a handler in another task)
 
 ifndef MVDEBUG
@@ -74,7 +89,10 @@ T_EXIT  dw      ?               ; EXEC result:  AX of 4Dh, FFFFh = EXEC failed
 T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
-T_SDA   db      64 dup (?)
+T_VPG   dw      ?               ; private frame of the text page B8000h
+T_SDA   db      SDAMAX dup (?)
+T_KBD   db      KBDLEN dup (?)
+T_VID   db      VIDLEN dup (?)
 T_IVT   db      1024 dup (?)
 T_FRAME dw      MAXPAGE dup (?) ; private page frames
 TASK    ends
@@ -87,6 +105,7 @@ kstk    db      KSTACK dup (?)
 kstktop label   word
 istk    db      ISTACK dup (?)
 istktop label   word
+vbuf    db      4096 dup (?)    ; a text page on its way (foreground change)
 origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
                                 ; differs has hooked it
 
@@ -100,6 +119,8 @@ origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
         public  mvk_exit_
         public  mvk_switches_
         public  mvk_base_
+        public  mvk_setfg_
+        public  mvk_fg_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -122,7 +143,22 @@ i13busy  dw     0
 actpt    dw     0               ; page table active now
 idepth   dw     0               ; IRQ handlers of other tasks running
 nswitch  dd     0
+fg       dw     0               ; foreground task
+newfg    dw     0               ; wanted (hotkey)
+wantsw   dw     0               ; scheduler:  switch tasks
+yieldf   dw     0               ; scheduler:  the task waits
+fgss     dw     0
+fgsp     dw     0
+old10    dd     0
 old13    dd     0
+old16    dd     0
+old28    dd     0
+; vector * 4, handler, old vector:  in every task's IVT while running
+hooktab  dw     10h*4, offset int10, offset old10
+         dw     13h*4, offset int13, offset old13
+         dw     16h*4, offset int16, offset old16
+         dw     28h*4, offset int28, offset old28
+NHOOK    equ    4
 
 ; QPI call:  AX = function, other registers as the function wants
 qpi     macro
@@ -216,19 +252,28 @@ mvk_init_ proc near
         jc      init_sdabad
         mov     word ptr cs:sda_ptr,si
         mov     word ptr cs:sda_ptr+2,ax
-        cmp     dx,64
-        jbe     @F
-        mov     dx,64
-@@:     mov     cs:sda_size,dx
-        ; task 0:  the caller in the root context
-        mov     cs:ntasks,1
+        cmp     cx,dx           ; the in-DOS size (it holds the DOS stacks)
+        jae     @F
+        mov     cx,dx
+@@:     cmp     cx,SDAMAX
+        ja      init_sdabad
+        mov     cs:sda_size,cx
+        ; task 0:  the caller in the root context, the foreground
         mov     cs:cur,0
+        mov     cs:fg,0
+        mov     cs:newfg,0
         xor     bx,bx
         call    taskptr
+        mov     ax,0400h        ; its text page while in the background
+        qpi
+        mov     ax,MVE_MEM
+        jc      init_ret
+        mov     [bx].T_VPG,dx
         mov     [bx].T_STATE,TS_READY
         mov     ax,cs:root_pt
         mov     [bx].T_PT,ax
         mov     [bx].T_NPG,0
+        mov     cs:ntasks,1
         xor     ax,ax
         jmp     short init_ret
 init_sdabad:
@@ -271,6 +316,7 @@ mvk_create_ proc near
         mov     di,bx           ; DI ==> TASK
         mov     [di].T_NPG,0
         mov     [di].T_PT,0
+        mov     [di].T_VPG,0
         mov     [di].T_EXIT,0FFFFh
         ; program and tail
         mov     si,[bp-2]
@@ -316,6 +362,10 @@ mvk_create_ proc near
         add     si,2
         inc     [di].T_NPG
         loop    @B
+        mov     ax,0400h        ; text page (the task starts in the
+        qpi                     ; background)
+        jc      cr_mem
+        mov     [di].T_VPG,dx
         ; into the new context:  install the pages
         mov     dx,[di].T_PT
         mov     ax,0800h
@@ -335,6 +385,20 @@ mvk_create_ proc near
         inc     bx
         add     si,2
         loop    @B
+        mov     cx,0B8h         ; its text page, blank
+        mov     dx,[di].T_VPG
+        mov     ax,0A00h
+        qpi
+        jc      cr_rootmem
+        push    di
+        mov     ax,0B800h
+        mov     es,ax
+        xor     di,di
+        mov     ax,0720h
+        mov     cx,2048
+        cld
+        rep     stosw
+        pop     di
         ; the task's MCB chain:  stub block, free block, shared tail
         mov     ax,cs:base_seg
         mov     es,ax
@@ -396,8 +460,20 @@ mvk_create_ proc near
         mov     es:[bx+6],ax
         mov     [di].T_SS,es
         mov     [di].T_SP,bx
-        ; IVT and SDA:  those of now
+        ; IVT and SDA:  those of now; key buffer empty, cursors home
         call    save_ivtsda
+        mov     ax,word ptr [di].T_KBD
+        mov     word ptr [di].T_KBD+2,ax
+        push    di
+        push    es
+        push    ds
+        pop     es
+        lea     di,[di].T_VID
+        xor     ax,ax
+        mov     cx,8
+        rep     stosw
+        pop     es
+        pop     di
         ; back to the root
         mov     dx,cs:root_pt
         mov     ax,0800h
@@ -442,6 +518,12 @@ task_free proc near
         add     si,2
         loop    @B
 tf_pt:  mov     [di].T_NPG,0
+        mov     dx,[di].T_VPG
+        or      dx,dx
+        jz      @F
+        mov     ax,0500h
+        qpi
+@@:     mov     [di].T_VPG,0
         mov     dx,[di].T_PT
         or      dx,dx
         jz      @F
@@ -456,7 +538,7 @@ tf_pt:  mov     [di].T_NPG,0
         ret
 task_free endp
 
-; IVT and SDA into the TASK at DI (DS = DGROUP)
+; IVT, SDA, key buffer and cursor data into the TASK at DI (DS = DGROUP)
 save_ivtsda proc near
         push    cx
         push    si
@@ -465,12 +547,24 @@ save_ivtsda proc near
         push    es
         mov     ax,ds
         mov     es,ax
+        cld
         push    di
         lea     di,[di].T_IVT
         xor     si,si
         mov     ds,si
         mov     cx,512
-        cld
+        rep     movsw
+        pop     di
+        push    di
+        lea     di,[di].T_KBD   ; DS = 0
+        mov     si,41Ah
+        mov     cx,KBDLEN/2
+        rep     movsw
+        pop     di
+        push    di
+        lea     di,[di].T_VID
+        mov     si,450h
+        mov     cx,VIDLEN/2
         rep     movsw
         pop     di
         lea     di,[di].T_SDA
@@ -485,32 +579,230 @@ save_ivtsda proc near
         ret
 save_ivtsda endp
 
-; IVT and SDA from the TASK at DI (DS = DGROUP)
+; IVT, SDA, key buffer and cursor data from the TASK at DI (DS = DGROUP)
 load_ivtsda proc near
         push    cx
         push    si
         push    di
         push    es
+        cld
+        push    di
         lea     si,[di].T_IVT
         xor     di,di
         mov     es,di
         mov     cx,512
-        cld
         rep     movsw
-        pop     es
         pop     di
         push    di
-        push    es
+        lea     si,[di].T_KBD   ; ES = 0
+        mov     di,41Ah
+        mov     cx,KBDLEN/2
+        rep     movsw
+        pop     di
+        push    di
+        lea     si,[di].T_VID
+        mov     di,450h
+        mov     cx,VIDLEN/2
+        rep     movsw
+        pop     di
+        push    di
         lea     si,[di].T_SDA
         les     di,cs:sda_ptr
         mov     cx,cs:sda_size
         rep     movsb
+        pop     di
         pop     es
         pop     di
         pop     si
         pop     cx
         ret
 load_ivtsda endp
+
+; live key buffer into the TASK at BX (DS = DGROUP)
+kbdsave proc near
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        push    ds
+        pop     es
+        lea     di,[bx].T_KBD
+        xor     si,si
+        mov     ds,si
+        mov     si,41Ah
+        mov     cx,KBDLEN/2
+        cld
+        rep     movsw
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        ret
+kbdsave endp
+
+; key buffer of the TASK at BX live (DS = DGROUP)
+kbdload proc near
+        push    cx
+        push    si
+        push    di
+        push    es
+        lea     si,[bx].T_KBD
+        xor     di,di
+        mov     es,di
+        mov     di,41Ah
+        mov     cx,KBDLEN/2
+        cld
+        rep     movsw
+        pop     es
+        pop     di
+        pop     si
+        pop     cx
+        ret
+kbdload endp
+
+; DX = page table:  active (QPI 08h unless it is already)
+setctx  proc near
+        cmp     dx,cs:actpt
+        je      @F
+        push    ax
+        mov     ax,0800h
+        qpi
+        pop     ax
+        mov     cs:actpt,dx
+@@:     ret
+setctx  endp
+
+; text page B8000h <-> vbuf (DS = DGROUP)
+scr2buf proc near
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     ax,ds
+        mov     es,ax
+        mov     ax,0B800h
+        mov     ds,ax
+        xor     si,si
+        mov     di,offset vbuf
+        mov     cx,2048
+        cld
+        rep     movsw
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        ret
+scr2buf endp
+
+buf2scr proc near
+        push    cx
+        push    si
+        push    di
+        push    es
+        mov     ax,0B800h
+        mov     es,ax
+        mov     si,offset vbuf
+        xor     di,di
+        mov     cx,2048
+        cld
+        rep     movsw
+        pop     es
+        pop     di
+        pop     si
+        pop     cx
+        ret
+buf2scr endp
+
+; DX = the new foreground task.  Its screen to the display, the old one's
+; into its private page.  IF = 0, DS = DGROUP, on a shared stack.
+setfg   proc near
+        pusha
+        push    es
+        cmp     dx,cs:fg
+        je      sfg_ret
+        push    cs:actpt        ; the context to come back to
+        push    dx
+        mov     bx,cs:fg
+        call    taskptr
+        mov     di,bx
+        mov     dx,[di].T_PT    ; the old foreground
+        call    setctx
+        call    scr2buf
+        mov     cx,0B8h
+        mov     dx,[di].T_VPG
+        mov     ax,0A00h
+        qpi
+        call    buf2scr
+        pop     bx              ; the new one
+        push    bx
+        call    taskptr
+        mov     di,bx
+        mov     dx,[di].T_PT
+        call    setctx
+        call    scr2buf
+        mov     cx,0B8h
+        mov     dx,cx
+        mov     ax,0A00h
+        qpi
+        call    buf2scr
+        pop     dx
+        mov     cs:fg,dx
+        pop     dx
+        call    setctx
+        call    fgcursor
+sfg_ret:
+        pop     es
+        popa
+        ret
+setfg   endp
+
+; the CRTC cursor of the foreground task (DS = DGROUP)
+fgcursor proc near
+        pusha
+        push    es
+        mov     bx,cs:fg
+        cmp     bx,cs:cur
+        jne     @F
+        mov     ax,40h          ; the current task's:  live
+        mov     es,ax
+        mov     si,50h
+        jmp     short fgc_1
+@@:     call    taskptr
+        lea     si,[bx].T_VID
+        push    ds
+        pop     es
+fgc_1:  mov     cx,es:[si+10h]  ; shape:  CH start, CL end
+        mov     bx,es:[si]      ; page 0:  BH row, BL column
+        mov     ax,40h
+        mov     es,ax
+        mov     al,bh
+        mul     byte ptr es:[4Ah]
+        xor     bh,bh
+        add     bx,ax
+        mov     ax,es:[4Eh]
+        shr     ax,1
+        add     bx,ax
+        mov     dx,es:[63h]
+        mov     al,0Eh
+        mov     ah,bh
+        out     dx,ax
+        mov     al,0Fh
+        mov     ah,bl
+        out     dx,ax
+        mov     al,0Ah
+        mov     ah,ch
+        out     dx,ax
+        mov     al,0Bh
+        mov     ah,cl
+        out     dx,ax
+        pop     es
+        popa
+        ret
+fgcursor endp
 
 ;----------------------------------------------------------------------------
 ; A task's first instructions (in its context, on its stack, IF=1)
@@ -563,16 +855,26 @@ task_entry proc far
 task_entry endp
 
 ;----------------------------------------------------------------------------
-; IRQ0 calldown:  timer, then maybe the next task
+; IRQ0 calldown:  timer, then maybe the next task or another foreground
 irq0    proc far
         int     08h             ; the task's timer chain (BIOS:  EOI)
         dbg     '.'
         cmp     cs:running,0
         je      irq0_out
+        mov     cs:yieldf,0
         dec     cs:qleft
-        jnz     irq0_out
-        mov     cs:qleft,1      ; not now:  try again next tick
-        pushad
+        jz      irq0_q
+        mov     cs:wantsw,0
+        push    ax
+        mov     ax,cs:newfg
+        cmp     ax,cs:fg
+        pop     ax
+        jne     sched           ; only the foreground
+        iret
+irq0_q: mov     cs:qleft,1      ; not now:  try again next tick
+        mov     cs:wantsw,1
+; IRET frame on the stack, IF = 0:  the scheduler
+sched:: pushad
         push    ds
         push    es
         push    fs
@@ -580,6 +882,27 @@ irq0    proc far
         mov     bp,sp
         mov     ax,cs:dgseg     ; the task table
         mov     ds,ax
+        ; another foreground:  not inside 386MAX nor another task's handler
+        mov     ax,cs:newfg
+        cmp     ax,cs:fg
+        je      sc_nofg
+        mov     ax,[bp+40+2]
+        cmp     ax,cs:qpi_seg
+        je      sc_nofg
+        cmp     cs:idepth,0
+        jne     sc_nofg
+        mov     cs:fgss,ss
+        mov     cs:fgsp,sp
+        mov     ax,cs:dgseg
+        mov     ss,ax
+        mov     sp,offset kstktop
+        mov     dx,cs:newfg
+        call    setfg
+        mov     ss,cs:fgss
+        mov     sp,cs:fgsp
+sc_nofg:
+        cmp     cs:wantsw,0
+        je      irq0_no
         ; interrupted CS (IRET frame behind the 40 bytes saved)
         mov     ax,[bp+40+2]
         cmp     ax,cs:qpi_seg
@@ -589,8 +912,14 @@ irq0    proc far
         cmp     cs:idepth,0
         jne     irq0_no13
         les     bx,cs:sda_ptr
-        cmp     word ptr es:[bx],0 ; critical error flag, InDOS
+        cmp     cs:yieldf,0
+        je      @F
+        cmp     byte ptr es:[bx],0 ; waiting (maybe in DOS):  no critical
+        jne     irq0_nodos      ; error
+        jmp     short irq0_pic
+@@:     cmp     word ptr es:[bx],0 ; critical error flag, InDOS
         jne     irq0_nodos
+irq0_pic:
         mov     al,0Bh          ; PIC in-service registers
         out     20h,al
         in      al,20h
@@ -639,13 +968,13 @@ irq0_found:
         call    taskptr         ; BX ==> current TASK
         mov     [bx].T_SS,ss
         mov     [bx].T_SP,sp
+        mov     ax,cs:dgseg
+        mov     ss,ax           ; shared kernel stack (the SDA swap may
+        mov     sp,offset kstktop ; overwrite the DOS stack in use)
         xchg    di,bx
         call    save_ivtsda
         xchg    di,bx
         call    load_ivtsda
-        mov     ax,cs:dgseg
-        mov     ss,ax           ; shared kernel stack
-        mov     sp,offset kstktop
         push    dx
         mov     dx,[di].T_PT
         mov     ax,0800h
@@ -675,6 +1004,118 @@ irq0_no:
 irq0_out:
         iret
 irq0    endp
+
+; a task waits:  the others now (IRET frame to the caller)
+yield   proc near
+        pushf
+        push    cs
+        call    yield1
+        ret
+yield1: cli
+        mov     cs:wantsw,1
+        mov     cs:yieldf,1
+        jmp     sched
+yield   endp
+
+; INT 16h:  a read without a key waits in the other tasks
+int16   proc far
+        cmp     cs:running,0
+        je      i16_old
+        cmp     ah,00h
+        je      i16_wait
+        cmp     ah,10h
+        je      i16_wait
+        cmp     ah,20h
+        jne     i16_old
+i16_wait:
+        push    ax
+i16_poll:
+        pop     ax
+        push    ax
+        inc     ah              ; status
+        pushf
+        call    dword ptr cs:old16
+        jnz     i16_key
+        call    yield
+        jmp     i16_poll
+i16_key:
+        pop     ax
+i16_old:
+        jmp     dword ptr cs:old16
+int16   endp
+
+; INT 28h (DOS idle):  the other tasks
+int28   proc far
+        cmp     cs:running,0
+        je      @F
+        call    yield
+@@:     jmp     dword ptr cs:old28
+int28   endp
+
+; INT 10h of a background task:  its private text page; no mode, cursor
+; shape, page or palette change; the CRTC cursor stays the foreground's
+int10   proc far
+        cmp     cs:running,0
+        je      i10_old
+        push    ax
+        mov     ax,cs:cur
+        cmp     ax,cs:fg
+        pop     ax
+        je      i10_old
+        cmp     ah,00h
+        je      i10_mode
+        cmp     ah,01h
+        je      i10_shape
+        cmp     ah,05h
+        je      i10_ret
+        cmp     ah,0Bh
+        je      i10_ret
+        cmp     ah,10h
+        je      i10_ret
+        cmp     ah,11h
+        je      i10_ret
+        pushf
+        call    dword ptr cs:old10
+        pushf
+        push    ds
+        mov     ds,cs:dgseg
+        call    fgcursor
+        pop     ds
+        popf
+        retf    2
+i10_mode:                       ; mode set:  a blank screen
+        push    ax
+        push    cx
+        push    di
+        push    es
+        mov     ax,0B800h
+        mov     es,ax
+        xor     di,di
+        mov     ax,0720h
+        mov     cx,2000
+        cld
+        rep     stosw
+        mov     ax,40h
+        mov     es,ax
+        mov     word ptr es:[50h],0
+        pop     es
+        pop     di
+        pop     cx
+        pop     ax
+        iret
+i10_shape:
+        push    es
+        push    ax
+        mov     ax,40h
+        mov     es,ax
+        mov     es:[60h],cx
+        pop     ax
+        pop     es
+i10_ret:
+        iret
+i10_old:
+        jmp     dword ptr cs:old10
+int10   endp
 
 ; IRQ1-7:  to the task that hooked the vector (its IVT entry differs from
 ; the one at mvk_start), the current task first; none:  the current IVT
@@ -714,6 +1155,8 @@ irqdisp:
         shl     ax,1
         shl     ax,1
         movzx   esi,ax          ; ESI = vector * 4
+        cmp     si,9*4
+        je      irqd_kbd
         xor     ax,ax
         mov     es,ax
         ; the current task's vector (in the IVT now)
@@ -749,13 +1192,68 @@ irqd_here:
         call    dword ptr es:[si]
         jmp     irqd_ret
 irqd_other:
-        ; DI ==> the owner:  its handler in its context, on the IRQ stack
+        call    irqd_ctx
+        jmp     irqd_ret
+irqd_kbd:
+        ; Ctrl+Alt+1..9, 0:  that task to the foreground (key consumed)
+        in      al,60h
+        cmp     al,02h
+        jb      irqk_fg
+        cmp     al,0Bh
+        ja      irqk_fg
+        xor     bx,bx
+        mov     es,bx
+        mov     bl,es:[417h]
+        and     bl,0Ch
+        cmp     bl,0Ch
+        jne     irqk_fg
+        dec     al
+        xor     ah,ah
+        cmp     al,10
+        jne     @F
+        xor     ax,ax
+@@:     cmp     ax,cs:ntasks
+        jae     irqk_fg
+        mov     bx,ax
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     irqk_fg
+        mov     cs:newfg,ax
+        dbg     'F'
+        mov     al,20h
+        out     20h,al
+        jmp     irqd_ret
+irqk_fg:
+        ; to the foreground task:  its INT 09h with its key buffer
+        xor     ax,ax
+        mov     es,ax
+        mov     bx,cs:fg
+        cmp     bx,cs:cur
+        je      irqd_here
+        call    taskptr
+        movzx   edi,bx
+        mov     bx,cs:cur
+        call    taskptr
+        call    kbdsave
+        push    bx
+        mov     bx,di
+        call    kbdload
+        call    irqd_ctx
+        mov     bx,di
+        call    kbdsave
+        pop     bx
+        call    kbdload
+        jmp     irqd_ret
+
+; the handler (vector ESI/4) of the TASK at DI in its context, on the IRQ
+; stack (DS = DGROUP)
+irqd_ctx proc near
         mov     dx,[di].T_PT
         cmp     dx,cs:actpt
         jne     @F
         pushf                   ; its context is active already
         call    dword ptr [edi+esi].T_IVT
-        jmp     irqd_ret
+        ret
 @@:     mov     ax,ss
         mov     bx,sp
         cmp     cs:idepth,0
@@ -783,6 +1281,9 @@ irqd_other:
         dec     cs:idepth
         mov     ss,ax
         mov     sp,bx
+        ret
+irqd_ctx endp
+
 irqd_ret:
         pop     es
         pop     ds
@@ -826,22 +1327,8 @@ mvk_start_ proc near
         inc     dx
 @@:     mov     cs:quantum,dx
         mov     cs:qleft,dx
-        ; INT 13h hook in the IVT of every task
         xor     ax,ax
         mov     es,ax
-        mov     ax,es:[13h*4]
-        mov     word ptr cs:old13,ax
-        mov     ax,es:[13h*4+2]
-        mov     word ptr cs:old13+2,ax
-        mov     cx,cs:ntasks
-        xor     bx,bx
-@@:     push    bx
-        call    taskptr
-        mov     word ptr [bx].T_IVT+13h*4,offset int13
-        mov     word ptr [bx].T_IVT+13h*4+2,cs
-        pop     bx
-        inc     bx
-        loop    @B
         cli
         push    ds              ; the IVT now:  the one tasks start from
         push    es
@@ -862,8 +1349,7 @@ mvk_start_ proc near
         pop     si
         pop     es
         pop     ds
-        mov     word ptr es:[13h*4],offset int13
-        mov     es:[13h*4+2],cs
+        call    hook_install
         ; calldown table
         mov     word ptr cdtab,offset irq0
         mov     word ptr cdtab+4,offset irq1
@@ -892,10 +1378,7 @@ mvk_start_ proc near
         xor     ax,ax
         jmp     short st_ret
 st_irqbad:
-        mov     ax,word ptr cs:old13
-        mov     es:[13h*4],ax
-        mov     ax,word ptr cs:old13+2
-        mov     es:[13h*4+2],ax
+        call    hook_remove
         sti
         mov     ax,MVE_IRQ
 st_ret:
@@ -917,24 +1400,26 @@ mvk_stop_ proc near
         push    dx
         push    di
         push    es
-        cli
-        mov     cs:running,0
-        sti
         cmp     cs:ntasks,0
         je      sp_ret
+        cli
+        xor     dx,dx           ; our screen back
+        call    setfg
+        mov     cs:newfg,dx
+        mov     cs:running,0
+        sti
         mov     ax,1C00h
         qpi
         xor     ax,ax
         mov     es,ax
         cli
-        mov     ax,word ptr cs:old13
-        or      ax,word ptr cs:old13+2
-        jz      @F
-        mov     ax,word ptr cs:old13
-        mov     es:[13h*4],ax
-        mov     ax,word ptr cs:old13+2
-        mov     es:[13h*4+2],ax
-@@:     sti
+        call    hook_remove
+        sti
+        xor     bx,bx
+        call    taskptr
+        mov     dx,[bx].T_VPG
+        mov     ax,0500h
+        qpi
         mov     cx,cs:ntasks
         dec     cx
         jcxz    sp_done
@@ -957,6 +1442,91 @@ sp_ret:
         pop     ax
         ret
 mvk_stop_ endp
+
+; hooks (hooktab) into the live IVT (ES = 0) and every task's
+hook_install proc near
+        pusha
+        mov     si,offset hooktab
+        mov     cx,NHOOK
+hi_next:
+        push    cx
+        mov     di,cs:[si]      ; vector * 4
+        mov     bx,cs:[si+4]    ; ==> old vector
+        mov     ax,es:[di]
+        mov     cs:[bx],ax
+        mov     ax,es:[di+2]
+        mov     cs:[bx+2],ax
+        mov     ax,cs:[si+2]    ; handler
+        mov     es:[di],ax
+        mov     es:[di+2],cs
+        mov     cx,cs:ntasks
+        xor     bx,bx
+@@:     push    bx
+        call    taskptr
+        mov     word ptr [bx+di].T_IVT,ax
+        mov     word ptr [bx+di].T_IVT+2,cs
+        pop     bx
+        inc     bx
+        loop    @B
+        pop     cx
+        add     si,6
+        loop    hi_next
+        popa
+        ret
+hook_install endp
+
+; the old vectors back into the live IVT (ES = 0)
+hook_remove proc near
+        pusha
+        mov     si,offset hooktab
+        mov     cx,NHOOK
+hr_next:
+        mov     di,cs:[si]
+        mov     bx,cs:[si+4]
+        mov     ax,cs:[bx]
+        or      ax,cs:[bx+2]
+        jz      @F
+        mov     ax,cs:[bx]
+        mov     es:[di],ax
+        mov     ax,cs:[bx+2]
+        mov     es:[di+2],ax
+@@:     add     si,6
+        loop    hr_next
+        popa
+        ret
+hook_remove endp
+
+; int mvk_setfg(unsigned task):  the task shown and getting the keys (from
+; task 0).  0 or MVE_x.
+mvk_setfg_ proc near
+        push    bx
+        push    dx
+        mov     dx,ax
+        mov     ax,MVE_STATE
+        cmp     cs:cur,0
+        jne     sf_ret
+        cmp     dx,cs:ntasks
+        jae     sf_ret
+        mov     bx,dx
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     sf_ret
+        pushf
+        cli
+        call    setfg
+        mov     cs:newfg,dx
+        popf
+        xor     ax,ax
+sf_ret: pop     dx
+        pop     bx
+        ret
+mvk_setfg_ endp
+
+; unsigned mvk_fg(void):  the foreground task
+mvk_fg_ proc near
+        mov     ax,cs:fg
+        ret
+mvk_fg_ endp
 
 ; unsigned mvk_state(unsigned task)
 mvk_state_ proc near

@@ -83,6 +83,12 @@ $(BUILD)/memprobe.obj: tests/memprobe.asm | $(BUILD)
 $(BUILD)/MEMPROBE.COM: $(BUILD)/memprobe.obj
 	cd $(BUILD) && $(JWLINK) format dos com name MEMPROBE.COM option quiet option map=MEMPROBE.MAP file memprobe.obj
 
+$(BUILD)/keyprobe.obj: tests/keyprobe.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/KEYPROBE.COM: $(BUILD)/keyprobe.obj
+	cd $(BUILD) && $(JWLINK) format dos com name KEYPROBE.COM option quiet option map=KEYPROBE.MAP file keyprobe.obj
+
 $(BUILD)/maxcfg.obj: src/maxcfg.c include/catalog.h include/mvui.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
