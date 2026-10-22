@@ -16,10 +16,7 @@ start:
         jz      failed
         mov     word ptr expected_segment,bx
 
-        ; Selector 01h replaces a reserved DWORD with the current window.
-        xor     ax,ax
-        push    ax                    ; segment
-        push    ax                    ; offset
+        ; Selector 01h pushes the current window (as DESQview 2.80).
         mov     ax,1200h
         mov     bx,0001h
         int     15h

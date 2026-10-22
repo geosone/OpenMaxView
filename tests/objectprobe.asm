@@ -279,10 +279,7 @@ failed:
 ; Return the NEW result in AX:DX as segment:offset.
 new_timer:
         push    bx
-        xor     ax,ax
-        push    ax                    ; reserved segment
-        push    ax                    ; reserved offset
-        mov     ax,1200h
+        mov     ax,1200h              ; (it pushes the handle, as DV 2.80)
         mov     bx,010Bh              ; NEW TIMER
         int     15h
         pop     dx

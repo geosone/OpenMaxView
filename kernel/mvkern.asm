@@ -1353,6 +1353,11 @@ task_done::                     ; (KILL_ENTRY:  the program is gone)
         mov     ah,4Dh
         int     21h
 task_end:
+        push    ax              ; MAXVTSR:  its mailboxes and GETMEM blocks go
+        mov     bx,cs:cur       ; (as DESQview frees them with the window)
+        mov     ax,0D708h
+        int     2Fh
+        pop     ax
         mov     bx,cs:cur
         call    taskptr
         mov     [bx].T_EXIT,ax

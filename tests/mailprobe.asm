@@ -494,10 +494,7 @@ failed:
 
 new_mailbox:
         push    bx
-        xor     ax,ax
-        push    ax
-        push    ax
-        mov     ax,1200h
+        mov     ax,1200h              ; (it pushes the handle, as DV 2.80)
         mov     bx,0109h
         int     15h
         pop     dx

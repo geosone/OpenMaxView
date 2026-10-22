@@ -104,6 +104,12 @@ $(BUILD)/dvtask.obj: tests/dvtask.asm | $(BUILD)
 $(BUILD)/DVTASK.COM: $(BUILD)/dvtask.obj
 	cd $(BUILD) && $(JWLINK) format dos com name DVTASK.COM option quiet option map=DVTASK.MAP file dvtask.obj
 
+$(BUILD)/leakprb.obj: tests/leakprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/LEAKPRB.COM: $(BUILD)/leakprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name LEAKPRB.COM option quiet option map=LEAKPRB.MAP file leakprb.obj
+
 $(BUILD)/cwdprobe.obj: tests/cwdprobe.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

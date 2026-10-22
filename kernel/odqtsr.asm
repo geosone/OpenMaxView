@@ -60,6 +60,7 @@
 ;   INT 2Fh AX=D705h                 extended compatibility capabilities
 ;   INT 2Fh AX=D706h                 sound-queue diagnostic query
 ;   INT 2Fh AX=D707h                 per-task state block (for the core)
+;   INT 2Fh AX=D708h, BX=task        a task ended:  free its objects
 
 DV_VERSION     equ 0250h        ; 2.80:  BH major, BL minor in binary (as DV)
 MUX_STATUS     equ 0D700h
@@ -70,6 +71,7 @@ MUX_CAPS2      equ 0D704h
 MUX_CAPS3      equ 0D705h
 MUX_SOUND_INFO equ 0D706h
 MUX_TASK_STATE equ 0D707h
+MUX_TASK_END   equ 0D708h
 MUX_SIGNATURE  equ 04F44h            ; "OD" in register byte order
 MUX_VERSION    equ 0024h
 CAPABILITIES   equ 0FFFFh
@@ -1323,8 +1325,9 @@ mailbox_addr_done:
         pop     bp
         jmp     int15_handled
 
-; HANDLE uses the TopView message ABI: the caller reserves a DWORD on its
-; stack before INT 15h, and the service replaces it with an object pointer.
+; HANDLE uses the TopView message ABI:  a selector that takes a handle on the
+; stack (00h, 02h, 04h, 06h, 0Ch) replaces that DWORD with the result; one
+; without (01h, 03h, 05h, 07h, 0Dh) pushes it, as DESQview 2.80 does.
 ; At this entry the handler's PUSHF plus the interrupt frame place that DWORD
 ; ten bytes above BP after saving BP. Selector zero validates either the
 ; resident task/window or a currently allocated timer. Other unavailable
@@ -1338,6 +1341,14 @@ int15_message_handle:
         je      short message_handle_stacked
         cmp     bl,1                  ; current task's window
         je      short message_handle_current
+        cmp     bl,3                  ; current task's mailbox, keyboard,
+        je      short message_handle_none ; OBJECTQ, parent:  not there
+        cmp     bl,5
+        je      short message_handle_none
+        cmp     bl,7
+        je      short message_handle_none
+        cmp     bl,0Dh
+        je      short message_handle_none
         jmp     short message_handle_null
 message_handle_stacked:
         cmp     word ptr ss:[bp+10],0
@@ -1351,10 +1362,16 @@ message_handle_stacked:
         jc      short message_handle_null
         jmp     short message_handle_done
 message_handle_current:
-        mov     word ptr ss:[bp+10],0
         mov     ax,word ptr cs:task_handle_segment
-        mov     word ptr ss:[bp+12],ax
-        jmp     short message_handle_done
+        jmp     short message_handle_push
+message_handle_none:
+        xor     ax,ax
+message_handle_push:
+        mov     word ptr cs:message_result_ptr_off,0
+        mov     word ptr cs:message_result_ptr_seg,ax
+        pop     si
+        pop     ax
+        jmp     message_push4
 message_handle_null:
         mov     word ptr ss:[bp+10],0
         mov     word ptr ss:[bp+12],0
@@ -1364,22 +1381,23 @@ message_handle_done:
         pop     bp
         jmp     int15_handled
 
-; NEW allocates a resident timer or mailbox object. The caller reserves the
-; same DWORD used by HANDLE; unsupported classes and pool exhaustion return a
-; null pointer.
+; NEW allocates a resident timer or mailbox object and pushes its handle on
+; the caller's stack (as DESQview 2.80 does:  nothing is passed on the stack
+; for these classes); unsupported classes and pool exhaustion push a null
+; pointer.
 int15_message_new:
         push    bp
         mov     bp,sp
         push    ax
         push    cx
         push    si
-        mov     word ptr ss:[bp+10],0
-        mov     word ptr ss:[bp+12],0
+        mov     word ptr cs:message_result_ptr_off,0
+        mov     word ptr cs:message_result_ptr_seg,0
         cmp     bl,0Bh                ; TIMER object class
         je      short message_new_timer
         cmp     bl,09h                ; MAILBOX object class
         je      short message_new_mailbox
-        jmp     short message_new_done
+        jmp     message_new_done
 message_new_timer:
         xor     si,si
         mov     cx,TIMER_SLOT_COUNT
@@ -1394,7 +1412,7 @@ message_new_found:
         mov     word ptr cs:timer_open[si],0
         mov     word ptr cs:timer_state[si],0
         mov     ax,word ptr cs:timer_handle_segments[si]
-        mov     word ptr ss:[bp+12],ax
+        mov     word ptr cs:message_result_ptr_seg,ax
         jmp     short message_new_done
 message_new_mailbox:
         xor     si,si
@@ -1407,6 +1425,9 @@ message_new_mailbox_scan:
         jmp     short message_new_done
 message_new_mailbox_found:
         mov     word ptr cs:mailbox_used[si],1
+        call    caller_tag
+        xor     ah,ah
+        mov     word ptr cs:mailbox_owner[si],ax
         mov     word ptr cs:mailbox_open[si],0
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_sender[si],0
@@ -1414,13 +1435,12 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
         mov     ax,word ptr cs:mailbox_handle_segments[si]
-        mov     word ptr ss:[bp+12],ax
+        mov     word ptr cs:message_result_ptr_seg,ax
 message_new_done:
         pop     si
         pop     cx
         pop     ax
-        pop     bp
-        jmp     int15_handled
+        jmp     message_push4
 
 ; FREE message class 00h consumes and pops a timer pointer from the caller's
 ; stack. Invalid, stale and non-timer handles are harmless no-ops, but the
@@ -1444,13 +1464,7 @@ int15_message_free:
 message_free_mailbox:
         call    mailbox_validate
         jc      short message_free_done
-        mov     word ptr cs:mailbox_used[si],0
-        mov     word ptr cs:mailbox_open[si],0
-        mov     word ptr cs:mailbox_status[si],0
-        mov     word ptr cs:mailbox_sender[si],0
-        mov     word ptr cs:mailbox_flags[si],0
-        mov     word ptr cs:mailbox_name_length[si],0
-        call    mailbox_clear_queue
+        call    mailbox_release
 message_free_done:
         pop     si
         pop     ax
@@ -2381,6 +2395,8 @@ int15_getmem:
         push    cx
         push    si
         push    dx
+        call    caller_tag            ; (AX:  the function, set again by it)
+        mov     cs:alloc_tag,al
         mov     si,offset system_used
         mov     di,offset system_pool
         mov     cx,SYSTEM_SLOT_COUNT
@@ -2411,6 +2427,7 @@ int15_getcommon:
         push    cx
         push    si
         push    dx
+        mov     byte ptr cs:alloc_tag,1 ; (common memory:  nobody's)
         mov     si,offset common_used
         mov     di,offset common_pool
         mov     cx,COMMON_SLOT_COUNT
@@ -2597,7 +2614,8 @@ allocate_fail:
         mov     ax,1
         ret
 allocate_found:
-        mov     byte ptr cs:[si],1
+        mov     al,cs:alloc_tag       ; owner tag (1:  nobody's)
+        mov     byte ptr cs:[si],al
         push    cs
         pop     es
         push    di
@@ -3099,6 +3117,58 @@ message_expand4:
         mov     ax,word ptr cs:message_saved_ax
         jmp     int15_handled
 
+; Push one result DWORD (message_result_ptr) for a message that takes no
+; handle on the stack (NEW, HANDLE of a default object), as DESQview does:
+; the frame moves down four bytes and the DWORD lands where the caller's
+; stack top was.  BP as at the handler's entry (its saved BP at [BP]), the
+; handler's other registers already restored.
+message_push4:
+        mov     word ptr cs:message_saved_ax,ax
+        mov     ax,word ptr ss:[bp]
+        mov     word ptr cs:message_saved_bp,ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp-2],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+2],ax
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+4],ax
+        mov     ax,word ptr cs:message_result_ptr_off
+        mov     word ptr ss:[bp+6],ax
+        mov     ax,word ptr cs:message_result_ptr_seg
+        mov     word ptr ss:[bp+8],ax
+        mov     sp,bp
+        sub     sp,2
+        mov     bp,word ptr cs:message_saved_bp
+        mov     ax,word ptr cs:message_saved_ax
+        jmp     int15_handled
+
+; Release the mailbox with word index SI.
+mailbox_release:
+        mov     word ptr cs:mailbox_used[si],0
+        mov     word ptr cs:mailbox_open[si],0
+        mov     word ptr cs:mailbox_status[si],0
+        mov     word ptr cs:mailbox_sender[si],0
+        mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_name_length[si],0
+        jmp     mailbox_clear_queue
+
+; AL = the calling task's tag:  its number (APPNUM, the multitasking core
+; answers it) + 1.  What it allocates with GETMEM and its mailboxes go when
+; the task ends (D708h), as DESQview frees them with the window.
+caller_tag:
+        push    bx
+        push    cx
+        push    dx
+        mov     ax,0DE07h
+        int     15h
+        inc     al
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
 ; Relocate the frame over a handle plus one DWORD argument.
 message_shift8:
         push    ax
@@ -3307,6 +3377,10 @@ int2f_not_caps3:
         jne     short int2f_not_sound_info
         jmp     int2f_sound_info
 int2f_not_sound_info:
+        cmp     ax,MUX_TASK_END
+        jne     short int2f_not_task_end
+        jmp     int2f_task_end
+int2f_not_task_end:
         cmp     ax,MUX_TASK_STATE
         jne     short int2f_not_task_state
         push    cs
@@ -3370,6 +3444,45 @@ int2f_reset:
         pop     di
         pop     cx
         pop     ax
+        popf
+        iret
+; D708h, BX = task:  it ended (the multitasking core):  its GETMEM blocks
+; and mailboxes go; common memory and timers stay (DESQview keeps them too
+; when a window is closed)
+int2f_task_end:
+        push    ax
+        push    cx
+        push    si
+        cli
+        mov     al,bl
+        inc     al                    ; its tag
+        mov     si,offset system_used
+        mov     cx,SYSTEM_SLOT_COUNT
+task_end_mem:
+        cmp     byte ptr cs:[si],al
+        jne     short task_end_mem_next
+        mov     byte ptr cs:[si],0
+task_end_mem_next:
+        inc     si
+        loop    task_end_mem
+        xor     ah,ah
+        xor     si,si
+        mov     cx,MAILBOX_SLOT_COUNT
+task_end_mbx:
+        cmp     word ptr cs:mailbox_used[si],0
+        je      short task_end_mbx_next
+        cmp     word ptr cs:mailbox_owner[si],ax
+        jne     short task_end_mbx_next
+        push    ax
+        call    mailbox_release
+        pop     ax
+task_end_mbx_next:
+        add     si,2
+        loop    task_end_mbx
+        pop     si
+        pop     cx
+        pop     ax
+        xor     ax,ax
         popf
         iret
 int2f_task_info:
@@ -3456,7 +3569,8 @@ printc_columns db 80
 printc_last_row db 24
 task_handle_segment dw 0
 install_path   db 67 dup(0)
-system_used    db SYSTEM_SLOT_COUNT dup(0)
+system_used    db SYSTEM_SLOT_COUNT dup(0) ; 0 free, else owner tag
+alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
 timer_handle_segments dw TIMER_SLOT_COUNT dup(0)
@@ -3467,6 +3581,7 @@ timer_start_hi dw TIMER_SLOT_COUNT dup(0)
 timer_duration_lo dw TIMER_SLOT_COUNT dup(0)
 timer_duration_hi dw TIMER_SLOT_COUNT dup(0)
 mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_owner  dw MAILBOX_SLOT_COUNT dup(0) ; caller_tag at NEW
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)

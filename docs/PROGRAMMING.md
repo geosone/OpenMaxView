@@ -154,14 +154,12 @@ an arbitrary handle with `IS_OBJECT` before using it. `OBJECT_TYPE` returns
 `ODQ_OBJECT_WINDOW_TASK` for the current resident task object.
 
 The `HANDLE` message uses the original stack ABI rather than normal register
-returns. Reserve a DWORD before `INT 15h`; selector `01h` replaces it with the
-current task's window handle, while selector `00h` validates a handle already
-there. The low word is the offset and the high word is the segment:
+returns. As under DESQview 2.80, a selector that takes no handle (`01h`, the
+current task's window) pushes its result DWORD; selector `00h` replaces a
+handle already there (it validates it). Nothing is reserved before the call.
+The low word is the offset and the high word is the segment:
 
 ```asm
-        xor     ax,ax
-        push    ax                    ; reserved result segment
-        push    ax                    ; reserved result offset
         mov     ax,1200h              ; AH=12h SEND MESSAGE
         mov     bx,0001h              ; BH=HANDLE, BL=current window
         int     15h
@@ -175,13 +173,10 @@ mailbox, keyboard and OBJECTQ selectors currently return null because those
 objects do not exist. Do not substitute private handles or assume that an
 integer is a valid object pointer.
 
-The bounded timer lifecycle uses the same stack layout. `NEW` class `0Bh`
+`NEW` takes nothing on the stack and pushes the new handle. Class `0Bh`
 returns one of four timer handles:
 
 ```asm
-        xor     ax,ax
-        push    ax                    ; reserved result segment
-        push    ax                    ; reserved result offset
         mov     ax,1200h
         mov     bx,010Bh              ; BH=NEW, BL=TIMER
         int     15h

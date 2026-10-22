@@ -65,6 +65,12 @@
 #   deskmany  MAXVIEW.EXE with 12 programs (11 TICKs, KEYPROBE):  the task
 #         list scrolls (10 rows), IDs 1-9 then A, B, C; Enter on the last
 #         one (C) gives it screen and keys
+#   objs  DESQview objects of a task that ends (tests/leakprb.asm):  the
+#         stack effect of NEW/HANDLE/FREE as DESQview 2.80; a task takes a
+#         GETMEM and a GETCOMMON block, a mailbox and a timer and ends:  the
+#         next task finds the GETMEM blocks and mailboxes all back, one
+#         common block and one timer gone (DESQview frees the same when a
+#         window is closed)
 #   many  16 task slots (MVRUN /N16, its list from a file):  15 TICKs all
 #         count side by side, a 16th program finds the table full
 #
@@ -77,7 +83,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -85,7 +91,7 @@ EXPECT_VDSFUNC='physical = linear FAIL'
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
-    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM || exit 2
+    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -340,6 +346,23 @@ print(n*100//(w*h))" "$1" 2>/dev/null || echo 0
     check "graphics task back, drawn again" "[ \$(green $d/gfx3.png) -ge 90 ]"
     check "graphics task held in the background" "[ \$(echo $g1 | awk '{print \$5+0}') -ge 90 ]"
     check "it drew again once" "[ \$(echo $g1 | awk '{print \$3+0}') -eq 1 ]"
+    ;;
+objs)
+    echo "== objs:  DESQview objects of a task that ends"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\LEAKPRB.COM S C:\\S1.TXT\r\nC:\\LEAKPRB.COM C C:\\C1.TXT\r\nC:\\MVRUN /K6 15 C:\\LEAKPRB.COM L C:\\L1.TXT ; C:\\LEAKPRB.COM C C:\\C2.TXT\r\nC:\\LEAKPRB.COM C C:\\C3.TXT\r\n' > "$OUT/O.BAT"
+    CMD="C:\\O.BAT" run objs 15 "" "$OUT/O.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/LEAKPRB.COM"
+    s1=$(file objs S1.TXT | tr '\n' ' '); c1=$(file objs C1.TXT | tr '\n' ' ')
+    l1=$(file objs L1.TXT | tr '\n' ' '); c2=$(file objs C2.TXT | tr '\n' ' ')
+    c3=$(file objs C3.TXT | tr '\n' ' ')
+    echo "  S1: $s1"; echo "  C1: $c1"; echo "  L1: $l1"; echo "  C2: $c2"; echo "  C3: $c3"
+    get() { echo "$1" | awk -v w="$2" '{for (i = 1; i < NF; i++) if ($i == w) print $(i + 1)}'; }
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/objs/end.txt'"
+    check "stack:  NEW +4, HANDLE 01h +4, 00h 0, FREE -4 (as DV)" "[ '$s1' = 'new 4 handle 4 handle0 0 free -4 ' ]"
+    check "the task got one of each" "[ '$l1' = 'leak sys 1 com 1 mbx 1 tmr 1 ' ]"
+    check "its GETMEM blocks back" "[ -n '$(get "$c1" sys)' ] && [ '$(get "$c2" sys)' = '$(get "$c1" sys)' ]"
+    check "its mailbox back" "[ -n '$(get "$c1" mbx)' ] && [ '$(get "$c2" mbx)' = '$(get "$c1" mbx)' ]"
+    check "common block and timer kept (as DV)" "[ '$(get "$c2" com)' = \$(( $(get "$c1" com) - 1 )) ] && [ '$(get "$c2" tmr)' = \$(( $(get "$c1" tmr) - 1 )) ]"
+    check "the same after MVRUN" "[ '$c3' = '$c2' ]"
     ;;
 many)
     echo "== many:  16 task slots, 15 TICK tasks"

@@ -159,8 +159,8 @@ int main(int argc, char **argv)
         for (t = 1; t <= ntask; ++t)
             if (mvk_state(t) == MVK_READY)
                 break;
-        if (t > ntask)
-            break;              /* all done */
+        if (t > ntask && lprog == 0)
+            break;              /* all done (and /K's program run) */
         mvk_yield();            /* we only wait */
     }
     n = mvk_switches();

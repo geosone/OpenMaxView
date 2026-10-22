@@ -28,9 +28,9 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=1025h` | Returns on the user stack saved by `OSTACK` | TopView `USTACK`; valid only after `OSTACK` |
 | `INT 15h AX=102Dh BL=operation` | Query returns `BL=0/1`; 1 enables, 2 disables | Keyboard-mouse compatibility state |
 | `INT 15h AX=102Eh BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | DESQview 2.40 extended `GETMEM` alias |
-| `INT 15h AH=12h BH=00h BL=selector`, object DWORD on caller stack | Replaces or validates the DWORD | `HANDLE`; selector 00h validates task/timer handles, selector 01h returns the foreground window |
-| `INT 15h AH=12h BH=01h BL=0Bh`, reserved DWORD on caller stack | Replaces the DWORD with a timer handle or null | `NEW`; bounded four-object timer pool |
-| `INT 15h AH=12h BH=01h BL=09h`, reserved DWORD on caller stack | Replaces the DWORD with a mailbox handle or null | `NEW`; bounded two-object mailbox pool |
+| `INT 15h AH=12h BH=00h BL=selector` | Selectors 00h, 02h, 04h, 06h, 0Ch take a DWORD on the caller stack and replace it; 01h, 03h, 05h, 07h, 0Dh take none and push the result (as DESQview 2.80) | `HANDLE`; selector 00h validates task/timer/mailbox handles, selector 01h returns the current window, the others null |
+| `INT 15h AH=12h BH=01h BL=0Bh` | Pushes a timer handle or null (nothing taken from the stack, as DESQview 2.80) | `NEW`; bounded four-object timer pool |
+| `INT 15h AH=12h BH=01h BL=09h` | Pushes a mailbox handle or null | `NEW`; bounded two-object mailbox pool |
 | `INT 15h AH=12h BH=02h BL=00h`, object DWORD on caller stack | Releases a live timer or mailbox and pops the DWORD; invalid handles are ignored | `FREE`; bounded dynamic objects |
 | `INT 15h AH=12h BH=03h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with the sender task handle of the last consumed record | Mailbox `ADDR`; null before the first successful read |
 | `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length followed by a resident pointer DWORD | Mailbox `READ`; Carry on empty instead of blocking |
@@ -249,6 +249,7 @@ applications expecting the DESQview interface.
 | `D704h` | `BX=FFFFh` extended capability bits, `CX=DX=0` |
 | `D705h` | `BX=3FFFh` extended compatibility capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
+| `D708h` | `BX` = a task that ended (the multitasking core calls it):  its `GETMEM` blocks and mailboxes are freed, its common memory and timers stay, as DESQview 2.80 frees them when a window is closed; the owner is the task's `APPNUM` at allocation |
 | `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, OSTACK state and stack), `CX` = its size; the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
