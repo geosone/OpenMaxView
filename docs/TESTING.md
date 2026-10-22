@@ -112,8 +112,9 @@ free software and stays out of the repository) and in MaxView tasks, and
 prints the measurements side by side.  MaxView must do at least what
 DESQview does.  What it showed so far:  DESQview reports version 0250h
 (2.80, minor in binary) and keeps 40:F0h per window (MaxView does both
-now); PAUSE gives the other task more under DESQview (it favours the
-foreground); its DOS window cannot show its menu over a VGA graphics
+now); PAUSE gave the other task more under DESQview (x4 against x2:
+it favours the foreground; the core now gives the task with the keys
+three times the slice, MVRUN /Tf,b, and comes to x4.6); its DOS window cannot show its menu over a VGA graphics
 program; and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
 DESQview hung on EMS 47h/48h), fixed there.
 

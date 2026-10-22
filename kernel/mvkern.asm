@@ -10,7 +10,9 @@
 ; is the caller itself in the root context.
 ;
 ; Scheduling:  the IRQ0 V86 calldown (QPI 1C01h) chains the timer to the
-; task's INT 08h and switches round robin every QUANTUM ticks, but only
+; task's INT 08h and switches round robin every QUANTUM ticks (the task
+; with the keys:  FGQUANT, three times as many by default, as DESQview's
+; foreground and background ticks 9 and 3), but only
 ; at a safe point:  DOS not busy (SDA critical error flag and InDOS), no
 ; INT 13h in progress, no other IRQ handler in service (PIC ISR) and the
 ; interrupted code not 386MAX's own V86 code (its segment is the QPI entry
@@ -159,6 +161,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_focused_
         public  mvk_peek_
         public  mvk_datasize_
+        public  mvk_tune_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -178,6 +181,7 @@ ntasks   dw     0
 cur      dw     0
 running  dw     0
 quantum  dw     2
+fgquant  dw     6               ; for the task with the keys
 qleft    dw     2
 i13busy  dw     0
 actpt    dw     0               ; page table active now
@@ -1511,7 +1515,7 @@ endif
         cmp     [di].T_KILL,0
         je      @F
         call    killtask
-@@:     mov     ax,cs:quantum
+@@:     call    slice
         mov     cs:qleft,ax
 irq0_no:
         pop     gs
@@ -1522,6 +1526,17 @@ irq0_no:
 irq0_out:
         iret
 irq0    endp
+
+; AX = the time slice (ticks) of the task now running:  FGQUANT for the
+; one with the keys (as DESQview favours the foreground), else QUANTUM
+slice   proc near
+        mov     ax,cs:cur
+        cmp     ax,cs:kfocus
+        mov     ax,cs:quantum
+        jne     @F
+        mov     ax,cs:fgquant
+@@:     ret
+slice   endp
 
 ; the running task (TASK at BX, DS = kernel data) is held until it is the
 ; foreground again (setfg sets its mode then)
@@ -2442,6 +2457,8 @@ start_k proc near
         inc     dx
 @@:     mov     cs:quantum,dx
         mov     cs:qleft,dx
+        lea     ax,[edx+edx*2]
+        mov     cs:fgquant,ax
         xor     ax,ax
         mov     es,ax
         cli
@@ -2841,6 +2858,19 @@ mvk_start_ proc near
         pop     ds
         ret
 mvk_start_ endp
+
+; void mvk_tune(unsigned fg, unsigned bg):  the time slices in ticks of
+; the task with the keys and of the others (0:  unchanged), as DESQview's
+; Tune Performance; after mvk_start (it sets 3 * quantum and quantum).
+mvk_tune_ proc near
+        or      dx,dx
+        jz      @F
+        mov     cs:quantum,dx
+@@:     or      ax,ax
+        jz      @F
+        mov     cs:fgquant,ax
+@@:     ret
+mvk_tune_ endp
 
 mvk_stop_ proc near
         push    ds

@@ -245,7 +245,7 @@ win)
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"
-    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN 40 C:\\DVTASK.COM A C:\\D1.TXT ; C:\\DVTASK.COM B C:\\D2.TXT\r\n' > "$OUT/D.BAT"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 40 C:\\DVTASK.COM A C:\\D1.TXT ; C:\\DVTASK.COM B C:\\D2.TXT\r\n' > "$OUT/D.BAT"
     CMD="C:\\D.BAT" run dvapi 40 "" \
         "$OUT/D.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/DVTASK.COM"
     d1=$(file dvapi D1.TXT); d2=$(file dvapi D2.TXT)

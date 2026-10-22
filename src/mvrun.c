@@ -3,12 +3,13 @@
  * (kernel/mvkern.asm) for the given time, then stops them.  A developer
  * and test tool for the multitasking core until the launcher uses it.
  *
- *   MVRUN [/Fn] [/Ks] seconds prog [args] [; prog [args]] ...
+ *   MVRUN [/Fn] [/Ks] [/Tf,b] seconds prog [args] [; prog [args]] ...
  *
  * prog is a full path.  /Fn:  task n is the foreground at the start
  * (default 0, MVRUN itself); Ctrl+Alt+n switches.  /Ks:  the last program
  * starts only after s seconds, when all the others are killed, in a slot
- * freed by them.  Prints the switch count and each task's state and
+ * freed by them.  /Tf,b:  time slices in ticks of the task with the keys
+ * and of the others (default 6,2).  Prints the switch count and each task's state and
  * ends with "MVRUN: done". */
 #include <direct.h>
 #include <dos.h>
@@ -31,7 +32,7 @@ int main(int argc, char **argv)
     static char tail[128];
     static char ltail[128];
     const char *lprog = 0;
-    int ntask = 0, i, t, rc, fg = 0, ksecs = 0;
+    int ntask = 0, i, t, rc, fg = 0, ksecs = 0, tfg = 0, tbg = 0;
     unsigned long secs, start, n;
 
     while (argc > 1 && (argv[1][0] == '/' || argv[1][0] == '-')) {
@@ -39,13 +40,19 @@ int main(int argc, char **argv)
             fg = atoi(argv[1] + 2);
         else if (argv[1][1] == 'K' || argv[1][1] == 'k')
             ksecs = atoi(argv[1] + 2);
+        else if (argv[1][1] == 'T' || argv[1][1] == 't') {
+            const char *c = strchr(argv[1], ',');
+
+            tfg = atoi(argv[1] + 2);
+            tbg = c != 0 ? atoi(c + 1) : 0;
+        }
         else
             break;
         argv++;
         argc--;
     }
     if (argc < 3) {
-        puts("MVRUN [/Fn] seconds prog [args] [; prog [args]] ...");
+        puts("MVRUN [/Fn] [/Ks] [/Tf,b] seconds prog [args] [; prog [args]] ...");
         return 2;
     }
     secs = strtoul(argv[1], 0, 10);
@@ -86,6 +93,7 @@ int main(int argc, char **argv)
         mvk_stop();
         return 1;
     }
+    mvk_tune(tfg, tbg);
     if (fg != 0 && mvk_setfg(fg) != 0)
         printf("MVRUN: no task %d\n", fg);
     start = ticks();

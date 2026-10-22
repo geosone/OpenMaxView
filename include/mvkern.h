@@ -30,6 +30,10 @@ int mvk_create(const char *prog, const char *tail);
  * task 0); a done task's slot is used again. */
 /* Start switching every quantum timer ticks.  0 or MVE_x. */
 int mvk_start(unsigned quantum);
+/* Time slices in ticks:  fg for the task with the keys, bg for the others
+ * (0:  unchanged); mvk_start sets 3 * quantum and quantum (DESQview's
+ * defaults are 9 and 3). */
+void mvk_tune(unsigned fg, unsigned bg);
 /* Stop switching, free the tasks (from task 0, the caller). */
 void mvk_stop(void);
 unsigned mvk_state(unsigned task);
