@@ -153,7 +153,8 @@ keeps invalid repeated `OSTACK` and unmatched `USTACK` calls as safe no-ops,
 but portable programs must not depend on that extension.
 
 Every task (32 task objects:  task N of the multitasking core has the N-th;
-a sole program task 0's), sixteen timer slots and eight mailbox slots have
+a sole program task 0's; a task's handle is valid from its first `INT 15h`
+until it ends, `D708h`), sixteen timer slots and eight mailbox slots have
 paragraph-aligned (and one keyboard object per task, type `0Ah`),
 pointer-compatible object handles with the documented `FEDCh` signature. The
 task reports type `08h`, mailboxes `09h`, and timers `0Bh`. `GETFOREGROUND`,

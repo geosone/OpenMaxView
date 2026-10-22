@@ -18,6 +18,10 @@
 ;                     N" and waits (PAUSE) until it is ended
 ;   LEAKPRB D file    as C, 3 s later (with H in another task:  the blocks
 ;                     it gets are its own if the pool is per task)
+;   LEAKPRB V file    (in a task of the multitasking core) 3 s later
+;                     "live N N ..":
+;                     the task numbers whose task handles ISOBJ accepts (the
+;                     own handle - 2 * APPNUM is task 0's)
 ; Run C, then L in a task that ends, then C again:  the same counts if
 ; the end of a task frees its objects.
 
@@ -57,6 +61,8 @@ start:
         cmp     role,'H'
         je      @F
         cmp     role,'D'
+        je      @F
+        cmp     role,'V'
         jne     usage
 @@:     mov     ah,3Ch
         xor     cx,cx
@@ -71,6 +77,8 @@ start:
         je      stk
         cmp     role,'H'
         je      hold
+        cmp     role,'V'
+        je      live
         cmp     role,'D'
         jne     docount
         push    es              ; D:  3 s first
@@ -146,6 +154,58 @@ done:   mov     ah,3Eh
         int     21h
         mov     ax,4C00h
         int     21h
+
+live:   push    es              ; 3 s first (the task beside it ends)
+        push    40h
+        pop     es
+        mov     bx,es:[6Ch]
+@@:     mov     ax,1000h
+        int     15h
+        mov     ax,es:[6Ch]
+        sub     ax,bx
+        cmp     ax,55
+        jb      @B
+        pop     es
+        mov     si,offset t_live
+        call    puts
+        mov     ax,1200h        ; own handle
+        mov     bx,0001h
+        int     15h
+        pop     dx
+        pop     bx
+        mov     ax,0DE07h       ; APPNUM
+        int     15h
+        shl     ax,1
+        sub     bx,ax           ; task 0's
+        xor     cx,cx
+@@:     push    cx
+        push    bx
+        push    di
+        mov     ax,cx
+        shl     ax,1
+        add     ax,bx
+        mov     es,ax
+        xor     di,di
+        mov     ax,1016h        ; ISOBJ:  BX = FFFFh
+        int     15h
+        mov     ax,bx
+        pop     di
+        push    ds
+        pop     es
+        pop     bx
+        pop     cx
+        cmp     ax,0FFFFh
+        jne     live_next
+        mov     al,' '
+        stosb
+        mov     ax,cx
+        call    putdec
+live_next:
+        inc     cx
+        cmp     cx,32
+        jb      @B
+        call    putnl
+        jmp     done
 
 hold:   mov     si,offset t_hold
         call    puts
@@ -409,7 +469,7 @@ putdec  proc near
         ret
 putdec  endp
 
-utext   db      'LEAKPRB C|L|S|H|D file',13,10,'$'
+utext   db      'LEAKPRB C|L|S|H|D|V file',13,10,'$'
 t_sys   db      'sys ',0
 t_com   db      'com ',0
 t_mbx   db      'mbx ',0
@@ -417,6 +477,7 @@ t_tmr   db      'tmr ',0
 t_cfree db      'cfree ',0
 t_leak  db      'leak',0
 t_hold  db      'hold ',0
+t_live  db      'live',0
 t_new   db      'new ',0
 t_handle db     'handle ',0
 t_free  db      'free ',0

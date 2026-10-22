@@ -129,6 +129,7 @@ install:
         call    initialize_keyboard_objects
         mov     ax,word ptr task_objects_base
         mov     word ptr task_handle_segment,ax ; task 0's, the caller's
+        mov     word ptr task_live,1
         call    initialize_timer_objects
         call    initialize_mailbox_objects
 
@@ -3299,6 +3300,8 @@ message_default_go:
 ; one.
 task_handle_init:
         push    ax
+        push    dx
+        push    si
         mov     ax,word ptr cs:task_objects_base
         mov     word ptr cs:task_handle_segment,ax
         mov     ax,0DE07h
@@ -3307,14 +3310,34 @@ task_handle_init:
         jb      short task_handle_number
         xor     ax,ax
 task_handle_number:
+        call    task_bit
+        or      word ptr cs:task_live[si],dx
+        pop     si
+        pop     dx
         shl     ax,1                  ; (TASK_OBJECT_SIZE / 16)
         add     ax,word ptr cs:task_objects_base
         mov     word ptr cs:task_handle_segment,ax
         pop     ax
         ret
 
-; AX a task handle (segment) of any task:  CF clear, AX = its tag (number
-; + 1, as caller_tag); else CF set, AX kept.
+; SI:DX = the word and bit of task AX (0 .. 31) in task_live.
+task_bit:
+        push    cx
+        mov     cx,ax
+        mov     si,ax
+        shr     si,1
+        shr     si,1
+        shr     si,1
+        and     si,0FFFEh
+        and     cl,0Fh
+        mov     dx,1
+        shl     dx,cl
+        pop     cx
+        ret
+
+; AX a task handle (segment) of a live task (since its first INT 15h until
+; its end, D708h):  CF clear, AX = its tag (number + 1, as caller_tag);
+; else CF set, AX kept.
 task_validate:
         push    dx
         mov     dx,ax
@@ -3325,6 +3348,16 @@ task_validate:
         shr     dx,1
         cmp     dx,TASK_OBJECT_COUNT
         jae     short task_validate_no
+        push    ax
+        push    si
+        mov     ax,dx
+        push    dx
+        call    task_bit
+        test    word ptr cs:task_live[si],dx
+        pop     dx
+        pop     si
+        pop     ax
+        jz      short task_validate_no
         inc     dx
         mov     ax,dx
         pop     dx
@@ -3395,6 +3428,14 @@ keyboard_validate:
         shr     dx,1
         cmp     dx,TASK_OBJECT_COUNT
         jae     short keyboard_validate_no
+        push    ax
+        push    si
+        mov     ax,dx
+        call    task_bit
+        test    word ptr cs:task_live[si],dx
+        pop     si
+        pop     ax
+        jz      short keyboard_validate_no
         pop     dx
         clc
         ret
@@ -3973,8 +4014,16 @@ int2f_reset:
 int2f_task_end:
         push    ax
         push    cx
+        push    dx
         push    si
         cli
+        mov     ax,bx                 ; its handle no longer valid
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     short task_end_dead
+        call    task_bit
+        not     dx
+        and     word ptr cs:task_live[si],dx
+task_end_dead:
         mov     al,bl
         inc     al                    ; its tag
         xor     ah,ah
@@ -3992,6 +4041,7 @@ task_end_mbx_next:
         add     si,2
         loop    task_end_mbx
         pop     si
+        pop     dx
         pop     cx
         pop     ax
         xor     ax,ax
@@ -4091,6 +4141,7 @@ printc_columns db 80
 printc_last_row db 24
 task_objects_base dw 0                ; task 0's object (initialize_task_objects)
 keyboard_objects_base dw 0            ; task 0's keyboard
+task_live      dw 2 dup(0)            ; bit N:  task N lives
 install_path   db 67 dup(0)
 alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
