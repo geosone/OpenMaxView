@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -23,6 +23,11 @@
 #         Each screen shows only its own task, each task gets only the keys
 #         typed while it is the foreground, and the waiting tasks leave
 #         the CPU to TICK
+#   kill  MVRUN /K8:  after 8 s the tasks are killed:  KEYPROBE by DOS
+#         (task 1, the foreground:  in DOS, by Ctrl-C), KEYPROBE by INT 16h
+#         and TICK (outside DOS); then a TICK starts in a freed slot.  All
+#         end with exit FF, the first TICK stops, the new one counts, DOS
+#         works afterwards
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -33,7 +38,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys}
+CASES=${*:-two mem serial keys kill}
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
@@ -123,6 +128,22 @@ keys)
     check "task 1 got its keys (INT 16h)" "[ '$k1' = abc ]"
     check "task 2 got its keys (DOS)" "[ '$k2' = xyz ]"
     check "TICK counts meanwhile" "[ $t3 -ge 45 ]"
+    ;;
+kill)
+    echo "== kill:  ending tasks, a new one in a freed slot"
+    FG="/F1 /K8 " run kill 30 \
+        "C:\\KEYPROBE.COM C:\\K1.TXT D ; C:\\KEYPROBE.COM C:\\K2.TXT B ; C:\\TICK.EXE C:\\T3.TXT ; C:\\TICK.EXE C:\\T4.TXT" \
+        "$ROOT/build/KEYPROBE.COM $TICK" "wait:MVRUN:_done:120 type:dir_c:\\k*.txt"
+    d=$OUT/kill
+    t3=$(last kill T3.TXT tick); t4=$(last kill T4.TXT tick)
+    grep -a "killed in\|^task" "$d/end.txt" | sed 's/  *$//;s/^/  /'
+    echo "  T3 $t3, T4 $t4"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$d/end.txt'"
+    check "all killed (exit FF)" "grep -q 'killed in .* 1 done 00FF 2 done 00FF 3 done 00FF' '$d/end.txt'"
+    check "new task in a freed slot" "grep -q '^task 1: C:.TICK.EXE C:.T4.TXT' '$d/end.txt'"
+    check "killed TICK stopped" "[ $t3 -ge 5 ] && [ $t3 -le 10 ]"
+    check "new TICK counts" "[ $t4 -ge 15 ]"
+    check "DOS works afterwards" "grep -q 'K2 *TXT' '$d/end.txt'"
     ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac

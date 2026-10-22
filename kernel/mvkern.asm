@@ -33,7 +33,12 @@
 ; task 0.
 ;
 ; A task starts in TASK_ENTRY:  a stub PSP of its own at the task base,
-; then DOS EXEC of its program; when that ends, the task is DONE.
+; then DOS EXEC of its program; when that ends, the task is DONE and its
+; slot free for a new task (mvk_create also while running).  mvk_kill ends
+; a task:  outside DOS its frame goes to KILL_ENTRY, which ends program
+; after program (INT 21h 4Ch, the terminate address of each set to itself)
+; down to the stub PSP; in DOS (console input) a Ctrl-C in its key buffer
+; and an INT 23h of ours get it out of DOS first.
 ;
 ; Open Watcom register convention (small model):  first argument in AX,
 ; second in DX; result in AX.
@@ -86,6 +91,7 @@ T_SS    dw      ?
 T_SP    dw      ?
 T_NPG   dw      ?               ; # private pages
 T_EXIT  dw      ?               ; EXEC result:  AX of 4Dh, FFFFh = EXEC failed
+T_KILL  dw      ?               ; 1:  end it, 2:  Ctrl-C sent
 T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
@@ -121,6 +127,7 @@ origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
         public  mvk_base_
         public  mvk_setfg_
         public  mvk_fg_
+        public  mvk_kill_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -303,17 +310,44 @@ mvk_create_ proc near
         mov     bp,sp
         push    ax              ; [bp-2] prog
         push    dx              ; [bp-4] tail
+        pushf                   ; [bp-6]
+        push    ax              ; [bp-8] task #
+        cli                     ; (contexts change below)
         mov     ax,MVE_STATE
-        cmp     cs:running,0
+        cmp     cs:cur,0
         jne     cr_err
         cmp     cs:ntasks,0
         je      cr_err
-        mov     ax,MVE_FULL
-        mov     bx,cs:ntasks
+        ; a slot:  a free or done one (not the foreground), else a new one
+        mov     bx,1
+cr_slot:
+        cmp     bx,cs:ntasks
+        jae     cr_new
+        push    bx
+        call    taskptr
+        mov     di,bx
+        pop     bx
+        cmp     [di].T_STATE,TS_READY
+        je      cr_snext
+        cmp     bx,cs:fg
+        je      cr_snext
+        cmp     bx,cs:newfg
+        je      cr_snext
+        call    task_free
+        jmp     short cr_have
+cr_snext:
+        inc     bx
+        jmp     cr_slot
+cr_new: mov     ax,MVE_FULL
         cmp     bx,MAXTASK
         jae     cr_err
+        push    bx
         call    taskptr
         mov     di,bx           ; DI ==> TASK
+        pop     bx
+cr_have:
+        mov     [bp-8],bx
+        mov     [di].T_KILL,0
         mov     [di].T_NPG,0
         mov     [di].T_PT,0
         mov     [di].T_VPG,0
@@ -479,7 +513,9 @@ mvk_create_ proc near
         mov     ax,0800h
         qpi
         mov     [di].T_STATE,TS_READY
-        mov     ax,cs:ntasks
+        mov     ax,[bp-8]
+        cmp     ax,cs:ntasks
+        jb      cr_ret
         inc     cs:ntasks
         jmp     short cr_ret
 cr_rootmem:
@@ -493,6 +529,8 @@ cr_mem:
 cr_err:
         neg     ax
 cr_ret:
+        lea     sp,[bp-6]
+        popf
         mov     sp,bp
         pop     bp
         pop     es
@@ -840,19 +878,92 @@ task_entry proc far
         mov     ax,4B00h
         int     21h
         dbg     'R'
-        mov     ax,cs:dgseg
-        mov     ds,ax
+        mov     bx,cs:dgseg
+        mov     ds,bx
         mov     ax,0FFFFh
-        jc      @F
+        jc      task_end
+task_done::                     ; (KILL_ENTRY:  the program is gone)
+        mov     bx,cs:dgseg
+        mov     ds,bx
         mov     ah,4Dh
         int     21h
-@@:     mov     bx,cs:cur
+task_end:
+        mov     bx,cs:cur
         call    taskptr
         mov     [bx].T_EXIT,ax
+        mov     [bx].T_KILL,0
         mov     [bx].T_STATE,TS_DONE
+        dbg     'D'
+        mov     ax,cs:cur
+        cmp     ax,cs:fg
+        jne     @F
+        mov     cs:newfg,0      ; its screen:  task 0's back
 @@:     sti
-        jmp     @B              ; until the scheduler leaves it for good
+        call    yield           ; for good:  it is no longer ready
+        jmp     @B
 task_entry endp
+
+; mvk_kill:  ends the programs of the current task down to its stub PSP
+kill_entry proc far
+        sti
+        dbg     'K'
+        mov     ah,51h
+        int     21h
+        mov     ax,cs:base_seg
+        inc     ax
+        cmp     bx,ax
+        je      @F
+        mov     es,bx           ; its end comes back here
+        mov     word ptr es:[0Ah],offset kill_entry
+        mov     es:[0Ch],cs
+        mov     ax,4CFFh
+        int     21h
+@@:     jmp     task_done
+kill_entry endp
+
+; INT 23h of a task to be killed (DOS out of its console input)
+kill23  proc far
+        jmp     kill_entry
+kill23  endp
+
+; the task at DI to be killed, just switched to (its context, its stack
+; with the frame the scheduler pops; DS = DGROUP)
+killtask proc near
+        push    bp
+        mov     bp,sp           ; [bp+4]:  GS FS ES DS, PUSHAD, IRET frame
+        push    ax
+        push    bx
+        push    es
+        les     bx,cs:sda_ptr
+        cmp     word ptr es:[bx],0 ; in DOS?
+        jne     kt_dos
+        mov     word ptr [bp+4+40],offset kill_entry
+        mov     [bp+4+42],cs
+        mov     [di].T_KILL,0
+        jmp     short kt_ret
+kt_dos: cmp     [di].T_KILL,2
+        je      kt_ret          ; Ctrl-C on its way
+        mov     [di].T_KILL,2
+        xor     ax,ax
+        mov     es,ax
+        mov     word ptr es:[23h*4],offset kill23
+        mov     es:[23h*4+2],cs
+        mov     bx,es:[41Ch]    ; Ctrl-C into its key buffer
+        mov     ax,bx
+        add     ax,2
+        cmp     ax,es:[482h]
+        jb      @F
+        mov     ax,es:[480h]
+@@:     cmp     ax,es:[41Ah]
+        je      kt_ret          ; full
+        mov     word ptr es:[400h+bx],2E03h
+        mov     es:[41Ch],ax
+kt_ret: pop     es
+        pop     bx
+        pop     ax
+        pop     bp
+        ret
+killtask endp
 
 ;----------------------------------------------------------------------------
 ; IRQ0 calldown:  timer, then maybe the next task or another foreground
@@ -956,7 +1067,7 @@ irq0_no13:
         jmp     irq0_no
 irq0_nodos:
         dbg     'd'
-        jmp     short irq0_no
+        jmp     irq0_no
 irq0_nopic:
         dbg     'p'
         jmp     short irq0_no
@@ -993,7 +1104,10 @@ endif
         add     dword ptr cs:nswitch,1
         mov     ss,[di].T_SS
         mov     sp,[di].T_SP
-        mov     ax,cs:quantum
+        cmp     [di].T_KILL,0
+        je      @F
+        call    killtask
+@@:     mov     ax,cs:quantum
         mov     cs:qleft,ax
 irq0_no:
         pop     gs
@@ -1176,8 +1290,8 @@ irqd_next:
         call    taskptr
         movzx   edi,bx
         pop     bx
-        cmp     [di].T_STATE,TS_FREE
-        je      irqd_skip
+        cmp     [di].T_STATE,TS_READY
+        jne     irqd_skip
         mov     ax,word ptr [edi+esi].T_IVT
         cmp     ax,word ptr origivt[si]
         jne     irqd_other
@@ -1521,6 +1635,28 @@ sf_ret: pop     dx
         pop     bx
         ret
 mvk_setfg_ endp
+
+; int mvk_kill(unsigned task):  end the task (from task 0).  0 or MVE_x.
+mvk_kill_ proc near
+        push    bx
+        mov     bx,ax
+        mov     ax,MVE_STATE
+        cmp     cs:cur,0
+        jne     kl_ret
+        or      bx,bx
+        jz      kl_ret
+        cmp     bx,cs:ntasks
+        jae     kl_ret
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     kl_ret
+        cmp     [bx].T_KILL,0
+        jne     @F
+        mov     [bx].T_KILL,1
+@@:     xor     ax,ax
+kl_ret: pop     bx
+        ret
+mvk_kill_ endp
 
 ; unsigned mvk_fg(void):  the foreground task
 mvk_fg_ proc near

@@ -20,8 +20,10 @@
 
 /* base:  task base segment, 4KB aligned, a free MCB there.  0 or MVE_x. */
 int mvk_init(unsigned base);
-/* A task running prog (full path) with tail.  Task # or -MVE_x. */
+/* Task # or -MVE_x. */
 int mvk_create(const char *prog, const char *tail);
+/* A task running prog (full path) with tail, also while running (from
+ * task 0); a done task's slot is used again. */
 /* Start switching every quantum timer ticks.  0 or MVE_x. */
 int mvk_start(unsigned quantum);
 /* Stop switching, free the tasks (from task 0, the caller). */
@@ -34,5 +36,8 @@ unsigned mvk_base(void);
  * user switches with Ctrl+Alt+1..9 (Ctrl+Alt+0:  task 0).  0 or MVE_x. */
 int mvk_setfg(unsigned task);
 unsigned mvk_fg(void);
+/* End the task's programs (DOS terminates them, files closed); it is DONE
+ * soon after, exit FFh.  0 or MVE_x. */
+int mvk_kill(unsigned task);
 
 #endif
