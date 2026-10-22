@@ -4,7 +4,7 @@
 # runs the tasks of a case.  The cases follow Open386MAX's
 # linux/test/desqview.sh (DESQview 2.80 on 386MAX is the bar).
 #
-#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk] [...]       (default: all)
+#   tests/qemu/mvtest.sh [two|mem|serial|keys|kill|crit|desk|win] [...]       (default: all)
 #
 #   two   two TICK tasks (Open386MAX TESTS/SCENARIO/TICK:  a line a second
 #         into a file, the first also a byte to COM1) for 30 s:  both
@@ -37,6 +37,9 @@
 #         KEYPROBE started from the menu, Alt back to the menu, the task
 #         list switches to KEYPROBE, which ends; exit closes TICK, DOS
 #         works afterwards
+#   win   MAXVIEW windows:  two KEYPROBEs side by side on one screen, keys
+#         typed into a window, a window moved, zoomed to full screen and
+#         closed
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -47,7 +50,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk}
+CASES=${*:-two mem serial keys kill crit desk win}
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
@@ -174,19 +177,39 @@ desk)
     printf 'T|Tick counter|C:\\TICK.EXE C:\\T1.TXT||64|640\r\nK|Key probe|C:\\KEYPROBE.COM C:\\K2.TXT D||64|640\r\n' > "$cfg"
     CMD="C:\\MAXVIEW" END="wait:desk_end:30" run desk 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" \
-        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Open_Program:20 text:desk1 key:down key:ret wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Open_Program:20 key:t wait:Enter:_switch:10 text:tasks key:down key:ret wait:keyprobe_D_ready:20 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:esc wait:exit_to_DOS:10 text:confirm key:y gone:Open_Program:20 sleep:2 type:echo_desk_end"
+        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Tab_next:20 text:desk1 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:t wait:Enter:_switch:10 text:tasks key:down key:ret wait:keyprobe_D_ready:20 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:esc wait:exit_to_DOS:10 text:confirm key:y gone:Open_Program:20 sleep:2 type:echo_desk_end"
     d=$OUT/desk
     k2=$(file desk K2.TXT); t1=$(last desk T1.TXT tick)
     echo "  K2 '$k2', T1 $t1"
     check "desktop up, multitasking" "grep -q 'Open Program' '$d/desk0.txt' && ! grep -q 'One program at a time' '$d/desk0.txt'"
     check "TICK on its own screen" "[ -f '$d/tick.txt' ] && ! grep -q 'Open Program' '$d/tick.txt'"
-    check "Alt back to the desktop" "grep -q 'as task 1' '$d/desk1.txt'"
+    check "Alt back to MaxView (windows)" "grep -q 'Tick counter' '$d/desk1.txt' && grep -q 'Tab next' '$d/desk1.txt'"
     check "task list" "grep -q 'Tick counter' '$d/tasks.txt' && grep -q 'Key probe' '$d/tasks.txt'"
     check "KEYPROBE got its keys" "[ '$k2' = xyz ]"
     check "end reported" "grep -q 'Key probe ended' '$d/ended.txt' && grep -q 'code 0' '$d/ended.txt'"
     check "exit closes TICK" "grep -q 'Close 1 running' '$d/confirm.txt'"
     check "TICK counted meanwhile" "[ $t1 -ge 10 ]"
     check "DOS works afterwards" "grep -q '^desk end' '$d/end.txt'"
+    ;;
+win)
+    echo "== win:  windows of several tasks"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|Probe A|C:\\KEYPROBE.COM C:\\W1.TXT D||64|640\r\nB|Probe B|C:\\KEYPROBE.COM C:\\W2.TXT B||64|640\r\n' > "$cfg"
+    CMD="C:\\MAXVIEW" END="wait:win_end:30" run win 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg" \
+        "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_B_ready:20 key:alt wait:Tab_next:20 sleep:1 text:two key:tab sleep:1 key:ret sleep:1 key:a,b sleep:2 text:typed key:alt sleep:1 key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved key:z sleep:2 text:full key:alt wait:Tab_next:20 key:c wait:Probe_A_ended:20 text:closed key:q wait:exit_to_DOS:10 key:y gone:Tab_next:20 sleep:2 type:echo_win_end"
+    d=$OUT/win
+    w1=$(file win W1.TXT)
+    c1=$(awk '/1 Probe A/ {print NR*100 + index($0, "1 Probe A"); exit}' "$d/typed.txt" 2>/dev/null)
+    c2=$(awk '/1 Probe A/ {print NR*100 + index($0, "1 Probe A"); exit}' "$d/moved.txt" 2>/dev/null)
+    echo "  W1 '$w1', title at $c1 -> $c2"
+    check "both windows on one screen" "grep -q 'keyprobe D ready' '$d/two.txt' && grep -q 'keyprobe B ready' '$d/two.txt'"
+    check "typing into a window" "grep -q 'Typing into Probe A' '$d/typed.txt' && grep -q 'ab' '$d/typed.txt'"
+    check "window keys to its task" "[ '$w1' = ab ]"
+    check "window moved (3 right, 1 down)" "[ -n '$c1' ] && [ \$(( ${c2:-0} - ${c1:-0} )) -eq 103 ]"
+    check "zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Tab next' '$d/full.txt'"
+    check "close" "grep -q 'Probe A ended' '$d/closed.txt' && ! grep -q 'keyprobe D' '$d/closed.txt'"
+    check "DOS works afterwards" "grep -q '^win end' '$d/end.txt'"
     ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac

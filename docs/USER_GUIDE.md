@@ -66,6 +66,25 @@ others go on in the background. A started program gets the full screen.
   to the front by itself and must be answered first.
 * Leaving the launcher closes all running programs after a confirmation.
 
+Alt brings you to the **windows view**: every running program in a window
+of its own, all of them live on one screen. Its keys:
+
+| Key | Action |
+|---|---|
+| Tab | next window to the front |
+| Enter | type into the front window (Alt returns) |
+| Z | front window full screen |
+| M, S | move, size the front window with the arrows (Enter ends) |
+| C | close the front program |
+| O | the launcher, to open another program (`W` there returns) |
+| Q, Esc | leave Open MaxView |
+
+A window shows the part of its program's 80x25 screen that holds the
+cursor. The switch keys come through the BIOS keyboard intercept (INT 15h
+function 4Fh), so they do not reach a program that reads the keyboard
+hardware itself; Alt and Ctrl+Alt+n work again once it ends or another
+task has the keys.
+
 Without QPI the launcher runs one program at a time as before. Up to seven
 programs can run at once. Known limits of this first version: the current
 directory is shared by all programs, only the first text page is kept per

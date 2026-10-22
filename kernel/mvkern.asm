@@ -24,14 +24,17 @@
 ; QPI 08h is called on a shared kernel stack:  the task's stack is gone
 ; once the context changes, and the SDA swap may overwrite a DOS stack.
 ;
-; Screen and keys:  one task is the foreground.  The text page B8000h of
+; Screen and keys:  one task is the foreground (owns the display), one
+; has the key focus (the foreground but for windows:  task 0 shows the
+; others' screens, mvk_peek, in windows and gives the keys to one,
+; mvk_focus).  The text page B8000h of
 ; every other task is a private page (QPI 0Ah); a foreground change copies
 ; the screens and remaps them.  INT 10h of a background task leaves the
 ; hardware alone (mode, cursor shape, page, palette; the CRTC cursor goes
 ; back to the foreground's).  IRQ1 runs the foreground's INT 09h with its
 ; key buffer; Ctrl+Alt+1..9 makes task 1..9 the foreground, Ctrl+Alt+0
 ; task 0; with mvk_dvkey also Alt pressed and released alone (DESQview's
-; key).  A task in a DOS critical error (INT 24h:  no switching until it
+; key).  These come by the BIOS keyboard intercept (INT 15h AH=4Fh).  A task in a DOS critical error (INT 24h:  no switching until it
 ; is answered) becomes the foreground, and stays it until then.
 ;
 ; A task starts in TASK_ENTRY:  a stub PSP of its own at the task base,
@@ -105,8 +108,9 @@ T_IVT   db      1024 dup (?)
 T_FRAME dw      MAXPAGE dup (?) ; private page frames
 TASK    ends
 
-        .data
-
+; kernel data:  a DOS block of the caller's below the task base (shared by
+; all tasks; mvk_datasize, mvk_init); the IRQ handlers find it by CS:KSEG
+MVKDATA segment para at 0
 tasks   TASK    MAXTASK dup (<>)
 cdtab   dd      8 dup (?)       ; IRQ0-7 calldown table (QPI copies it)
 kstk    db      KSTACK dup (?)
@@ -116,8 +120,14 @@ istktop label   word
 vbuf    db      4096 dup (?)    ; a text page on its way (foreground change)
 origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
                                 ; differs has hooked it
+cprog   db      80 dup (?)      ; mvk_create arguments
+ctail   db      128 dup (?)
+kdata_end label byte
+MVKDATA ends
+KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128
 
         .code
+        assume  ds:MVKDATA
 
         public  mvk_init_
         public  mvk_create_
@@ -132,11 +142,15 @@ origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
         public  mvk_kill_
         public  mvk_yield_
         public  mvk_dvkey_
+        public  mvk_focus_
+        public  mvk_focused_
+        public  mvk_peek_
+        public  mvk_datasize_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
 qpi_seg  dw     0               ; 386MAX's V86 code segment
-dgseg   dw     0
+kseg   dw     0
 sda_ptr  dd     0
 sda_size dw     0
 base_seg dw     0               ; task base (4KB aligned)
@@ -156,6 +170,7 @@ idepth   dw     0               ; IRQ handlers of other tasks running
 nswitch  dd     0
 fg       dw     0               ; foreground task
 newfg    dw     0               ; wanted (hotkey)
+kfocus   dw     0               ; task getting the keys
 wantsw   dw     0               ; scheduler:  switch tasks
 yieldf   dw     0               ; scheduler:  the task waits
 altpend  dw     0               ; Alt pressed, no other key since
@@ -166,12 +181,14 @@ old10    dd     0
 old13    dd     0
 old16    dd     0
 old28    dd     0
+old15    dd     0
 ; vector * 4, handler, old vector:  in every task's IVT while running
 hooktab  dw     10h*4, offset int10, offset old10
          dw     13h*4, offset int13, offset old13
          dw     16h*4, offset int16, offset old16
          dw     28h*4, offset int28, offset old28
-NHOOK    equ    4
+         dw     15h*4, offset int15, offset old15
+NHOOK    equ    5
 
 ; QPI call:  AX = function, other registers as the function wants
 qpi     macro
@@ -199,11 +216,19 @@ mvk_init_ proc near
         push    di
         push    es
         push    ds
-        mov     cs:base_seg,ax
-        mov     cs:dgseg,ds
         cmp     cs:running,0
+        mov     bx,ax
         mov     ax,MVE_STATE
         jne     init_ret
+        mov     cs:base_seg,bx
+        mov     cs:kseg,dx
+        mov     ds,dx
+        mov     es,dx           ; a DOS block:  zeros first
+        xor     di,di
+        xor     ax,ax
+        mov     cx,(KDATASIZE + 1) shr 1
+        cld
+        rep     stosw
         ; QPI entry (INT 67h AH=3Fh, CX='QE', DX='MM')
         xor     di,di
         mov     es,di
@@ -275,6 +300,7 @@ mvk_init_ proc near
         mov     cs:cur,0
         mov     cs:fg,0
         mov     cs:newfg,0
+        mov     cs:kfocus,0
         xor     bx,bx
         call    taskptr
         mov     ax,0400h        ; its text page while in the background
@@ -306,7 +332,7 @@ mvk_init_ endp
 ; int mvk_create(const char *prog, const char *tail):  a new task that runs
 ; prog (full path) with the command tail (text, at most 126 characters).
 ; Returns the task # (1-7) or -MVE_x.
-mvk_create_ proc near
+create_k proc near
         push    bx
         push    cx
         push    si
@@ -545,7 +571,7 @@ cr_ret:
         pop     cx
         pop     bx
         ret
-mvk_create_ endp
+create_k endp
 
 ; free the pages and the page table of the task at DI (root context active)
 task_free proc near
@@ -766,6 +792,7 @@ buf2scr endp
 setfg   proc near
         pusha
         push    es
+        mov     cs:kfocus,dx    ; full screen:  the keys too
         cmp     dx,cs:fg
         je      sfg_ret
         push    cs:actpt        ; the context to come back to
@@ -852,7 +879,7 @@ fgcursor endp
 ; A task's first instructions (in its context, on its stack, IF=1)
 task_entry proc far
         dbg     'E'
-        mov     ax,cs:dgseg
+        mov     ax,cs:kseg
         mov     ds,ax
         mov     bx,cs:cur
         call    taskptr
@@ -884,12 +911,12 @@ task_entry proc far
         mov     ax,4B00h
         int     21h
         dbg     'R'
-        mov     bx,cs:dgseg
+        mov     bx,cs:kseg
         mov     ds,bx
         mov     ax,0FFFFh
         jc      task_end
 task_done::                     ; (KILL_ENTRY:  the program is gone)
-        mov     bx,cs:dgseg
+        mov     bx,cs:kseg
         mov     ds,bx
         mov     ah,4Dh
         int     21h
@@ -904,6 +931,10 @@ task_end:
         cmp     ax,cs:fg
         jne     @F
         mov     cs:newfg,0      ; its screen:  task 0's back
+@@:     mov     ax,cs:cur
+        cmp     ax,cs:kfocus
+        jne     @F
+        mov     cs:kfocus,0     ; its keys too
 @@:     sti
         call    yield           ; for good:  it is no longer ready
         jmp     @B
@@ -918,13 +949,18 @@ kill_entry proc far
         mov     ax,cs:base_seg
         inc     ax
         cmp     bx,ax
-        je      @F
+        je      ke_stub
         mov     es,bx           ; its end comes back here
         mov     word ptr es:[0Ah],offset kill_entry
         mov     es:[0Ch],cs
+        cmp     es:[16h],bx     ; its own parent (COMMAND.COM):  ours
+        jne     @F
+        mov     es:[16h],ax
+@@:
         mov     ax,4CFFh
         int     21h
-@@:     jmp     task_done
+ke_stub:
+        jmp     task_done
 kill_entry endp
 
 ; INT 23h of a task to be killed (DOS out of its console input)
@@ -997,7 +1033,7 @@ sched:: pushad
         push    fs
         push    gs
         mov     bp,sp
-        mov     ax,cs:dgseg     ; the task table
+        mov     ax,cs:kseg     ; the task table
         mov     ds,ax
         ; a critical error:  its task must be answered, in the foreground
         les     bx,cs:sda_ptr
@@ -1005,6 +1041,7 @@ sched:: pushad
         je      @F
         mov     ax,cs:cur
         mov     cs:newfg,ax
+        mov     cs:kfocus,ax
 @@:
         ; another foreground:  not inside 386MAX nor another task's handler
         mov     ax,cs:newfg
@@ -1017,7 +1054,7 @@ sched:: pushad
         jne     sc_nofg
         mov     cs:fgss,ss
         mov     cs:fgsp,sp
-        mov     ax,cs:dgseg
+        mov     ax,cs:kseg
         mov     ss,ax
         mov     sp,offset kstktop
         mov     dx,cs:newfg
@@ -1092,7 +1129,7 @@ irq0_found:
         call    taskptr         ; BX ==> current TASK
         mov     [bx].T_SS,ss
         mov     [bx].T_SP,sp
-        mov     ax,cs:dgseg
+        mov     ax,cs:kseg
         mov     ss,ax           ; shared kernel stack (the SDA swap may
         mov     sp,offset kstktop ; overwrite the DOS stack in use)
         xchg    di,bx
@@ -1171,6 +1208,84 @@ i16_old:
         jmp     dword ptr cs:old16
 int16   endp
 
+; INT 15h AH=4Fh (the BIOS keyboard intercept, AL = scan code):  the
+; switch keys.  Ctrl+Alt+1..9, 0:  that task to the foreground (key
+; dropped:  CF = 0); Alt released alone:  task 0 (with mvk_dvkey).  Not
+; during a critical error.  (Port 60h is not read again:  386MAX's
+; keyboard controller emulation would give the next byte of an E0 key.)
+int15   proc far
+        cmp     ah,4Fh
+        jne     i15_old
+        cmp     cs:running,0
+        je      i15_old
+        push    ax
+        push    bx
+        push    ds
+        push    es
+        mov     ds,cs:kseg
+        les     bx,cs:sda_ptr
+        cmp     byte ptr es:[bx],0
+        jne     i15_chain
+        cmp     al,0B8h         ; Alt released
+        jne     i15_alt
+        xor     bx,bx
+        xchg    bx,cs:altpend   ; alone?
+        or      bx,bx
+        jz      i15_chain
+        cmp     cs:dvkey,0
+        je      i15_chain
+        mov     cs:newfg,0
+        mov     cs:kfocus,0
+        dbg     'A'
+        jmp     short i15_chain
+i15_alt:
+        test    al,80h          ; another key pressed:  no Alt alone
+        jnz     i15_ctl
+        xor     bx,bx
+        cmp     al,38h
+        jne     @F
+        inc     bx
+@@:     mov     cs:altpend,bx
+i15_ctl:
+        cmp     al,02h
+        jb      i15_chain
+        cmp     al,0Bh
+        ja      i15_chain
+        xor     bx,bx
+        mov     es,bx
+        mov     bl,es:[417h]
+        and     bl,0Ch
+        cmp     bl,0Ch          ; Ctrl and Alt
+        jne     i15_chain
+        dec     al
+        xor     ah,ah
+        cmp     al,10
+        jne     @F
+        xor     ax,ax
+@@:     cmp     ax,cs:ntasks
+        jae     i15_chain
+        mov     bx,ax
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     i15_chain
+        mov     cs:newfg,ax
+        mov     cs:kfocus,ax
+        dbg     'F'
+        pop     es
+        pop     ds
+        pop     bx
+        pop     ax
+        clc                     ; the key is ours
+        retf    2
+i15_chain:
+        pop     es
+        pop     ds
+        pop     bx
+        pop     ax
+i15_old:
+        jmp     dword ptr cs:old15
+int15   endp
+
 ; INT 28h (DOS idle):  the other tasks
 int28   proc far
         cmp     cs:running,0
@@ -1205,7 +1320,7 @@ int10   proc far
         call    dword ptr cs:old10
         pushf
         push    ds
-        mov     ds,cs:dgseg
+        mov     ds,cs:kseg
         call    fgcursor
         pop     ds
         popf
@@ -1276,7 +1391,7 @@ irqdisp:
         push    bp
         push    ds
         push    es
-        mov     bx,cs:dgseg
+        mov     bx,cs:kseg
         mov     ds,bx
         xor     ah,ah
         shl     ax,1
@@ -1322,65 +1437,11 @@ irqd_other:
         call    irqd_ctx
         jmp     irqd_ret
 irqd_kbd:
-        in      al,60h
-        ; Alt released alone:  task 0 (the break goes on to the foreground)
-        cmp     al,0B8h
-        jne     ik_alt
-        xor     bx,bx
-        xchg    bx,cs:altpend   ; pressed alone?
-        or      bx,bx
-        jz      irqk_fg
-        cmp     cs:dvkey,0
-        je      irqk_fg
-        les     bx,cs:sda_ptr   ; not during a critical error
-        cmp     byte ptr es:[bx],0
-        jne     irqk_fg
-        mov     cs:newfg,0
-        dbg     'A'
-        jmp     irqk_fg
-ik_alt: test    al,80h          ; another key pressed:  no Alt alone
-        jnz     ik_ctl
-        xor     bx,bx
-        cmp     al,38h
-        jne     @F
-        inc     bx
-@@:     mov     cs:altpend,bx
-ik_ctl:
-        ; Ctrl+Alt+1..9, 0:  that task to the foreground (key consumed)
-        cmp     al,02h
-        jb      irqk_fg
-        cmp     al,0Bh
-        ja      irqk_fg
-        les     bx,cs:sda_ptr   ; not during a critical error
-        cmp     byte ptr es:[bx],0
-        jne     irqk_fg
-        xor     bx,bx
-        mov     es,bx
-        mov     bl,es:[417h]
-        and     bl,0Ch
-        cmp     bl,0Ch
-        jne     irqk_fg
-        dec     al
-        xor     ah,ah
-        cmp     al,10
-        jne     @F
-        xor     ax,ax
-@@:     cmp     ax,cs:ntasks
-        jae     irqk_fg
-        mov     bx,ax
-        call    taskptr
-        cmp     [bx].T_STATE,TS_READY
-        jne     irqk_fg
-        mov     cs:newfg,ax
-        dbg     'F'
-        mov     al,20h
-        out     20h,al
-        jmp     irqd_ret
 irqk_fg:
         ; to the foreground task:  its INT 09h with its key buffer
         xor     ax,ax
         mov     es,ax
-        mov     bx,cs:fg
+        mov     bx,cs:kfocus
         cmp     bx,cs:cur
         je      irqd_here
         call    taskptr
@@ -1411,7 +1472,7 @@ irqd_ctx proc near
         mov     bx,sp
         cmp     cs:idepth,0
         jne     @F              ; on the IRQ stack already
-        mov     cx,cs:dgseg
+        mov     cx,cs:kseg
         mov     ss,cx
         mov     sp,offset istktop
 @@:     inc     cs:idepth
@@ -1421,7 +1482,7 @@ irqd_ctx proc near
         mov     ax,0800h
         qpi
         mov     cs:actpt,dx
-        mov     ax,cs:dgseg
+        mov     ax,cs:kseg
         mov     ds,ax
         pushf
         call    dword ptr [edi+esi].T_IVT
@@ -1463,7 +1524,7 @@ int13   endp
 ;----------------------------------------------------------------------------
 ; int mvk_start(unsigned quantum):  start switching (quantum in ticks).
 ; Returns 0 or MVE_x.
-mvk_start_ proc near
+start_k proc near
         push    bx
         push    cx
         push    dx
@@ -1541,12 +1602,12 @@ st_ret:
         pop     cx
         pop     bx
         ret
-mvk_start_ endp
+start_k endp
 
 ;----------------------------------------------------------------------------
 ; void mvk_stop(void):  from task 0 only.  Stops switching, removes the
 ; calldowns and the INT 13h hook, frees all tasks.
-mvk_stop_ proc near
+stop_k proc near
         push    ax
         push    bx
         push    cx
@@ -1594,7 +1655,7 @@ sp_ret:
         pop     bx
         pop     ax
         ret
-mvk_stop_ endp
+stop_k endp
 
 ; hooks (hooktab) into the live IVT (ES = 0) and every task's
 hook_install proc near
@@ -1651,7 +1712,7 @@ hook_remove endp
 
 ; int mvk_setfg(unsigned task):  the task shown and getting the keys (from
 ; task 0).  0 or MVE_x.
-mvk_setfg_ proc near
+setfg_k proc near
         push    bx
         push    dx
         mov     dx,ax
@@ -1673,10 +1734,10 @@ mvk_setfg_ proc near
 sf_ret: pop     dx
         pop     bx
         ret
-mvk_setfg_ endp
+setfg_k endp
 
 ; int mvk_kill(unsigned task):  end the task (from task 0).  0 or MVE_x.
-mvk_kill_ proc near
+kill_k proc near
         push    bx
         mov     bx,ax
         mov     ax,MVE_STATE
@@ -1695,7 +1756,7 @@ mvk_kill_ proc near
 @@:     xor     ax,ax
 kl_ret: pop     bx
         ret
-mvk_kill_ endp
+kill_k endp
 
 ; void mvk_yield(void):  the other tasks now (a waiting task)
 mvk_yield_ proc near
@@ -1712,6 +1773,84 @@ mvk_dvkey_ proc near
         ret
 mvk_dvkey_ endp
 
+; int mvk_focus(unsigned task):  the keys to the task (0 or ready), the
+; display stays (windows of task 0).  0 or MVE_x.
+focus_k proc near
+        push    bx
+        mov     bx,ax
+        mov     ax,MVE_STATE
+        cmp     bx,cs:ntasks
+        jae     fc_ret
+        push    bx
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        pop     bx
+        jne     fc_ret
+        mov     cs:kfocus,bx
+        xor     ax,ax
+fc_ret: pop     bx
+        ret
+focus_k endp
+
+; unsigned mvk_focused(void):  the task getting the keys
+mvk_focused_ proc near
+        mov     ax,cs:kfocus
+        ret
+mvk_focused_ endp
+
+; unsigned mvk_peek(unsigned task, unsigned short *buf):  the task's text
+; screen (80x25 cells) into buf (DGROUP, shared); returns its cursor (high
+; row, low column), FFFFh:  no such task.  From task 0.
+mvk_peek_ proc near
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        push    ds
+        push    ds
+        pop     es              ; ES:DI ==> buf (the caller's DS)
+        mov     ds,cs:kseg
+        mov     bx,ax
+        mov     di,dx
+        mov     ax,0FFFFh
+        cmp     cs:cur,0
+        jne     pk_ret
+        or      bx,bx
+        jz      pk_ret
+        cmp     bx,cs:ntasks
+        jae     pk_ret
+        call    taskptr
+        cmp     [bx].T_STATE,TS_FREE
+        je      pk_ret
+        pushf
+        cli
+        push    cs:actpt
+        mov     dx,[bx].T_PT
+        call    setctx
+        push    ds
+        mov     ax,0B800h
+        mov     ds,ax
+        xor     si,si
+        mov     cx,2000
+        cld
+        rep     movsw
+        pop     ds
+        pop     dx
+        call    setctx
+        popf
+        mov     ax,word ptr [bx].T_VID
+pk_ret: pop     ds
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+mvk_peek_ endp
+
 ; unsigned mvk_fg(void):  the foreground task
 mvk_fg_ proc near
         mov     ax,cs:fg
@@ -1719,7 +1858,7 @@ mvk_fg_ proc near
 mvk_fg_ endp
 
 ; unsigned mvk_state(unsigned task)
-mvk_state_ proc near
+state_k proc near
         push    bx
         mov     bx,ax
         xor     ax,ax
@@ -1729,10 +1868,10 @@ mvk_state_ proc near
         mov     ax,[bx].T_STATE
 @@:     pop     bx
         ret
-mvk_state_ endp
+state_k endp
 
 ; unsigned mvk_exit(unsigned task):  EXEC result of a DONE task
-mvk_exit_ proc near
+exit_k proc near
         push    bx
         mov     bx,ax
         mov     ax,0FFFFh
@@ -1742,7 +1881,7 @@ mvk_exit_ proc near
         mov     ax,[bx].T_EXIT
 @@:     pop     bx
         ret
-mvk_exit_ endp
+exit_k endp
 
 ; unsigned long mvk_switches(void)  (DX:AX)
 mvk_switches_ proc near
@@ -1756,5 +1895,105 @@ mvk_base_ proc near
         mov     ax,cs:base_seg
         ret
 mvk_base_ endp
+
+;----------------------------------------------------------------------------
+; the C interface:  DS = the kernel data for the work
+mvk_create_ proc near           ; prog, tail:  copied into the kernel data
+        push    ds
+        push    es
+        push    si
+        push    di
+        push    cx
+        mov     es,cs:kseg
+        cld
+        mov     si,ax
+        mov     di,offset cprog
+        mov     cx,79
+@@:     lodsb
+        stosb
+        or      al,al
+        loopnz  @B
+        mov     byte ptr es:[di],0
+        mov     si,dx
+        mov     di,offset ctail
+        mov     cx,127
+@@:     lodsb
+        stosb
+        or      al,al
+        loopnz  @B
+        mov     byte ptr es:[di],0
+        pop     cx
+        pop     di
+        pop     si
+        pop     es
+        mov     ds,cs:kseg
+        mov     ax,offset cprog
+        mov     dx,offset ctail
+        call    create_k
+        pop     ds
+        ret
+mvk_create_ endp
+
+mvk_start_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    start_k
+        pop     ds
+        ret
+mvk_start_ endp
+
+mvk_stop_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    stop_k
+        pop     ds
+        ret
+mvk_stop_ endp
+
+mvk_state_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    state_k
+        pop     ds
+        ret
+mvk_state_ endp
+
+mvk_exit_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    exit_k
+        pop     ds
+        ret
+mvk_exit_ endp
+
+mvk_setfg_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    setfg_k
+        pop     ds
+        ret
+mvk_setfg_ endp
+
+mvk_kill_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    kill_k
+        pop     ds
+        ret
+mvk_kill_ endp
+
+mvk_focus_ proc near
+        push    ds
+        mov     ds,cs:kseg
+        call    focus_k
+        pop     ds
+        ret
+mvk_focus_ endp
+
+; unsigned mvk_datasize(void):  paragraphs of kernel data for mvk_init
+mvk_datasize_ proc near
+        mov     ax,(KDATASIZE + 15) shr 4
+        ret
+mvk_datasize_ endp
 
         end

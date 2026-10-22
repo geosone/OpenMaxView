@@ -98,6 +98,7 @@ DESQview test:
 | `kill` | killed tasks end through DOS, a new one starts in a freed slot |
 | `crit` | a background critical error comes to the front |
 | `desk` | MAXVIEW.EXE starts programs as tasks, Alt, task list, exit |
+| `win` | MAXVIEW windows: two tasks on one screen, typing, move, zoom, close |
 
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the
 script stores them as `build/test-qemu/<case>.e9`.

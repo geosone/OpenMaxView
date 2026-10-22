@@ -39,6 +39,16 @@ static int mv_on;
 static char task_title[MVK_MAXTASK][ODQ_TITLE_LEN + 1];
 static unsigned char task_live[MVK_MAXTASK];
 static unsigned tasks_open(void);
+static int view_windows;        /* Alt comes back to the windows */
+
+/* windows:  interior position and size per task, stacking order (the last
+ * is the active one) */
+typedef struct mv_window {
+    unsigned char top, left, rows, cols;
+} mv_window;
+static mv_window win[MVK_MAXTASK];
+static unsigned char zorder[MVK_MAXTASK];
+static unsigned nwin;
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
 
@@ -398,8 +408,9 @@ static void show_help(void)
     if (mv_on) {
         write_at(14, 16, "T             Running programs", ATTR_ACTIVE);
         write_at(15, 16, "Alt (alone)   Back here from a program", ATTR_ACTIVE);
+        write_at(16, 16, "W             Windows of the programs", ATTR_ACTIVE);
     }
-    write_at(16, 16, "Press any key to return.", ATTR_ACTIVE);
+    write_at(17, 16, "Press any key to return.", ATTR_ACTIVE);
     getch();
 }
 
@@ -446,7 +457,7 @@ static void reload_catalog_after_child(odq_catalog *catalog,
                                        unsigned *selected,
                                        const odq_settings *settings)
 {
-    odq_catalog refreshed;
+    static odq_catalog refreshed;
     unsigned error_line;
 
     if (!settings->reload_catalog)
@@ -469,6 +480,27 @@ static unsigned tasks_open(void)
         if (task_live[t])
             ++n;
     return n;
+}
+
+static void win_add(unsigned t)
+{
+    unsigned k = nwin % 5;
+
+    win[t].top = (unsigned char)(2 + 3 * k);
+    win[t].left = (unsigned char)(2 + 6 * k);
+    win[t].rows = 10;
+    win[t].cols = 50;
+    zorder[nwin++] = (unsigned char)t;
+}
+
+static void win_remove(unsigned t)
+{
+    unsigned i, j = 0;
+
+    for (i = 0; i < nwin; ++i)
+        if (zorder[i] != t)
+            zorder[j++] = zorder[i];
+    nwin = j;
 }
 
 static void start_multitasking(char *status)
@@ -515,6 +547,7 @@ static int poll_tasks(char *status)
     for (t = 1; t < MVK_MAXTASK; ++t)
         if (task_live[t] && mvk_state(t) != MVK_READY) {
             task_live[t] = 0;
+            win_remove(t);
             sprintf(status, "%.40s ended, code %u.", task_title[t],
                     mvk_exit(t) & 0xff);
             return 1;
@@ -556,6 +589,8 @@ static int launch_task(const odq_program *program, char *status)
     }
     strcpy(task_title[t], program->title);
     task_live[t] = 1;
+    win_add(t);
+    view_windows = 1;
     sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
     mvk_setfg(t);
     return 0;
@@ -609,6 +644,183 @@ static void show_tasks(char *status)
             mvk_kill(list[sel]);
             sprintf(status, "%.40s is being closed.", task_title[list[sel]]);
         }
+    }
+}
+
+static unsigned short scr[SCREEN_ROWS * SCREEN_COLS];
+static unsigned short cells[SCREEN_ROWS * SCREEN_COLS];
+
+static void sput(unsigned row, unsigned col, unsigned char ch,
+                 unsigned char attr)
+{
+    if (row < SCREEN_ROWS && col < SCREEN_COLS)
+        scr[row * SCREEN_COLS + col] = (unsigned short)(attr << 8 | ch);
+}
+
+static void swrite(unsigned row, unsigned col, const char *text,
+                   unsigned char attr)
+{
+    while (*text != '\0')
+        sput(row, col++, (unsigned char)*text++, attr);
+}
+
+static void set_cursor(unsigned row, unsigned col, int on)
+{
+    union REGS r;
+
+    r.h.ah = 0x01;
+    r.x.cx = on ? 0x0607 : 0x2000;
+    int86(0x10, &r, &r);
+    r.h.ah = 0x02;
+    r.h.bh = 0;
+    r.h.dh = (unsigned char)row;
+    r.h.dl = (unsigned char)col;
+    int86(0x10, &r, &r);
+}
+
+/* all windows onto the display; mode:  0 normal, 1 move, 2 size */
+static const char *status_line = "";
+
+static void compose(int mode)
+{
+    static const char *help[3] = {
+        " Tab next  Enter type  Z full  M move  S size  C close  O open  Q quit ",
+        " Move: arrows, Enter done ",
+        " Size: arrows, Enter done "
+    };
+    unsigned i, r, c, t, cur, vrow, vtop;
+    unsigned focus = mvk_focused();
+    unsigned crow = 0, ccol = 0;
+    int cursor = 0;
+    char line[SCREEN_COLS + 1];
+
+    for (i = 0; i < SCREEN_ROWS * SCREEN_COLS; ++i)
+        scr[i] = ATTR_BACKGROUND << 8 | 219;
+    for (c = 0; c < SCREEN_COLS; ++c) {
+        sput(0, c, ' ', ATTR_MENU);
+        sput(SCREEN_ROWS - 1, c, ' ', ATTR_MENU);
+    }
+    swrite(0, 1, "Open MaxView windows", ATTR_MENU);
+    if (focus != 0) {
+        sprintf(line, "Typing into %.40s; Alt returns", task_title[focus]);
+        swrite(0, 24, line, ATTR_MENU_TRIGGER);
+    } else
+        swrite(0, 24, status_line, ATTR_MENU);
+    swrite(SCREEN_ROWS - 1, 1, help[mode], ATTR_MENU);
+    for (i = 0; i < nwin; ++i) {
+        const mv_window *w;
+        int active = i + 1 == nwin;
+        unsigned char fa = active ? ATTR_ACTIVE : ATTR_DATA;
+        unsigned char h = active ? 205 : 196, v = active ? 186 : 179;
+
+        t = zorder[i];
+        w = &win[t];
+        cur = mvk_peek(t, cells);
+        if (cur == 0xffff)
+            continue;
+        /* the part of the 80x25 screen with the cursor row */
+        vrow = cur >> 8;
+        vtop = vrow >= w->rows ? vrow - w->rows + 1 : 0;
+        if (vtop + w->rows > SCREEN_ROWS)
+            vtop = SCREEN_ROWS - w->rows;
+        sput(w->top - 1, w->left - 1, active ? 201 : 218, fa);
+        sput(w->top - 1, w->left + w->cols, active ? 187 : 191, fa);
+        sput(w->top + w->rows, w->left - 1, active ? 200 : 192, fa);
+        sput(w->top + w->rows, w->left + w->cols, active ? 188 : 217, fa);
+        for (c = 0; c < w->cols; ++c) {
+            sput(w->top - 1, w->left + c, h, fa);
+            sput(w->top + w->rows, w->left + c, h, fa);
+        }
+        sprintf(line, " %u %.30s ", t, task_title[t]);
+        swrite(w->top - 1, w->left + 1, line, fa);
+        for (r = 0; r < w->rows; ++r) {
+            sput(w->top + r, w->left - 1, v, fa);
+            sput(w->top + r, w->left + w->cols, v, fa);
+            for (c = 0; c < w->cols; ++c)
+                scr[(w->top + r) * SCREEN_COLS + w->left + c] =
+                    cells[(vtop + r) * SCREEN_COLS + c];
+        }
+        if (t == focus && (cur & 0xff) < w->cols) {
+            crow = w->top + vrow - vtop;
+            ccol = w->left + (cur & 0xff);
+            cursor = 1;
+        }
+    }
+    _fmemcpy(video, scr, sizeof scr);
+    set_cursor(crow, ccol, cursor);
+}
+
+/* the windows of the running programs.  Returns 0:  to the launcher,
+ * 1:  quit asked */
+static int windows_view(char *status)
+{
+    unsigned long last = 0, now;
+    int key, mode = 0;
+    unsigned t;
+    mv_window *w;
+
+    for (;;) {
+        if (poll_tasks(status) && nwin == 0)
+            return 0;
+        if (nwin == 0)
+            return 0;
+        t = zorder[nwin - 1];
+        w = &win[t];
+        status_line = status;
+        now = *(unsigned long far *)MK_FP(0x40, 0x6c);
+        if (now - last >= 2) {
+            compose(mode);
+            last = now;
+        }
+        if (mvk_focused() != 0 || !kbhit()) {
+            mvk_yield();
+            continue;
+        }
+        key = getch();
+        last = 0;
+        if (key == 0 || key == 0xe0) {
+            key = getch();
+            if (mode == 1) {
+                if (key == 72 && w->top > 2) --w->top;
+                if (key == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->top;
+                if (key == 75 && w->left > 1) --w->left;
+                if (key == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->left;
+            } else if (mode == 2) {
+                if (key == 72 && w->rows > 3) --w->rows;
+                if (key == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->rows;
+                if (key == 75 && w->cols > 10) --w->cols;
+                if (key == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
+            }
+            continue;
+        }
+        if (mode != 0) {
+            if (key == 13 || key == 27)
+                mode = 0;
+            continue;
+        }
+        key = toupper(key);
+        if (key == 9 && nwin > 1) {     /* the bottom one to the top */
+            unsigned char first = zorder[0];
+            memmove(zorder, zorder + 1, nwin - 1);
+            zorder[nwin - 1] = first;
+        } else if (key == 13)
+            mvk_focus(t);
+        else if (key == 'Z') {
+            mvk_setfg(t);
+            while (mvk_fg() != 0 && mvk_state(t) == MVK_READY)
+                mvk_yield();
+        } else if (key == 'M')
+            mode = 1;
+        else if (key == 'S')
+            mode = 2;
+        else if (key == 'C') {
+            mvk_kill(t);
+            sprintf(status, "%.40s is being closed.", task_title[t]);
+        } else if (key == 'O') {
+            view_windows = 0;
+            return 0;
+        } else if (key == 'Q' || key == 27)
+            return 1;
     }
 }
 
@@ -670,7 +882,7 @@ static int launch(const odq_program *program, char *status,
 
 int main(void)
 {
-    odq_catalog catalog;
+    static odq_catalog catalog;
     odq_settings settings;
     mv_scheduler scheduler;
     unsigned selected = 0, error_line = 0;
@@ -703,6 +915,15 @@ int main(void)
     initialise_video();
 
     for (;;) {
+        if (mv_on && view_windows && tasks_open() != 0) {
+            if (windows_view(status) == 0)
+                continue;
+            if (confirm_exit())
+                break;
+            continue;
+        }
+        view_windows = 0;
+        initialise_video();
         show_desktop(&catalog, selected, status, &settings);
         key = wait_key(status);
         if (key == -1)
@@ -729,6 +950,10 @@ int main(void)
         }
         if (key == 'T' && mv_on) {
             show_tasks(status);
+            continue;
+        }
+        if (key == 'W' && mv_on && tasks_open() != 0) {
+            view_windows = 1;
             continue;
         }
         if (key == 'D') {

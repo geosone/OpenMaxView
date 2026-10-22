@@ -96,11 +96,20 @@ static unsigned free_base(void)
 
 int mvhost_init(void)
 {
-    unsigned base = set_base();
+    union REGS r;
+    unsigned base, kseg;
 
-    if (base == 0)
-        base = free_base();
-    if (base == 0)
+    /* our block:  DGROUP + 64KB if it can, then the kernel data (first
+     * fit:  low), then the task base above them */
+    set_base();
+    r.h.ah = 0x48;
+    r.x.bx = mvk_datasize();
+    intdos(&r, &r);
+    if (r.x.cflag)
         return MVE_BASE;
-    return mvk_init(base);
+    kseg = r.x.ax;
+    base = free_base();
+    if (base == 0 || base <= kseg)
+        return MVE_BASE;
+    return mvk_init(base, kseg);
 }
