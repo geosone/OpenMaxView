@@ -18,6 +18,9 @@
 
 #define SCREEN_COLS 80
 #define SCREEN_ROWS 25
+#define MV_TASKS    16  /* task slots, MAXVIEW's included (DESQview's
+                         * default common memory:  14 windows) */
+#define LIST_ROWS   10
 /* Open 386MAX QUILIB colour roles (QUILIB/COLORS.C). */
 #define ATTR_BACKGROUND   0x08  /* FG_DKGRAY | BG_BLACK */
 #define ATTR_DATA         0x1f  /* FG_WHITE  | BG_BLUE  */
@@ -505,7 +508,7 @@ static void win_remove(unsigned t)
 
 static void start_multitasking(char *status)
 {
-    int rc = mvhost_init();
+    int rc = mvhost_init(MV_TASKS);
 
     if (rc == 0)
         rc = mvk_start(2);
@@ -615,7 +618,7 @@ static int launch_task(const odq_program *program, char *status)
 
 static void show_tasks(char *status)
 {
-    unsigned list[MVK_MAXTASK], n, i, t, sel = 0;
+    unsigned list[MVK_MAXTASK], n, i, t, sel = 0, top = 0;
     int key;
     char line[60];
 
@@ -627,14 +630,28 @@ static void show_tasks(char *status)
                 list[n++] = t;
         if (n != 0 && sel >= n)
             sel = n - 1;
+        if (sel < top)
+            top = sel;
+        if (sel >= top + LIST_ROWS)
+            top = sel - LIST_ROWS + 1;
         frame(4, 10, 19, 69, "Tasks");
         if (n == 0)
             write_at(8, 14, "No programs are running.", ATTR_ACTIVE);
-        for (i = 0; i < n; ++i) {
-            sprintf(line, " %u  %-38s Ctrl+Alt+%u ", list[i],
-                    task_title[list[i]], list[i]);
-            write_at(6 + i, 13, line, i == sel ? ATTR_QUICK : ATTR_ACTIVE);
+        /* IDs as DESQview's:  1-9, then A, B, ...; Ctrl+Alt only 1-9 */
+        for (i = top; i < n && i < top + LIST_ROWS; ++i) {
+            char hot[12] = "";
+
+            t = list[i];
+            if (t < 10)
+                sprintf(hot, "Ctrl+Alt+%u", t);
+            sprintf(line, " %c  %-38s %-10s ",
+                    t < 10 ? '0' + t : 'A' + t - 10, task_title[t], hot);
+            write_at(6 + i - top, 13, line, i == sel ? ATTR_QUICK : ATTR_ACTIVE);
         }
+        if (top > 0)
+            write_at(5, 66, "\x18", ATTR_ACTIVE);
+        if (top + LIST_ROWS < n)
+            write_at(16, 66, "\x19", ATTR_ACTIVE);
         write_at(17, 14, "Enter: switch to  C: close  Esc: back",
                  ATTR_ACTIVE);
         key = wait_key(status);

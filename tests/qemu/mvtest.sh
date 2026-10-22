@@ -62,6 +62,8 @@
 #         13h, KEYPROBE in text; switching between them sets each one's
 #         mode, the graphics task is held in the background and draws
 #         again when it is back
+#   many  16 task slots (MVRUN /N16, its list from a file):  15 TICKs all
+#         count side by side, a 16th program finds the table full
 #
 # MAXROOT (default ../Open386MAX) needs build/bin (386MAX) and
 # build/TESTS.  MVDEBUG=1:  the core traces to port E9h (<case>.e9).
@@ -72,7 +74,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk win dvapi cwd ems gfx progs}
+CASES=${*:-two mem serial keys kill crit desk win dvapi cwd ems gfx many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -304,6 +306,20 @@ print(n*100//(w*h))" "$1" 2>/dev/null || echo 0
     check "graphics task back, drawn again" "[ \$(green $d/gfx3.png) -ge 90 ]"
     check "graphics task held in the background" "[ \$(echo $g1 | awk '{print \$5+0}') -ge 90 ]"
     check "it drew again once" "[ \$(echo $g1 | awk '{print \$3+0}') -eq 1 ]"
+    ;;
+many)
+    echo "== many:  16 task slots, 15 TICK tasks"
+    : > "$OUT/L.TXT"
+    for i in $(seq 1 16); do printf 'C:\\TICK.EXE C:\\T%d.TXT\r\n' $i >> "$OUT/L.TXT"; done
+    FG="/N16 " run many 40 "@C:\\L.TXT" "$TICK $OUT/L.TXT"
+    n=0 low=
+    for i in $(seq 1 15); do
+        t=$(last many T$i.TXT tick); [ $t -ge 10 ] && n=$((n + 1)) || low="$low $i:$t"
+    done
+    echo "  counting:  $n of 15${low:+ (low:$low)}"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/many/end.txt'"
+    check "15 tasks count (10 lines or more in 40 s)" "[ $n -eq 15 ]"
+    check "the 16th did not start (table full)" "! mtype -i '$OUT/many/test.img@@32256' ::/T16.TXT >/dev/null 2>&1"
     ;;
 progs)
     echo "== progs:  regression tests, each in a task of its own"

@@ -25,6 +25,9 @@
 ; DESQview), the DOS SDA
 ; (INT 21h 5D06h, the in-DOS size; the current drive is in it), the DOS
 ; current directories (the CDS), the BIOS key buffer and cursor data.
+; CDS and SDA (4KB) are kept in the task's own memory, a block behind its
+; stub PSP (task 0's in the kernel data):  the table holds 1.7KB a task,
+; up to MAXTASK (32) of them, as many as the caller asks (mvk_datasize).
 ; QPI 08h is called on a shared kernel stack:  the task's stack is gone
 ; once the context changes, and the SDA swap may overwrite a DOS stack.
 ;
@@ -56,12 +59,15 @@
         .model  small
         .386
 
-MAXTASK         equ 8           ; task 0 (the caller) + 7
+MAXTASK         equ 32          ; task 0 (the caller) + 31 at most (the
+                                ; table has mvk_datasize's count)
 MAXPAGE         equ 160         ; private pages per task (640KB)
 STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
 KSTACK          equ 512         ; kernel stack (QPI 08h)
 SDAMAX          equ 2048        ; DOS SDA swapped
 CDSMAX          equ 26*58h      ; DOS current directories (CDS) swapped
+SAVEPARA        equ (CDSMAX + SDAMAX + 15) / 16 ; CDS and SDA saved, behind
+                                ; the stub PSP in each task's own memory
 NVPG            equ 8           ; text pages B8000h-BFFFFh private per task
 KBDLEN          equ 36          ; 40:1A-40:3D key buffer head, tail, buffer
 VIDLEN          equ 18          ; 40:50-40:61 cursor positions and shape
@@ -113,11 +119,11 @@ T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
 T_VPG   dw      NVPG dup (?)    ; private frames of the text pages B8000h..
-T_SDA   db      SDAMAX dup (?)
+T_XSAVE dd      ?               ; its CDS, then SDA (at CDSMAX):  in its own
+                                ; memory (seen only in its context)
 T_KBD   db      KBDLEN dup (?)
 T_VID   db      VIDLEN dup (?)
 T_ICA   db      16 dup (?)      ; 40:F0-FF (per window under DESQview too)
-T_CDS   db      CDSMAX dup (?)
 T_IVT   db      1024 dup (?)
 T_FRAME dw      MAXPAGE dup (?) ; private page frames
 TASK    ends
@@ -125,7 +131,6 @@ TASK    ends
 ; kernel data:  a DOS block of the caller's below the task base (shared by
 ; all tasks; mvk_datasize, mvk_init); the IRQ handlers find it by CS:KSEG
 MVKDATA segment para at 0
-tasks   TASK    MAXTASK dup (<>)
 cdtab   dd      8 dup (?)       ; IRQ0-7 calldown table (QPI copies it)
 kstk    db      KSTACK dup (?)
 kstktop label   word
@@ -136,9 +141,11 @@ origivt dd      256 dup (?)     ; the IVT at mvk_start:  a task whose vector
                                 ; differs has hooked it
 cprog   db      80 dup (?)      ; mvk_create arguments
 ctail   db      128 dup (?)
+t0save  db      CDSMAX + SDAMAX dup (?) ; task 0's (root context) T_XSAVE
+tasks   TASK    MAXTASK dup (<>) ; (last:  mvk_datasize's count of them)
 kdata_end label byte
 MVKDATA ends
-KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128
+KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 128 + CDSMAX + SDAMAX
         .erre   KDATASIZE LE 0FFF0h, <kernel data over 64KB:  MAXTASK, SDAMAX, CDSMAX>
 
         .code
@@ -180,6 +187,7 @@ root_pt  dw     0
 ntasks   dw     0
 cur      dw     0
 running  dw     0
+nslots   dw     8               ; slots in the table (mvk_datasize)
 quantum  dw     2
 fgquant  dw     6               ; for the task with the keys
 qleft    dw     2
@@ -259,10 +267,14 @@ mvk_init_ proc near
         mov     cs:base_seg,bx
         mov     cs:kseg,dx
         mov     ds,dx
-        mov     es,dx           ; a DOS block:  zeros first
+        mov     es,dx           ; a DOS block:  zeros first (as large as
+        mov     ax,size TASK    ; mvk_datasize made it)
+        mul     cs:nslots
+        add     ax,offset tasks + 1
+        shr     ax,1
+        mov     cx,ax
         xor     di,di
         xor     ax,ax
-        mov     cx,(KDATASIZE + 1) shr 1
         cld
         rep     stosw
         ; QPI entry (INT 67h AH=3Fh, CX='QE', DX='MM')
@@ -381,6 +393,9 @@ mvk_init_ proc near
         mov     [bx].T_STATE,TS_READY
         mov     ax,cs:root_pt
         mov     [bx].T_PT,ax
+        mov     word ptr [bx].T_XSAVE,offset t0save
+        mov     ax,cs:kseg
+        mov     word ptr [bx].T_XSAVE+2,ax
         mov     [bx].T_NPG,0
         mov     cs:ntasks,1
         xor     ax,ax
@@ -441,7 +456,7 @@ cr_snext:
         inc     bx
         jmp     cr_slot
 cr_new: mov     ax,MVE_FULL
-        cmp     bx,MAXTASK
+        cmp     bx,cs:nslots
         jae     cr_err
         push    bx
         call    taskptr
@@ -456,6 +471,10 @@ cr_have:
         mov     [di].T_VPG,0    ; (vpg_alloc fills them all)
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
+        mov     word ptr [di].T_XSAVE,0 ; behind its stub PSP
+        mov     ax,cs:base_seg
+        add     ax,STUBPARA+1
+        mov     word ptr [di].T_XSAVE+2,ax
         push    di              ; 40:F0-FF:  zero
         lea     di,[di].T_ICA
         mov     cx,8
@@ -570,9 +589,9 @@ cr_have:
         mov     byte ptr es:[0],'M'
         inc     ax
         mov     es:[1],ax       ; owner:  the stub PSP
-        mov     word ptr es:[3],STUBPARA
+        mov     word ptr es:[3],STUBPARA+SAVEPARA
         mov     ax,cs:base_seg
-        add     ax,STUBPARA+1
+        add     ax,STUBPARA+SAVEPARA+1
         mov     es,ax           ; free block
         mov     cl,cs:free_typ
         mov     dx,cs:priv_end
@@ -702,7 +721,8 @@ tf_pt:  mov     [di].T_NPG,0
         ret
 task_free endp
 
-; IVT, SDA, key buffer and cursor data into the TASK at DI (DS = DGROUP)
+; IVT, SDA, key buffer and cursor data into the TASK at DI (DS = DGROUP;
+; its context active:  CDS and SDA go to its own memory, T_XSAVE)
 save_ivtsda proc near
         push    cx
         push    si
@@ -737,13 +757,14 @@ save_ivtsda proc near
         mov     cx,8
         rep     movsw
         pop     di
+        mov     es,cs:kseg
+        les     di,es:[di].T_XSAVE ; its save area:  CDS, then SDA
         push    di
-        lea     di,[di].T_CDS
         lds     si,cs:cds_ptr
         mov     cx,cs:cds_size
         rep     movsb
         pop     di
-        lea     di,[di].T_SDA
+        add     di,CDSMAX
         lds     si,cs:sda_ptr
         mov     cx,cs:sda_size
         rep     movsb
@@ -755,7 +776,8 @@ save_ivtsda proc near
         ret
 save_ivtsda endp
 
-; IVT, SDA, key buffer and cursor data from the TASK at DI (DS = DGROUP)
+; IVT, SDA, key buffer and cursor data from the TASK at DI (DS = DGROUP;
+; its context active)
 load_ivtsda proc near
         push    cx
         push    si
@@ -788,16 +810,18 @@ load_ivtsda proc near
         rep     movsw
         pop     di
         push    di
-        lea     si,[di].T_CDS
+        push    ds
+        lds     si,[di].T_XSAVE ; its save area:  CDS, then SDA
         les     di,cs:cds_ptr
         mov     cx,cs:cds_size
+        push    si
         rep     movsb
-        pop     di
-        push    di
-        lea     si,[di].T_SDA
+        pop     si
+        add     si,CDSMAX
         les     di,cs:sda_ptr
         mov     cx,cs:sda_size
         rep     movsb
+        pop     ds
         pop     di
         pop     es
         pop     di
@@ -1491,15 +1515,15 @@ irq0_found:
         mov     ss,ax           ; shared kernel stack (the SDA swap may
         mov     sp,offset kstktop ; overwrite the DOS stack in use)
         xchg    di,bx
-        call    save_ivtsda
+        call    save_ivtsda     ; (in its context)
         xchg    di,bx
-        call    load_ivtsda
         push    dx
         mov     dx,[di].T_PT
         mov     ax,0800h
         qpi
         mov     cs:actpt,dx
         pop     dx
+        call    load_ivtsda     ; (in the new one's)
         mov     cs:cur,dx
         dbg     'T'
 if MVDEBUG
@@ -2920,9 +2944,25 @@ mvk_focus_ proc near
         ret
 mvk_focus_ endp
 
-; unsigned mvk_datasize(void):  paragraphs of kernel data for mvk_init
+; unsigned mvk_datasize(unsigned ntask):  paragraphs of kernel data for
+; mvk_init with ntask slots (task 0 included; 2..MAXTASK, 0:  8)
 mvk_datasize_ proc near
-        mov     ax,(KDATASIZE + 15) shr 4
+        push    dx
+        or      ax,ax
+        jnz     @F
+        mov     ax,8
+@@:     cmp     ax,2
+        jae     @F
+        mov     ax,2
+@@:     cmp     ax,MAXTASK
+        jbe     @F
+        mov     ax,MAXTASK
+@@:     mov     cs:nslots,ax
+        mov     dx,size TASK
+        mul     dx
+        add     ax,offset tasks + 15
+        shr     ax,4
+        pop     dx
         ret
 mvk_datasize_ endp
 

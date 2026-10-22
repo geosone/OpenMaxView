@@ -94,7 +94,7 @@ static unsigned free_base(void)
     return base;
 }
 
-int mvhost_init(void)
+int mvhost_init(unsigned ntask)
 {
     union REGS r;
     unsigned base, kseg;
@@ -103,7 +103,7 @@ int mvhost_init(void)
      * fit:  low), then the task base above them */
     set_base();
     r.h.ah = 0x48;
-    r.x.bx = mvk_datasize();
+    r.x.bx = mvk_datasize(ntask);
     intdos(&r, &r);
     if (r.x.cflag)
         return MVE_BASE;

@@ -85,8 +85,12 @@ function 4Fh), so they do not reach a program that reads the keyboard
 hardware itself; Alt and Ctrl+Alt+n work again once it ends or another
 task has the keys.
 
-Without QPI the launcher runs one program at a time as before. Up to seven
-programs can run at once. Each has its own current drive and directories,
+Without QPI the launcher runs one program at a time as before. Up to 15
+programs can run at once (DESQview opens 13 or 14 windows with its default
+common memory); the task list shows them as DESQview numbers its windows,
+1-9 and then A, B, ..., and Ctrl+Alt+n reaches the first nine. The
+program in front gets three times the processor time of each one behind
+it, as DESQview favours the foreground. Each has its own current drive and directories,
 its own EMS page frame mapping, all eight colour text pages and its own
 video mode: switching sets the mode of the program brought to the front
 (text modes with 25, 43 or 50 rows, CGA, VGA and VESA graphics). A text

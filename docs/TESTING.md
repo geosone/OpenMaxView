@@ -103,6 +103,7 @@ DESQview test:
 | `cwd` | current directory per task (CDS), MVRUN's unchanged |
 | `ems` | EMS page frame mapping per task, with 47h/48h save/restore |
 | `gfx` | VGA mode 13h task and text task:  each one's mode on switching, graphics held in the background, drawn again |
+| `many` | 16 task slots (`MVRUN /N16 @list`):  15 TICK tasks count side by side, a 16th finds the table full |
 | `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |
 
 `tests/qemu/dvcompare.sh` runs the scenarios `two`, `dvapi`, `cwd`, `ems`
@@ -116,7 +117,10 @@ now); PAUSE gave the other task more under DESQview (x4 against x2:
 it favours the foreground; the core now gives the task with the keys
 three times the slice, MVRUN /Tf,b, and comes to x4.6); its DOS window cannot show its menu over a VGA graphics
 program; and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
-DESQview hung on EMS 47h/48h), fixed there.
+DESQview hung on EMS 47h/48h), fixed there.  Opening DOS windows (128K) until
+DESQview refused ("Not enough DESQview common memory", its default
+setup) gave 13 windows on Open 386MAX and 14 on QEMM 97:  MaxView has
+16 task slots in MAXVIEW.EXE (up to 32, `mvk_datasize`).
 
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the
 script stores them as `build/test-qemu/<case>.e9`.

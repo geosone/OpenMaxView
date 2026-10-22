@@ -4,7 +4,7 @@
 
 /* Open MaxView multitasking core (kernel/mvkern.asm). */
 
-#define MVK_MAXTASK 8
+#define MVK_MAXTASK 32
 
 #define MVK_FREE  0
 #define MVK_READY 1
@@ -18,9 +18,11 @@
 #define MVE_IRQ   6
 #define MVE_STATE 7
 
-/* Paragraphs of kernel data:  a block of the caller's below the task base
- * (shared by all tasks). */
-unsigned mvk_datasize(void);
+/* Paragraphs of kernel data for ntask task slots (task 0, the caller,
+ * included; 2..MVK_MAXTASK, 0:  8):  a block of the caller's below the task
+ * base (shared by all tasks), 1.7KB a slot; mvk_init then has that many.
+ * Each task also keeps 4.3KB (its CDS and SDA) in its own memory. */
+unsigned mvk_datasize(unsigned ntask);
 /* base:  task base segment, 4KB aligned, a free MCB there; kseg:  the
  * kernel data block.  0 or MVE_x. */
 int mvk_init(unsigned base, unsigned kseg);
