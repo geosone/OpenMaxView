@@ -212,7 +212,7 @@ static void print_text(const memory_status *status)
     }
     printf("DV_API=%s", status->dv_present ? "present" : "absent");
     if (status->dv_present)
-        printf("-%u.%02X", status->dv_version >> 8,
+        printf("-%u.%02u", status->dv_version >> 8,
                status->dv_version & 0xff);
     putchar('\n');
     printf("VCPI_PRESENT=%u\n", status->vcpi_present);

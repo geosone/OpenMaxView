@@ -19,7 +19,8 @@
 ; A task that waits (INT 16h read without a key, DOS idle INT 28h) yields
 ; at once; then DOS may be busy with console input, safe as the whole SDA
 ; (with the DOS stacks) is swapped.
-; Per task:  all registers (on the task's stack), the IVT, the DOS SDA
+; Per task:  all registers (on the task's stack), the IVT, 40:F0-FF (as
+; DESQview), the DOS SDA
 ; (INT 21h 5D06h, the in-DOS size; the current drive is in it), the DOS
 ; current directories (the CDS), the BIOS key buffer and cursor data.
 ; QPI 08h is called on a shared kernel stack:  the task's stack is gone
@@ -113,6 +114,7 @@ T_VPG   dw      NVPG dup (?)    ; private frames of the text pages B8000h..
 T_SDA   db      SDAMAX dup (?)
 T_KBD   db      KBDLEN dup (?)
 T_VID   db      VIDLEN dup (?)
+T_ICA   db      16 dup (?)      ; 40:F0-FF (per window under DESQview too)
 T_CDS   db      CDSMAX dup (?)
 T_IVT   db      1024 dup (?)
 T_FRAME dw      MAXPAGE dup (?) ; private page frames
@@ -450,6 +452,14 @@ cr_have:
         mov     [di].T_VPG,0    ; (vpg_alloc fills them all)
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
+        push    di              ; 40:F0-FF:  zero
+        lea     di,[di].T_ICA
+        mov     cx,8
+        xor     ax,ax
+@@:     mov     [di],ax
+        add     di,2
+        loop    @B
+        pop     di
         push    es              ; video mode:  the text mode of now, else 80x25
         mov     ax,40h
         mov     es,ax
@@ -718,6 +728,12 @@ save_ivtsda proc near
         rep     movsw
         pop     di
         push    di
+        lea     di,[di].T_ICA
+        mov     si,4F0h
+        mov     cx,8
+        rep     movsw
+        pop     di
+        push    di
         lea     di,[di].T_CDS
         lds     si,cs:cds_ptr
         mov     cx,cs:cds_size
@@ -759,6 +775,12 @@ load_ivtsda proc near
         lea     si,[di].T_VID
         mov     di,450h
         mov     cx,VIDLEN/2
+        rep     movsw
+        pop     di
+        push    di
+        lea     si,[di].T_ICA
+        mov     di,4F0h
+        mov     cx,8
         rep     movsw
         pop     di
         push    di

@@ -298,7 +298,7 @@ static void show_diagnostics(const mv_scheduler *scheduler)
     frame(3, 8, 19, 71, "Diagnostics");
     sprintf(line, "Open MaxView resident API: %s", odq_resident() ? "installed" : "not installed");
     write_at(6, 12, line, ATTR_ACTIVE);
-    sprintf(line, "DESQview-compatible API: %s  version %u.%02X",
+    sprintf(line, "DESQview-compatible API: %s  version %u.%02u",
             api ? "present" : "absent", dv_version >> 8, dv_version & 0xff);
     write_at(8, 12, line, ATTR_ACTIVE);
     sprintf(line, "VCPI provider: %s%s",

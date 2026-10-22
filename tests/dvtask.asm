@@ -1,14 +1,17 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; DESQview scheduling API probe for the multitasking core (tests/qemu):
 ;   DVTASK A out      the measuring task
-;   DVTASK B out      the counting task:  counts the dword at 40:F0h (the
-;                     BIOS intra-application area, shared by all tasks)
+;   DVTASK B out      the counting task:  counts a dword in CMOS RAM
+;                     (78h-7Bh, unused):  shared by all tasks (40:F0h is
+;                     not, DESQview keeps it per window)
 ; Both write "app N dv VVVV" (APPNUM, the 2B01h version) to out first.  A
 ; then appends
 ;   "crit C0 C1 C2"   counter at BEGINC, 2 s later (ENDC), 2 s after that:
 ;                     C0 = C1 (no switch inside), C2 > C1
 ;   "pause D1 D2"     what B counted in 2 s of busy waiting and in 2 s of
 ;                     PAUSE calls:  D2 well above D1
+;   "ica own|shared"  40:F0h (B writes there all the time):  own under
+;                     DESQview (per window)
 ; and ends; B counts until it is stopped.
 
         .model tiny
@@ -71,6 +74,12 @@ start:
         mov     ax,bx
 @@:     call    puthex
         call    putnl
+        push    es              ; 40:F0h:  ours (B writes there all the time)
+        push    40h
+        pop     es
+        mov     al,role
+        mov     es:[0F0h],al
+        pop     es
         cmp     role,'B'
         je      count
         ; until B counts (10 s at most)
@@ -80,8 +89,9 @@ start:
         mov     bx,es:[6Ch]
 @@:     mov     ax,1000h
         int     15h
-        cmp     dword ptr es:[0F0h],0
-        jne     @F
+        call    getcnt
+        or      eax,eax
+        jnz     @F
         mov     ax,es:[6Ch]
         sub     ax,bx
         cmp     ax,182
@@ -139,6 +149,16 @@ start:
         mov     eax,c2
         call    putdec32
         call    putnl
+        mov     si,offset t_icaown
+        push    es
+        push    40h
+        pop     es
+        cmp     byte ptr es:[0F0h],'A'
+        pop     es
+        je      @F
+        mov     si,offset t_icashr
+@@:     call    puts
+        call    putnl
         mov     ah,3Eh
         mov     bx,handle
         int     21h
@@ -150,7 +170,12 @@ count:  mov     ah,3Eh
         int     21h
         push    40h
         pop     es
-@@:     add     dword ptr es:[0F0h],1
+@@:     mov     byte ptr es:[0F0h],'B'
+        cli
+        call    getcnt
+        inc     eax
+        call    putcnt
+        sti
         jmp     @B
 
 usage:  mov     dx,offset utext
@@ -159,15 +184,49 @@ usage:  mov     dx,offset utext
 fail:   mov     ax,4C01h
         int     21h
 
-; EAX = the counter
+CMOSCNT equ     78h
+
+; EAX = the counter (CMOS 78h-7Bh), putcnt:  EAX to it
 getcnt  proc near
-        push    es
-        push    40h
-        pop     es
-        mov     eax,es:[0F0h]
-        pop     es
+        push    cx
+        push    edx
+        pushf
+        cli
+        xor     edx,edx
+        mov     cx,4
+@@:     mov     al,CMOSCNT-1
+        add     al,cl
+        out     70h,al
+        in      al,71h
+        shl     edx,8
+        mov     dl,al
+        loop    @B
+        mov     eax,edx
+        popf
+        pop     edx
+        pop     cx
         ret
 getcnt  endp
+
+putcnt  proc near
+        push    cx
+        push    edx
+        push    eax
+        mov     edx,eax
+        mov     cl,CMOSCNT
+@@:     mov     al,cl
+        out     70h,al
+        mov     al,dl
+        out     71h,al
+        shr     edx,8
+        inc     cl
+        cmp     cl,CMOSCNT+4
+        jb      @B
+        pop     eax
+        pop     edx
+        pop     cx
+        ret
+putcnt  endp
 
 ; CX ticks:  busy (no DOS, no BIOS but the tick count)
 busy    proc near
@@ -270,6 +329,8 @@ t_app   db      'app ',0
 t_dv    db      ' dv ',0
 t_crit  db      'crit ',0
 t_pause db      'pause ',0
+t_icaown db     'ica own',0
+t_icashr db     'ica shared',0
 role    db      ?
 handle  dw      ?
 c0      dd      ?

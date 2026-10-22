@@ -60,7 +60,7 @@
 ;   INT 2Fh AX=D705h                 extended compatibility capabilities
 ;   INT 2Fh AX=D706h                 sound-queue diagnostic query
 
-DV_VERSION     equ 0280h
+DV_VERSION     equ 0250h        ; 2.80:  BH major, BL minor in binary (as DV)
 MUX_STATUS     equ 0D700h
 MUX_INFO       equ 0D701h
 MUX_RESET      equ 0D702h

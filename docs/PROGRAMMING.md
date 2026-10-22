@@ -59,7 +59,7 @@ static int maxview_present(unsigned *version)
 }
 ```
 
-`BX=0280h` identifies the compatible API level. Open MaxView-private feature
+`BX=0250h` (2.80, minor in binary as DESQview reports it) identifies the compatible API level. Open MaxView-private feature
 negotiation uses `ODQ_MUX_STATUS`, `ODQ_MUX_INFO`, `ODQ_MUX_CAPS2` and
 `ODQ_MUX_CAPS3`. A portable application should prefer documented calls and
 treat private bits as optional acceleration or diagnostics.

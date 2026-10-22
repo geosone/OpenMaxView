@@ -3,7 +3,7 @@
 #define ODQ_API_H
 
 /* Documented DESQview-compatible calls. */
-#define ODQ_DV_VERSION          0x0280
+#define ODQ_DV_VERSION          0x0250  /* 2.80:  minor in binary, as DV */
 #define ODQ_DVC_PAUSE           0x1000
 #define ODQ_DVC_PRINTC          0x1003
 #define ODQ_DVC_GET_BIT         0x1013

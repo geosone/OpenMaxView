@@ -105,6 +105,18 @@ DESQview test:
 | `gfx` | VGA mode 13h task and text task:  each one's mode on switching, graphics held in the background, drawn again |
 | `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |
 
+`tests/qemu/dvcompare.sh` runs the scenarios `two`, `dvapi`, `cwd`, `ems`
+and `gfx` in two windows of real DESQview 2.80 on Open 386MAX (a local
+image, `DVIMG`, default `~/mars/scratch-386max/dvbbs.img`; DESQview is not
+free software and stays out of the repository) and in MaxView tasks, and
+prints the measurements side by side.  MaxView must do at least what
+DESQview does.  What it showed so far:  DESQview reports version 0250h
+(2.80, minor in binary) and keeps 40:F0h per window (MaxView does both
+now); PAUSE gives the other task more under DESQview (it favours the
+foreground); its DOS window cannot show its menu over a VGA graphics
+program; and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
+DESQview hung on EMS 47h/48h), fixed there.
+
 `MVDEBUG=1` assembles the core with trace characters on port E9h; the
 script stores them as `build/test-qemu/<case>.e9`.
 

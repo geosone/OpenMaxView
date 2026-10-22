@@ -9,7 +9,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 
 | Interrupt input | Result or effect | Current scope |
 |---|---|---|
-| `INT 21h AX=2B01h CX=4445h DX=5351h` | `AL=00h`, `BX=0280h` | Presence and version |
+| `INT 21h AX=2B01h CX=4445h DX=5351h` | `AL=00h`, `BX=0250h` (2.80: BH major, BL minor in binary, as DESQview 2.80 reports it) | Presence and version |
 | `INT 15h AX=1000h` | Returns safely | Foreground `PAUSE`; no scheduler yet |
 | `INT 15h AX=1001h BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | TopView `GETMEM` alias |
 | `INT 15h AX=1002h ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | TopView `PUTMEM` alias |
@@ -55,7 +55,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE06h` | `BX=free KB`, `CX=largest block KB`, `DX=total KB` | Expanded-memory status |
 | `INT 15h AX=DE07h` | `AX=0001h` | `APPNUM`; one foreground program |
 | `INT 15h AX=DE0Ah BL=character` | Registers preserved | `DBGPOKE`; append on physical bottom text row |
-| `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0280h` | `APILEVEL` |
+| `INT 15h AX=DE0Bh BH=major BL=minor` | Records the requested level; returns `AX=0250h` | `APILEVEL` |
 | `INT 15h AX=DE0Ch BX=bytes` | `ES:DI=block`, null on failure; `AX=0/1` mirrors status | `GETMEM` |
 | `INT 15h AX=DE0Dh ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | `PUTMEM` |
 | `INT 15h AX=DE0Eh ES:DI=name CX=length` | `BX=1`, `DS:SI=mailbox` on exact match; `BX=0` otherwise | `FINDMAIL`; live bounded names |
@@ -242,7 +242,7 @@ applications expecting the DESQview interface.
 
 | `AX` | Return |
 |---|---|
-| `D700h` | `BX=4F44h` (`OD`), `CX=0024h`, `DX=0280h` |
+| `D700h` | `BX=4F44h` (`OD`), `CX=0024h`, `DX=0250h` |
 | `D701h` | `BX=FFFFh` capability bits, `CX=critical depth`, `DX=video segment` |
 | `D702h` | Reset critical depth, API level and task modes; release task memory, timers and mailboxes |
 | `D703h` | `BX=API level`, `CX=program number`, `DX=task-mode bits` |

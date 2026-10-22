@@ -255,10 +255,11 @@ dvapi)
     set -- $(echo "$d1" | awk '$1 == "pause" {print $2, $3}') x x
     p1=$1 p2=$2
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/dvapi/end.txt'"
-    check "DESQview API present" "echo '$d1' | grep -q 'dv 0280'"
+    check "DESQview API present" "echo '$d1' | grep -q 'dv 0250'"
     check "APPNUM:  task 1 and 2" "echo '$d1' | grep -q '^app 1 ' && echo '$d2' | grep -q '^app 2 '"
     check "BEGINC..ENDC:  no other task" "[ '$c0' = '$c1' ] && [ '$c0' != x ]"
     check "after ENDC the other task runs" "[ '$c2' != x ] && [ $c2 -gt $c1 ]"
+    check "40:F0h per task (as DESQview)" "echo '$d1' | grep -q '^ica own'"
     check "PAUSE leaves the CPU (\$p2 > 3/2 \$p1)" "[ '$p2' != x ] && [ $p1 -gt 0 ] && [ $((p2 * 2)) -gt $((p1 * 3)) ]"
     ;;
 cwd)

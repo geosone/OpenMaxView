@@ -139,7 +139,7 @@ int main(void)
         puts("No DESQview-compatible API detected.");
         return 1;
     }
-    printf("DESQview-compatible API version %u.%02X detected.\n",
+    printf("DESQview-compatible API version %u.%02u detected.\n",
            outregs.x.bx >> 8, outregs.x.bx & 0xff);
 
     memset(install_path, 0xff, sizeof(install_path));
