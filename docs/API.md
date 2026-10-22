@@ -39,6 +39,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=0Fh BL=05h` (or `04h`, `00h`) | The scan code of the last key `READ` gave if its character was 00h, else 0 | Keyboard `STATUS` in keystroke mode, as DESQview 2.80 |
 | `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length (on top) followed by a resident pointer DWORD | Mailbox `READ`; waits on empty while the multitasking core runs (D709h), else Carry |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
+| `INT 15h AH=12h BH=05h BL=01h` (or `00h` with the own window handle on top), length, address DWORDs (top first) | Writes the text to the task's window as BIOS teletype output (CR, LF, BS, BEL act, the rest is shown) and pops the arguments (8, 12 bytes) | Window `WRITE` as DESQview 2.80; no stream/escape commands yet |
 | `INT 15h AH=12h BH=05h BL=00h`, mailbox, length, address DWORDs (top first) | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=08h BL=00h`, object DWORD on caller stack | Replaces handle with elapsed hundredths or queued-message count | Timer/mailbox `SIZEOF` |
 | `INT 15h AH=12h BH=09h BL=00h`, object DWORD on caller stack | Replaces handle with remaining hundredths or total queued bytes | Timer/mailbox `LEN` |

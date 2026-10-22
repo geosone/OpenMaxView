@@ -105,6 +105,7 @@ DESQview test:
 | `ems` | EMS page frame mapping per task, with 47h/48h save/restore |
 | `gfx` | VGA mode 13h task and text task:  each one's mode on switching, graphics held in the background, drawn again |
 | `ipc` | task mailboxes as DESQview 2.80 (IPCPRB measured in two DV windows gives the same):  HANDLE 03h differs per task; AT takes the column on top; SETNAME and WRITE the length on the address; FINDMAIL finds the server's mailbox; READ 03h waits for the client's message and leaves the length on top; ADDR gives the client's task handle (its HANDLE 01h), and WRITE 02h with it answers into the client's own mailbox |
+| `wwrite` | window `WRITE` as DESQview 2.80 (WINPRB in a DV window gives the same):  8 bytes popped, 12 with the handle; the cursor after "Hello", "AB", CR LF, BS; the text on the screen |
 | `kbd` | the task's keyboard object as DESQview 2.80 (KBDPRB in a DV window gives the same):  READ 05h waits for a key and gives its character, F1 as 00h with STATUS 3Bh, STATUS 0 after an ordinary key; TICK counts meanwhile |
 | `objs` | stack effect of `NEW`/`HANDLE`/`FREE` as DESQview 2.80 (+4, +4, 0, -4); a task's `GETMEM` blocks and mailbox come back when it ends, a common block and a timer stay (as DESQview when a window is closed); two tasks at once get 8 GETMEM blocks each (the pool is per task); the task handle of a task that ended is no object any more (LEAKPRB V) |
 | `many` | 16 task slots (`MVRUN /N16 @list`):  15 TICK tasks count side by side, a 16th finds the table full |

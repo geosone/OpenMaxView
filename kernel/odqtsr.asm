@@ -1693,6 +1693,28 @@ timer_open_close_done:
         jmp     int15_handled
 
 int15_message_timer_add:
+        cmp     bh,05h                ; WRITE to a window
+        jne     short timer_add_not_window
+        cmp     bl,01h
+        jne     short timer_add_window_handle
+        jmp     int15_message_window_write
+timer_add_window_handle:
+        cmp     bl,0
+        jne     short timer_add_not_window
+        push    bp
+        mov     bp,sp
+        cmp     word ptr ss:[bp+10],0
+        jne     short timer_add_not_own
+        push    ax
+        mov     ax,word ptr ss:[bp+12]
+        cmp     ax,word ptr cs:task_handle_segment
+        pop     ax
+        jne     short timer_add_not_own
+        pop     bp
+        jmp     int15_message_window_write
+timer_add_not_own:
+        pop     bp
+timer_add_not_window:
         push    bp
         mov     bp,sp
         push    ax
@@ -1771,6 +1793,58 @@ timer_write_mailbox_done:
         call    message_shift12
         pop     bp
         add     sp,12
+        jmp     int15_handled
+
+; WRITE to the task's window (BL=01h, or 00h with its handle on top):  the
+; length DWORD on the address (top first, as DESQview 2.80), the bytes go
+; out as BIOS teletype output (CR, LF, BS and BEL act, the rest is shown),
+; as DESQview's window output; both DWORDs (and the handle) are popped.
+int15_message_window_write:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    si
+        push    ds
+        mov     si,10                 ; BL=01h:  length at BP+10
+        or      bl,bl
+        jnz     short window_write_args
+        mov     si,14                 ; BL=00h:  below the handle
+window_write_args:
+        add     si,bp
+        cmp     word ptr ss:[si+2],0
+        jne     short window_write_done
+        mov     cx,word ptr ss:[si]
+        lds     si,dword ptr ss:[si+4]
+        jcxz    short window_write_done
+        mov     ah,0Fh                ; the active page
+        int     10h
+        sti
+        cld
+window_write_char:
+        lodsb
+        mov     ah,0Eh
+        mov     bl,07h
+        int     10h
+        loop    window_write_char
+        cli
+window_write_done:
+        pop     ds
+        pop     si
+        pop     cx
+        pop     bx
+        pop     ax
+        or      bl,bl
+        jnz     short window_write_pop8
+        call    message_shift12
+        pop     bp
+        add     sp,12
+        jmp     int15_handled
+window_write_pop8:
+        call    message_shift8
+        pop     bp
+        add     sp,8
         jmp     int15_handled
 
 ; SUBFROM queues the caller's far pointer rather than copying its bytes. The

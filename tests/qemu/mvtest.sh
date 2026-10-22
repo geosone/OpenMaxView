@@ -67,6 +67,7 @@
 #         one (C) gives it screen and keys
 #   ipc   task mailboxes (tests/ipcprb.asm):  a server names its own
 #         mailbox and waits in READ, a client finds it and writes to it
+#   wwrite WRITE to the task's window (tests/winprb.asm)
 #   kbd   the task's keyboard object (tests/kbdprb.asm):  READ waits for a
 #         key, gives its character (F1:  00)
 #   objs  DESQview objects of a task that ends (tests/leakprb.asm):  the
@@ -87,7 +88,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd wwrite many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -390,6 +391,17 @@ ipc)
     me=$(echo "$c2" | sed -n 's/.*|me \([0-9A-F:]*\)|.*/\1/p')
     check "a task handle per task, ADDR gives the sender's" "[ -n '$me' ] && [ '${me%%:*}' != 0000 ] && echo '$s1' | grep -q '|from $me|replied|'"
     check "WRITE 02h to the sender's mailbox, its READ 03h gets it" "echo '$c2' | grep -q '|reply 00000002 ok|'"
+    ;;
+wwrite)
+    echo "== wwrite:  WRITE to the task's window (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 15 C:\\WINPRB.COM C:\\W1.TXT\r\n' > "$OUT/W.BAT"
+    CMD="C:\\W.BAT" END="wait:MVRUN:_done:120 sleep:3" run wwrite 15 "" "$OUT/W.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/WINPRB.COM" \
+        "wait:winprb_done:60 sleep:1 text:shot"
+    w1=$(file wwrite W1.TXT | tr '\n' '|')
+    echo "  W1: $w1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/wwrite/end.txt'"
+    check "stack and cursor as DV (8, handle form 12; CR LF, BS)" "[ '$w1' = 'w1 -8 5 5|w2 -12 5 7|w3 -8 6 1|w4 -8 6 4|' ]"
+    check "the text on the screen as DV" "grep -q '^HelloABX' '$OUT/wwrite/shot.txt' && grep -q '^Y2.3' '$OUT/wwrite/shot.txt'"
     ;;
 kbd)
     echo "== kbd:  the task's keyboard object (as under DV)"
