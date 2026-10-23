@@ -2255,6 +2255,7 @@ int15_message_window_write:
 window_write_task:
         mov     si,14                 ; BL=00h:  below the handle
 window_write_args:
+        call    own_enter
         add     si,bp
         cmp     word ptr ss:[si+2],0
         jne     short window_write_done
@@ -2532,8 +2533,10 @@ window_cursor_set_bios:
 ; 00440) for a window as large as the screen:  text and blanks (00h-9Fh),
 ; the logical cursor (A0h/A1h, B0h/B1h, C0h, C8h), the output colour
 ; (E2h), clear (E3h), redraw and no-op (E4h, E7h) and the name (EFh,
-; skipped); window geometry (A2h-AFh, B2h-BFh, C1h-C7h, C9h-CFh) has no
-; effect, as the window is the screen.  Another opcode ends the stream.
+; skipped), the size (C3h/C5h:  the task's window a window object from then
+; on, own_make) and place (C2h/CAh) of a window object; other window
+; geometry (A2h-AFh, B2h-BFh, C1h, C4h, C6h, C7h, C9h-CFh) has no effect.
+; Another opcode ends the stream.
 window_stream:
         push    ax
         push    cx
@@ -4108,6 +4111,10 @@ window_stream_pair:
         mov     al,dl
         cmp     al,0C0h
         je      short window_stream_pair_set
+        cmp     al,0C3h               ; C3h, C5h:  the size (the task's
+        je      short window_stream_pair_size ; window:  a window object
+        cmp     al,0C5h               ; from now on)
+        je      short window_stream_pair_size
         cmp     al,0C2h               ; C2h, CAh:  a window object's place
         je      short window_stream_pair_place
         cmp     al,0CAh
@@ -4133,6 +4140,10 @@ window_stream_pair_row:
         inc     dl
         mov     al,cl
         call    wobj_place            ; the column
+        call    own_shown             ; (the task's window:  at once)
+        jmp     window_stream_next
+window_stream_pair_size:
+        call    own_make
         jmp     window_stream_next
 window_stream_ret:
         pop     dx
@@ -4179,6 +4190,65 @@ window_manager_two:
         jmp     short window_manager_next
 window_manager_ret:
         pop     ax
+        ret
+
+; The task's window, sized (C3h/C5h, CH rows, CL columns) while it is the
+; target:  a window object of that size from now on (own_wobj), framed,
+; shown, at the top left until moved (C2h); the rest of the stream in it.
+; A window object as the target (or the task's sized before):  nothing.
+own_make:
+        cmp     word ptr cs:wtarget,0
+        jne     short own_make_ret
+        cmp     word ptr cs:own_wobj,0
+        jne     short own_make_ret
+        push    si
+        call    wobj_create
+        jc      short own_make_none
+        mov     word ptr cs:own_wobj,si
+        add     word ptr cs:own_wobj,2
+        call    wobj_enter
+        call    wobj_top              ; (double frame, drawn)
+own_make_none:
+        pop     si
+own_make_ret:
+        ret
+
+; The task's window the target (wtarget 0):  its window object if it has
+; one (own_make) and that still lives.
+own_enter:
+        cmp     word ptr cs:wtarget,0
+        jne     short own_enter_ret
+        cmp     word ptr cs:own_wobj,0
+        je      short own_enter_ret
+        push    si
+        mov     si,word ptr cs:own_wobj
+        sub     si,2
+        cmp     word ptr cs:wobj_used[si],1
+        jne     short own_enter_gone
+        call    wobj_enter
+        pop     si
+        ret
+own_enter_gone:
+        mov     word ptr cs:own_wobj,0
+        pop     si
+own_enter_ret:
+        ret
+
+; The target the task's window object:  drawn again (moved) at once, as
+; DESQview's task window.
+own_shown:
+        push    si
+        mov     si,word ptr cs:wtarget
+        or      si,si
+        jz      short own_shown_ret
+        cmp     si,word ptr cs:own_wobj
+        jne     short own_shown_ret
+        sub     si,2
+        test    word ptr cs:wobj_flags[si],WF_VISIBLE
+        jz      short own_shown_ret
+        call    wobj_redraw
+own_shown_ret:
+        pop     si
         ret
 
 ; The target window object on top:  a double frame, drawn again over the
@@ -5530,6 +5600,13 @@ int15_message_erase:
         mov     ax,word ptr ss:[bp+12]
         call    own_window
         jne     short message_erase_not_own
+        mov     si,word ptr cs:own_wobj ; sized:  its window object
+        or      si,si
+        jz      short message_erase_screen
+        sub     si,2
+        cmp     word ptr cs:wobj_used[si],1
+        je      short message_erase_wobj
+message_erase_screen:
         call    wobj_off_all          ; (the window objects stay on it)
         call    window_clear_bios     ; a window (DESQview 2.80):  blank,
         call    wobj_on_all
@@ -5544,6 +5621,7 @@ int15_message_erase:
 message_erase_not_own:
         call    wobj_validate
         jc      short message_erase_not_wobj
+message_erase_wobj:
         call    wobj_enter
         call    wobj_clear
         push    dx
@@ -5888,10 +5966,27 @@ mailbox_getname_done:
 ; the copied record and still consumes that record.
 ; BH=13h:  REDRAW of a window (BL=01h:  the own one, nothing on the stack;
 ; BL=00h:  the window on the stack, popped), else mailbox READINTO.
+; The task's window object (own_make), if visible:  drawn again; SI lost.
+own_redraw:
+        mov     si,word ptr cs:own_wobj
+        or      si,si
+        jz      short own_redraw_ret
+        sub     si,2
+        cmp     word ptr cs:wobj_used[si],1
+        jne     short own_redraw_ret
+        test    word ptr cs:wobj_flags[si],WF_VISIBLE
+        jz      short own_redraw_ret
+        call    wobj_redraw
+own_redraw_ret:
+        ret
+
 int15_message_redraw_gateway:
         cmp     bl,1
         jne     short redraw_gateway_explicit
-        jmp     int15_handled         ; (the own window:  the screen)
+        push    si                    ; (the own window:  the screen, or
+        call    own_redraw            ; its window object)
+        pop     si
+        jmp     int15_handled
 redraw_gateway_explicit:
         cmp     bl,0
         je      short redraw_gateway_handle
@@ -5905,7 +6000,10 @@ redraw_gateway_handle:
         jne     short redraw_gateway_mailbox
         mov     ax,word ptr ss:[bp+12]
         call    own_window
-        je      short redraw_gateway_done
+        jne     short redraw_gateway_wobj
+        call    own_redraw
+        jmp     short redraw_gateway_done
+redraw_gateway_wobj:
         call    wobj_validate
         jc      short redraw_gateway_mailbox
         test    word ptr cs:wobj_flags[si],WF_VISIBLE
@@ -8014,6 +8112,12 @@ int15_message_keyboard_read:
         push    ax
         test    byte ptr cs:keyboard_flags,1 ; field mode with a field table
         jz      short keyboard_read_wait
+        mov     ax,word ptr cs:own_wobj ; the task's window sized:  the
+        or      ax,ax                 ; field manager on its window object
+        jz      short keyboard_read_screen
+        push    si
+        jmp     kobj_read_wobj
+keyboard_read_screen:
         cmp     word ptr cs:field_header+2,0
         je      short keyboard_read_wait
         call    field_read
@@ -8579,6 +8683,7 @@ int15_message_kobj_read:
         mov     ax,word ptr cs:kobj_window[si]
         or      ax,ax
         jz      short kobj_read_task
+kobj_read_wobj:
         mov     si,ax
         sub     si,2
         cmp     word ptr cs:wobj_used[si],1
@@ -9157,6 +9262,8 @@ api_ds         dw 0
 api_es         dw 0
 task_handle_segment dw 0              ; the task's own object (0:  not yet,
                                       ; int15_handler finds it)
+own_wobj       dw 0                   ; the task's window as a window object
+                                      ; (index + 2) since it was sized (C3h)
 window_color   db 0                   ; window stream E2h (0:  none yet)
 window_page    db 0                   ; the page (field manager)
 field_header   dd 0                   ; FFh's table in the caller's stream

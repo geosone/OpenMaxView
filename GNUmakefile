@@ -164,6 +164,12 @@ $(BUILD)/subprb.obj: tests/subprb.asm | $(BUILD)
 $(BUILD)/SUBPRB.COM: $(BUILD)/subprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name SUBPRB.COM option quiet option map=SUBPRB.MAP file subprb.obj
 
+$(BUILD)/ownprb.obj: tests/ownprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/OWNPRB.COM: $(BUILD)/ownprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name OWNPRB.COM option quiet option map=OWNPRB.MAP file ownprb.obj
+
 $(BUILD)/wobprb.obj: tests/wobprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

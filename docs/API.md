@@ -123,7 +123,15 @@ The task's own window:  `ERASE` keeps the window objects shown on it (they
 are drawn again, top ones last); stream `DAh`/`DBh` switch its logical
 colours on and off (window objects made then take its colours); a `WRITE`
 to it never scrolls it:  at the last cell of the last row the cursor stays
-(DESQview 2.80).
+(DESQview 2.80).  Sized by a stream (`C3h` rows, columns, or `C5h`, the
+logical size, first), it becomes a window of that size on the task's
+screen, as DESQview's task window:  a window object of the task's (double
+frame, on top, at the top left until `C2h` moves its contents), which from
+then on takes the task's `WRITE`s to its own window (text, streams, the
+field table), `ERASE`, `REDRAW` and, in field mode, the field manager of
+the task's keyboard (EXAMPLES:  8x16 at 1,63).  `C4h` (origin) is taken
+and ignored, a later size change too; output past the API (INT 10h, DOS)
+still goes to the screen, and a subtask's own window stays the screen.
 
 The default API level is 1.00, automatic viewport justification starts
 enabled, C-style linefeeds start disabled, and error policy 0 is selected.
