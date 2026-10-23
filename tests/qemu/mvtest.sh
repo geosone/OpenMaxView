@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -487,6 +487,19 @@ menu)
     check "Enter:  green stays pointed at" "[ \"$(rows c | sed 's/ $//')\" = \"$(want 31 13)\" ]"
     check "the records as DV's:  02/03/04, 'Y'" "[ '$m' = '02 04 02010059|03 04 03010059|04 04 04010059|' ]"
     check "Enter:  item 2 chosen in the own window, at its start" "grep -q '^item 2 chosen' '$OUT/menu/items.txt'"
+    ;;
+serve)
+    echo "== serve:  demos/SERVE and ASK, two tasks over a named mailbox (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F2 40 C:\\SERVE.COM ; C:\\ASK.COM\r\n' > "$OUT/SA.BAT"
+    CMD="C:\\SA.BAT" END="wait:MVRUN:_done:120 sleep:3" run serve 40 "" "$OUT/SA.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/SERVE.COM $ROOT/build/ASK.COM" \
+        "wait:SERVE_found:60 sleep:2 type:hello_there sleep:3 type:one_more sleep:3 text:a1 key:ctrl-alt-1 sleep:3 text:a3 sleep:2 text:a4 key:ctrl-alt-2 sleep:1 key:ret"
+    t3=$(head -1 "$OUT/serve/a3.txt" | sed -n 's/^SERVE  time  \([0-9:]*\)  requests  \([0-9]*\).*/\1 \2/p')
+    t4=$(head -1 "$OUT/serve/a4.txt" | sed -n 's/^SERVE  time  \([0-9:]*\)  requests  \([0-9]*\).*/\1 \2/p')
+    echo "  SERVE:  $t3 / $t4"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/serve/end.txt'"
+    check "ASK:  FINDMAIL found SERVE's mailbox" "grep -q '^SERVE found' '$OUT/serve/a1.txt'"
+    check "  the answers in capitals (ADDR, ADDTO with BL=02h)" "grep -q '^HELLO THERE' '$OUT/serve/a1.txt' && grep -q '^ONE MORE' '$OUT/serve/a1.txt'"
+    check "SERVE:  2 requests, its clock from the timer READ runs" "[ '${t3#* }' = 00002 ] && [ -n '${t3%% *}' ] && [ '${t3%% *}' != '${t4%% *}' ]"
     ;;
 countdn)
     echo "== countdn:  demos/COUNTDN, fields + timer + OBJECTQ (as under DV)"

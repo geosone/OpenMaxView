@@ -23,7 +23,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MVRUN.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
-	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM \
+	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM $(BUILD)/SERVE.COM $(BUILD)/ASK.COM \
 	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES))
@@ -133,6 +133,18 @@ $(BUILD)/countdn.obj: demos/countdn.asm | $(BUILD)
 
 $(BUILD)/COUNTDN.COM: $(BUILD)/countdn.obj
 	cd $(BUILD) && $(JWLINK) format dos com name COUNTDN.COM option quiet option map=COUNTDN.MAP file countdn.obj
+
+$(BUILD)/serve.obj: demos/serve.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/SERVE.COM: $(BUILD)/serve.obj
+	cd $(BUILD) && $(JWLINK) format dos com name SERVE.COM option quiet option map=SERVE.MAP file serve.obj
+
+$(BUILD)/ask.obj: demos/ask.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/ASK.COM: $(BUILD)/ask.obj
+	cd $(BUILD) && $(JWLINK) format dos com name ASK.COM option quiet option map=ASK.MAP file ask.obj
 
 $(BUILD)/wobprb.obj: tests/wobprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<

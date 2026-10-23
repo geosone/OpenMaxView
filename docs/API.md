@@ -10,6 +10,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | Interrupt input | Result or effect | Current scope |
 |---|---|---|
 | `INT 21h AX=2B01h CX=4445h DX=5351h` | `AL=00h`, `BX=0250h` (2.80: BH major, BL minor in binary, as DESQview 2.80 reports it) | Presence and version |
+| `INT 15h AH=11h` (AL not 17h) | As `AX=DExxh` with the same AL | DESQview 2.x (RBIL); the DV C library uses it, e.g. `110Eh` for `FINDMAIL` |
 | `INT 15h AX=1000h` | Returns safely | Foreground `PAUSE`; no scheduler yet |
 | `INT 15h AX=1001h BX=bytes` | `AX=0`, `ES:DI=block`; `AX=1`, `ES:DI=0000:0000` on failure | TopView `GETMEM` alias |
 | `INT 15h AX=1002h ES:DI=block` | Releases an exact block; `AX=0/1` is an Open MaxView status extension | TopView `PUTMEM` alias |
@@ -49,6 +50,7 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=04h BL=07h` (or `06h` with the own task handle, `00h` with the own OBJECTQ handle) | Waits for an object of the task with input and gives its handle (pushed for `07h`, in place of the stacked handle else):  an expired timer, a mailbox with a message not given yet, the keyboard with a key; each expiry and message once | OBJECTQ `READ` as DESQview 2.80; no `OPEN` needed |
 | `INT 15h AH=12h BH=0Fh BL=05h` (or `04h`, `00h`) | The scan code of the last key `READ` gave if its character was 00h, else 0 | Keyboard `STATUS` in keystroke mode, as DESQview 2.80 |
 | `INT 15h AH=12h BH=04h BL=00h`, mailbox DWORD on caller stack | Replaces the handle with a DWORD length (on top) followed by a resident pointer DWORD | Mailbox `READ`; waits on empty while the multitasking core runs (D709h), else Carry |
+| `INT 15h AH=12h BH=04h BL=00h`, timer DWORD on caller stack | Waits (PAUSE) until the timer has expired, then replaces the handle with the time it expired at (hundredths since midnight); its expiry is no longer given by the OBJECTQ | Timer `READ`, measured under DV 2.80 (a timer never started waits for ever, as DV) |
 | `INT 15h AH=12h BH=05h BL=00h`, timer then time DWORDs on caller stack | Starts at an absolute hundredths-since-midnight deadline and pops both DWORDs | Timer `WRITE`; time below handle |
 | `INT 15h AH=12h BH=05h BL=01h` (or `00h` with the own window handle on top), length, address DWORDs (top first) | Writes the text to the task's window as BIOS teletype output (CR, LF, BS, BEL act, the rest is shown) and pops the arguments (8, 12 bytes) | Window `WRITE` as DESQview 2.80; `ESC` and a byte below 20h start a window stream (type 00h:  text and blank runs 00h-9Fh, cursor A0h/A1h/B0h/B1h/C0h/C8h, colour E2h, which then also applies to plain text, clear E3h, name EFh; geometry opcodes have no effect, the window being the screen; type 01h, a query, fills its answers in place:  A0h-ABh, AFh (44h in colour text, as DV), E2h, C0h-C5h, the flags D0h-DFh (visible, no frame); other types skipped) |
 | `INT 15h AH=12h BH=05h BL=00h`, mailbox, length, address DWORDs (top first) | Copies and queues up to 128 bytes with status zero; pops all three DWORDs | Mailbox `WRITE`; four-entry queue, Carry on failure |

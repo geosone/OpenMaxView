@@ -274,6 +274,12 @@ int15_handler:
         jne     short int15_have_task
         call    task_handle_init
 int15_have_task:
+        cmp     ah,11h                ; AH=11h (but 1117h):  as AH=DEh in
+        jne     short int15_not_11    ; DESQview 2.x (RBIL); the DV C
+        cmp     al,17h                ; library calls FINDMAIL as 110Eh
+        je      short int15_not_11
+        mov     ah,0DEh
+int15_not_11:
         cmp     ah,12h                ; TopView/DESQview SEND MESSAGE
         je      short int15_message_dispatch
         jmp     int15_not_message
@@ -1201,6 +1207,15 @@ message_read_gateway_not6:
         pop     bp
         jmp     int15_message_mailbox_read
 message_read_gateway_keyboard:
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+        jc      short message_read_gateway_not_timer
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_timer_read
+message_read_gateway_not_timer:
+        mov     ax,word ptr ss:[bp+12]
         call    pointer_validate
         jc      short message_read_gateway_not_pointer
         pop     si
@@ -2027,7 +2042,7 @@ timer_add_not_window:
         jne     short timer_add_done
         mov     ax,word ptr ss:[bp+12]
         call    timer_validate
-        jc      short timer_add_mailbox
+        jc      timer_add_mailbox
         call    timer_now
         mov     word ptr cs:timer_start_lo[si],ax
         mov     word ptr cs:timer_start_hi[si],dx
@@ -2062,6 +2077,52 @@ timer_add_done:
         add     sp,8
         jmp     int15_handled
 
+; READ of a timer (DESQview 2.80, measured):  waits (PAUSE) until it has
+; expired, its handle replaced by the time it expired at (hundredths since
+; midnight); its expiry is then no longer for the OBJECTQ.
+int15_message_timer_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    dx
+        push    si
+        mov     ax,word ptr ss:[bp+12]
+        call    timer_validate
+timer_read_wait:
+        call    timer_elapsed         ; (read once:  until started again)
+        cmp     word ptr cs:timer_state[si],2
+        jne     short timer_read_pause
+        cmp     word ptr cs:timer_noted[si],2
+        jne     short timer_read_expired
+timer_read_pause:
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        jmp     short timer_read_wait
+timer_read_expired:
+        mov     word ptr cs:timer_noted[si],2
+        mov     ax,word ptr cs:timer_start_lo[si]
+        mov     dx,word ptr cs:timer_start_hi[si]
+        add     ax,word ptr cs:timer_duration_lo[si]
+        adc     dx,word ptr cs:timer_duration_hi[si]
+        cmp     dx,0083h              ; past midnight
+        jb      short timer_read_store
+        ja      short timer_read_wrap
+        cmp     ax,0D600h
+        jb      short timer_read_store
+timer_read_wrap:
+        sub     ax,0D600h
+        sbb     dx,0083h
+timer_read_store:
+        mov     word ptr ss:[bp+10],ax
+        mov     word ptr ss:[bp+12],dx
+        pop     si
+        pop     dx
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+
 ; ADDTO on a mailbox copies one bounded message into resident storage.  The
 ; public stack contains status, length, address and finally the mailbox
 ; handle.  A closed/full mailbox or an invalid/oversize message sets Carry;
@@ -2070,27 +2131,27 @@ timer_add_mailbox:
         cmp     bh,05h
         je      short timer_write_mailbox
         cmp     bh,0Ah
-        jne     short timer_add_done
+        jne     timer_add_done
         call    mailbox_validate
         jnc     short timer_add_mailbox_ok
         call    pointer_validate      ; a pointer:  its bits
         jc      short timer_add_not_pointer
         mov     ax,word ptr ss:[bp+14]
         or      word ptr cs:pointer_flags[si],ax
-        jmp     short timer_add_done
+        jmp     timer_add_done
 timer_add_not_pointer:
         call    kobj_validate
         jc      short timer_add_not_kobj
         mov     ax,word ptr ss:[bp+14]
         or      word ptr cs:kobj_flags[si],ax
-        jmp     short timer_add_done
+        jmp     timer_add_done
 timer_add_not_kobj:
         mov     ax,word ptr ss:[bp+12]
         call    keyboard_validate     ; a keyboard:  its bits (field mode,
-        jc      short timer_add_done  ; cursor, ..)
+        jc      timer_add_done  ; cursor, ..)
         mov     ax,word ptr ss:[bp+14]
         or      word ptr cs:keyboard_flags,ax
-        jmp     short timer_add_done
+        jmp     timer_add_done
 timer_add_mailbox_ok:
         call    message_swap22
         call    mailbox_add_value
@@ -8315,6 +8376,8 @@ wobj_dsize     dw WOBJ_COUNT dup(0)    ;   and the size
 wobj_tlen      dw WOBJ_COUNT dup(0)
 wobj_fields    dd WOBJ_COUNT dup(0)    ; its field table (FFh)
 wobj_title     db (WOBJ_COUNT * WOBJ_TITLE_SIZE) dup(0)
+WOBJ_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      WOBJ_OBJECT_PAD dup (0) ; (segment:0000 handles)
 wobj_objects   db (WOBJ_COUNT * 32) dup(0)
 wobj_pool      db WOBJ_POOL_SIZE dup(0)
 ; DESQview 2.80's logical colours 1-16 (DAh; the attribute's low nibble,
@@ -8333,6 +8396,8 @@ kobj_handle_segments dw KOBJ_COUNT dup(0)
 kobj_owner     dw KOBJ_COUNT dup(0)
 kobj_flags     dw KOBJ_COUNT dup(0)    ; ADDTO/SUBFROM bits (0:  field mode)
 kobj_window    dw KOBJ_COUNT dup(0)    ; OPEN:  a window object's index + 2
+KOBJ_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      KOBJ_OBJECT_PAD dup (0) ; (segment:0000 handles)
 kobj_objects   db (KOBJ_COUNT * 32) dup(0)
 field_esize    db 7                    ; the field table's entry size and
 field_style    db 7                    ;   E5h's for the rest of the stream
@@ -8358,6 +8423,8 @@ pointer_flags  dw POINTER_SLOT_COUNT dup(0) ; ADDTO/SUBFROM bits
 pointer_count  dw POINTER_SLOT_COUNT dup(0) ; 1:  a message waits
 pointer_noted  dw POINTER_SLOT_COUNT dup(0) ; 1:  given by the OBJECTQ
 pointer_last   dw POINTER_SLOT_COUNT dup(0) ; the last cell (movement)
+POINTER_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      POINTER_OBJECT_PAD dup (0) ; (segment:0000 handles)
 pointer_objects db (POINTER_SLOT_COUNT * POINTER_OBJECT_SIZE) dup(0)
 foreground_task dw 0FFFFh              ; the core's (D70Ah)
 timer_used     dw TIMER_SLOT_COUNT dup(0)

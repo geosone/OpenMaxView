@@ -156,12 +156,14 @@ nextrec:cmp     si,di
 not_seconds:
         cmp     al,2
         jne     not_start
+        pusha                         ; (the record's length, where)
         mov     ax,seconds            ; field 2 (Enter):  start
         mov     left,ax
         call    show_left
         cmp     left,0
-        je      record_next
+        je      @F
         call    one_second
+@@:     popa
         jmp     record_next
 not_start:
         cmp     al,3                  ; field 3 (Esc):  the end
