@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -487,6 +487,33 @@ menu)
     check "Enter:  green stays pointed at" "[ \"$(rows c | sed 's/ $//')\" = \"$(want 31 13)\" ]"
     check "the records as DV's:  02/03/04, 'Y'" "[ '$m' = '02 04 02010059|03 04 03010059|04 04 04010059|' ]"
     check "Enter:  item 2 chosen in the own window, at its start" "grep -q '^item 2 chosen' '$OUT/menu/items.txt'"
+    ;;
+subtask)
+    echo "== subtask:  NEW 08h with an entry point, a DESQview subtask (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 40 C:\\SUBPRB.COM C:\\S.TXT\r\n' > "$OUT/SB.BAT"
+    CMD="C:\\SB.BAT" END="wait:MVRUN:_done:120 sleep:3" run subtask 40 "" "$OUT/SB.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/SUBPRB.COM" \
+        "wait:sub_in_the_window:60 text:w"
+    s1=$(file subtask S.TXT | tr '\n' '|')
+    echo "  S: $s1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/subtask/end.txt'"
+    check "NEW:  a handle, 4 bytes (as DV)" "echo '$s1' | grep -q '^new [0-9A-F]* 4|' && ! echo '$s1' | grep -q '^new 0000 '"
+    check "the subtask writes to its task's window (its handle)" "grep -q '^sub in the window' '$OUT/subtask/w.txt'"
+    check "its mail (BL=02h) read with BL=03h:  2 bytes, status 7, hi" "echo '$s1' | grep -q '|mail 02 07 hi|'"
+    check "it runs alongside; FREE ends it (as DV)" "echo '$s1' | grep -q '|runs Y|free|stops Y|'"
+    ;;
+worms)
+    echo "== worms:  demos/WORMS, subtasks with timers writing to the task's window (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\WORMS.COM\r\n' > "$OUT/WM.BAT"
+    xs() { echo "mon:xp+/4000xb+0xb8000>$1"; }
+    CMD="C:\\WM.BAT" END="wait:MVRUN:_done:120 sleep:3" run worms 60 "" "$OUT/WM.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/WORMS.COM" \
+        "wait:WORMS:60 sleep:2 key:n sleep:1 key:n sleep:1 key:n sleep:3 $(xs a) sleep:2 $(xs b) key:k sleep:2 key:s sleep:2 $(xs c) sleep:2 $(xs d) key:s key:c sleep:1 key:q"
+    cells() { grep -o "0x[0-9a-f][0-9a-f]" "$OUT/worms/$1.txt" | paste - - | grep -c "^0xdb	$2"; }
+    sc() { grep -o "0x[0-9a-f][0-9a-f]" "$OUT/worms/$1.txt" | tr -d '\n'; }
+    echo "  worm cells:  $(cells a 0x0a) $(cells a 0x0c) $(cells a 0x0e)"
+    check "MVRUN ended, WORMS exit 0" "grep -q 'MVRUN: done' '$OUT/worms/end.txt' && grep -q 'task 1: done exit 0000' '$OUT/worms/end.txt'"
+    check "N:  three worms (green, red, yellow)" "[ $(cells a 0x0a) -gt 0 ] && [ $(cells a 0x0c) -gt 0 ] && [ $(cells a 0x0e) -gt 0 ]"
+    check "they crawl" "[ '$(sc a)' != '$(sc b)' ]"
+    check "S:  all stand still" "[ '$(sc c)' = '$(sc d)' ]"
     ;;
 serve)
     echo "== serve:  demos/SERVE and ASK, two tasks over a named mailbox (as under DV)"

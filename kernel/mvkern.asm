@@ -70,8 +70,8 @@ STUBPARA        equ 40h         ; stub PSP + task stack (1KB)
 KSTACK          equ 512         ; kernel stack (QPI 08h)
 SDAMAX          equ 2048        ; DOS SDA swapped
 CDSMAX          equ 26*58h      ; DOS current directories (CDS) swapped
-DVSTMAX         equ 3072        ; MAXVTSR's per-task state (INT 2Fh D707h)
-DVINITMAX       equ 640         ;   the part a new task inherits (the rest,
+DVSTMAX         equ 3520        ; MAXVTSR's per-task state (INT 2Fh D707h)
+DVINITMAX       equ 160         ;   the part a new task inherits (the rest,
                                 ;   its GETMEM pool, starts zero)
 SAVEPARA        equ (CDSMAX + SDAMAX + DVSTMAX + 15) / 16 ; CDS, SDA and
                                 ; MAXVTSR's state saved, behind the stub PSP
@@ -109,6 +109,7 @@ MVE_FULL        equ 4           ; task table full
 MVE_MEM         equ 5           ; QPI 04h/06h/08h/0Ah failed
 MVE_IRQ         equ 6           ; QPI 1C01h failed
 MVE_STATE       equ 7           ; not allowed now (running/not initialized)
+MVE_DVST        equ 8           ; MAXVTSR's per-task state too big
 
 TASK    struc
 T_STATE dw      ?
@@ -123,6 +124,9 @@ T_MODE  db      ?               ; video mode (40:49) and rows - 1 (40:84)
 T_ROWS  db      ?               ;   when it was last the foreground
 T_VESA  dw      ?               ; VESA mode set (4F02h), 0:  none
 T_HOLD  dw      ?               ; 1:  graphics in the background, held
+T_PARENT dw     ?               ; a DESQview subtask (thread):  its task's
+                                ; number + 1 (its memory, page table and
+                                ; screen); 0:  a task of its own
 T_PB    dw      7 dup (?)       ; EXEC parameter block
 T_PROG  db      80 dup (?)      ; program path (ASCIIZ)
 T_TAIL  db      130 dup (?)     ; command tail (length, text, CR)
@@ -197,6 +201,8 @@ free_typ db     0               ; its MCB type ('M' or 'Z')
 root_pt  dw     0
 ntasks   dw     0
 cur      dw     0
+scur     dw     0               ; whose screen cur has (its parent's for a
+                                ; subtask)
 running  dw     0
 crtok    db     0               ; QPI 0Eh took our cursor callbacks
 crtmode  db     0               ; QPI 0Dh now:  0 off, 1 mono, 2 colour
@@ -386,6 +392,7 @@ mvk_init_ proc near
         pop     ds
         ; task 0:  the caller in the root context, the foreground
         mov     cs:cur,0
+        mov     cs:scur,0
         mov     cs:fg,0
         mov     cs:newfg,0
         mov     cs:kfocus,0
@@ -421,14 +428,14 @@ mvk_init_ proc near
         mov     ax,0D707h
         xor     cx,cx
         int     2Fh
-        or      ax,ax
+        or      ax,ax               ; (no MAXVTSR:  nothing to swap)
         jnz     init_nodv
-        cmp     cx,DVSTMAX
-        ja      init_nodv
+        cmp     cx,DVSTMAX          ; a MAXVTSR this core cannot swap:  its
+        ja      init_dvbad          ; tasks would share one state
         cmp     dx,DVINITMAX
-        ja      init_nodv
+        ja      init_dvbad
         cmp     dx,cx
-        ja      init_nodv
+        ja      init_dvbad
         mov     word ptr cs:dvst_ptr,bx
         mov     word ptr cs:dvst_ptr+2,es
         mov     cs:dvst_size,cx
@@ -449,6 +456,10 @@ mvk_init_ proc near
 init_nodv:
         pop     es
         xor     ax,ax
+        jmp     short init_ret
+init_dvbad:
+        pop     es
+        mov     ax,MVE_DVST
         jmp     short init_ret
 init_sdabad:
         mov     ax,MVE_SDA
@@ -521,6 +532,7 @@ cr_have:
         mov     [di].T_VPG,0    ; (vpg_alloc fills them all)
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
+        mov     [di].T_PARENT,0
         mov     word ptr [di].T_XSAVE,0 ; behind its stub PSP
         mov     ax,cs:base_seg
         add     ax,STUBPARA+1
@@ -766,7 +778,13 @@ task_free proc near
         push    cx
         push    dx
         push    si
-        mov     cx,[di].T_NPG
+        cmp     [di].T_PARENT,0 ; a subtask:  nothing of its own
+        je      @F
+        mov     [di].T_PARENT,0
+        mov     [di].T_PT,0
+        mov     [di].T_STATE,TS_FREE
+        jmp     short tf_ret
+@@:     mov     cx,[di].T_NPG
         lea     si,[di].T_FRAME
         jcxz    tf_pt
 @@:     mov     dx,[si]
@@ -783,7 +801,7 @@ tf_pt:  mov     [di].T_NPG,0
         qpi
 @@:     mov     [di].T_PT,0
         mov     [di].T_STATE,TS_FREE
-        pop     si
+tf_ret: pop     si
         pop     dx
         pop     cx
         pop     ax
@@ -1307,7 +1325,7 @@ crtset  proc near
         push    es
         xor     ax,ax
         mov     es,ax
-        mov     ax,cs:cur
+        mov     ax,cs:scur
         cmp     ax,cs:fg
         mov     al,0
         je      @F
@@ -1490,7 +1508,10 @@ task_done::                     ; (KILL_ENTRY:  the program is gone)
         mov     ds,bx
         mov     ah,4Dh
         int     21h
-task_end:
+task_end::
+        mov     bx,cs:cur       ; its subtasks end with it
+        inc     bx
+        call    end_subtasks
         push    ax              ; MAXVTSR:  its mailboxes and GETMEM blocks go
         mov     bx,cs:cur       ; (as DESQview frees them with the window)
         mov     ax,0D708h
@@ -1731,6 +1752,11 @@ irq0_found:
         pop     dx
         call    load_ivtsda     ; (in the new one's)
         mov     cs:cur,dx
+        mov     ax,[di].T_PARENT
+        dec     ax
+        jns     @F
+        mov     ax,dx
+@@:     mov     cs:scur,ax
         call    crtset
         dbg     'T'
 if MVDEBUG
@@ -1841,10 +1867,20 @@ int15   proc far
         je      i15_endc
         cmp     ax,0DE13h       ; GETCRIT
         je      i15_getcrit
+        cmp     ax,0DEF0h       ; (MAXVTSR:  a subtask)
+        je      i15_thread
+        cmp     ax,0DEF1h       ; (MAXVTSR:  its end)
+        je      i15_tkill
         cmp     ax,0DE07h       ; APPNUM
         jne     i15_old
         mov     ax,cs:cur
         iret
+i15_thread:
+        call    thread_k
+        retf    2
+i15_tkill:
+        call    tkill_k
+        retf    2
 i15_pause:
         call    yield
         iret
@@ -1931,6 +1967,8 @@ i15_ctl:
         call    taskptr
         cmp     [bx].T_STATE,TS_READY
         jne     i15_chain
+        cmp     [bx].T_PARENT,0 ; (a subtask has its task's screen)
+        jne     i15_chain
         mov     cs:newfg,ax
         mov     cs:kfocus,ax
         dbg     'F'
@@ -1949,6 +1987,295 @@ i15_old:
         jmp     dword ptr cs:old15
 int15   endp
 
+; INT 15h AX=DEF0h (MAXVTSR, for a DESQview subtask:  NEW of a window with
+; an entry point):  a task in the current one's memory (its page table)
+; and screen, started at ES:BX with SS = DS = ES = SI, SP = DI, DX:CX
+; (the parent's handle), AX = BX = SI = DI = BP = 0, as DESQview starts
+; them.  Its CDS, SDA and MAXVTSR's state go to a DOS block of the
+; current program's; it starts with those of now (MAXVTSR's:  as a new
+; task's).  A far return from its entry ends it.  AX = its number, CF
+; clear; else CF set.  (IF = 0, the caller's context.)
+thread_k proc near
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        push    bp
+        mov     bp,sp
+        push    es              ; [bp-2] entry segment
+        push    bx              ; [bp-4] entry offset
+        push    si              ; [bp-6] stack segment
+        push    di              ; [bp-8] stack pointer
+        push    cx              ; [bp-10] parent handle (offset)
+        push    dx              ; [bp-12]   (segment)
+        mov     ds,cs:kseg
+        mov     ah,48h          ; its save area
+        mov     bx,SAVEPARA
+        int     21h
+        jnc     th_area
+        mov     ah,51h          ; none free:  the program's block (a .COM
+        int     21h             ; has all) less it, if it keeps 64KB
+        mov     es,bx
+        dec     bx
+        push    ds
+        mov     ds,bx
+        mov     bx,ds:[3]
+        pop     ds
+        cmp     bx,1000h+SAVEPARA+1
+        jb      th_err
+        sub     bx,SAVEPARA+1
+        mov     ah,4Ah
+        int     21h
+        jc      th_err
+        mov     ah,48h
+        mov     bx,SAVEPARA
+        int     21h
+        jc      th_err
+th_area:
+        push    ax              ; [bp-14]
+        mov     bx,1            ; a slot:  a free or done one (not the
+th_slot:                        ; foreground), else a new one
+        cmp     bx,cs:ntasks
+        jae     th_new
+        push    bx
+        call    taskptr
+        mov     di,bx
+        pop     bx
+        cmp     [di].T_STATE,TS_READY
+        je      th_snext
+        cmp     bx,cs:fg
+        je      th_snext
+        cmp     bx,cs:newfg
+        je      th_snext
+        mov     ax,cs:cur       ; an ended subtask of this task:  its save
+        inc     ax              ; area back (its memory is this one's)
+        cmp     [di].T_PARENT,ax
+        jne     @F
+        push    es
+        mov     es,word ptr [di].T_XSAVE+2
+        mov     ah,49h
+        int     21h
+        pop     es
+@@:     call    task_free
+        jmp     short th_have
+th_snext:
+        inc     bx
+        jmp     th_slot
+th_new: cmp     bx,cs:nslots
+        jae     th_full
+        push    bx
+        call    taskptr
+        mov     di,bx
+        pop     bx
+th_have:
+        push    bx              ; [bp-16] its number
+        mov     bx,cs:cur
+        call    taskptr
+        mov     si,bx           ; SI ==> the parent's TASK
+        mov     ax,cs:cur
+        inc     ax
+        mov     [di].T_PARENT,ax
+        mov     ax,[si].T_PT
+        mov     [di].T_PT,ax
+        mov     ax,word ptr [si].T_MODE
+        mov     word ptr [di].T_MODE,ax
+        mov     [di].T_NPG,0
+        mov     [di].T_KILL,0
+        mov     [di].T_CRIT,0
+        mov     [di].T_VESA,0
+        mov     [di].T_HOLD,0
+        mov     [di].T_EXIT,0FFFFh
+        mov     [di].T_PROG,0
+        mov     [di].T_TAIL,0
+        push    si
+        push    di
+        mov     cx,NVPG
+@@:     mov     ax,[si].T_VPG
+        mov     [di].T_VPG,ax
+        add     si,2
+        add     di,2
+        loop    @B
+        pop     di
+        pop     si
+        mov     word ptr [di].T_XSAVE,0
+        mov     ax,[bp-14]
+        mov     word ptr [di].T_XSAVE+2,ax
+        call    save_ivtsda     ; IVT, SDA, ... of now
+        mov     cx,cs:dvst_init ; MAXVTSR's state:  a new task's
+        cmp     cs:dvst_size,0
+        je      th_dvdone
+        push    si
+        push    di
+        les     di,[di].T_XSAVE
+        add     di,CDSMAX+SDAMAX
+        mov     si,offset dvinit
+        cld
+        rep     movsb
+        mov     cx,cs:dvst_size
+        sub     cx,cs:dvst_init
+        xor     al,al
+        rep     stosb
+        pop     di
+        pop     si
+th_dvdone:
+        mov     ax,word ptr [di].T_KBD ; its key buffer empty
+        mov     word ptr [di].T_KBD+2,ax
+        ; its stack:  thread_end (far), IRET frame to the entry, the
+        ; registers the switch pops
+        mov     es,[bp-6]
+        mov     bx,[bp-8]
+        sub     bx,2
+        mov     es:[bx],cs
+        sub     bx,2
+        mov     word ptr es:[bx],offset thread_end
+        sub     bx,2
+        mov     word ptr es:[bx],0202h ; FLAGS (IF)
+        sub     bx,2
+        mov     ax,[bp-2]
+        mov     es:[bx],ax
+        sub     bx,2
+        mov     ax,[bp-4]
+        mov     es:[bx],ax
+        sub     bx,32           ; PUSHAD:  ECX, EDX the parent's handle
+        push    di
+        mov     di,bx
+        mov     cx,16
+        xor     ax,ax
+        cld
+        rep     stosw
+        pop     di
+        mov     ax,[bp-10]
+        mov     es:[bx+24],ax
+        mov     ax,[bp-12]
+        mov     es:[bx+20],ax
+        sub     bx,8            ; GS FS ES DS
+        mov     ax,es
+        mov     es:[bx],ax
+        mov     es:[bx+2],ax
+        mov     es:[bx+4],ax
+        mov     es:[bx+6],ax
+        mov     [di].T_SS,es
+        mov     [di].T_SP,bx
+        mov     [di].T_STATE,TS_READY
+        pop     ax              ; its number
+        add     sp,2
+        cmp     ax,cs:ntasks
+        jb      @F
+        inc     cs:ntasks
+@@:     clc
+        jmp     short th_ret
+th_full:
+        pop     es              ; the save area back
+        mov     ah,49h
+        int     21h
+th_err: stc
+th_ret: mov     sp,bp
+        pop     bp
+        pop     es
+        pop     ds
+        pop     dx              ; (DI)
+        mov     di,dx
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+thread_k endp
+
+; a subtask's entry returned:  its end
+thread_end proc far
+        mov     bx,cs:kseg
+        mov     ds,bx
+        xor     ax,ax
+        jmp     task_end
+thread_end endp
+
+; INT 15h AX=DEF1h, BX = a subtask's number (MAXVTSR:  FREE of it):  it
+; ends (the current one:  at once, for good).  CF set:  not a subtask.
+tkill_k proc near
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        cmp     bx,cs:ntasks
+        jae     tk_no
+        push    bx
+        call    taskptr
+        cmp     [bx].T_PARENT,0
+        pop     bx
+        je      tk_no
+        cmp     bx,cs:cur
+        jne     @F
+        sti                     ; itself
+        xor     ax,ax
+        jmp     task_end
+@@:     push    cx
+        mov     cx,bx           ; that one only
+        call    end_one
+        pop     cx
+        clc
+        jmp     short tk_ret
+tk_no:  stc
+tk_ret: pop     ds
+        pop     bx
+        ret
+tkill_k endp
+
+; the subtasks of task BX - 1 end (DS = kernel data)
+end_subtasks proc near
+        push    ax
+        push    cx
+        push    di
+        mov     cx,1
+est_next:
+        cmp     cx,cs:ntasks
+        jae     est_done
+        push    bx
+        mov     bx,cx
+        call    taskptr
+        mov     di,bx
+        pop     bx
+        cmp     [di].T_PARENT,bx
+        jne     @F
+        call    end_one
+@@:     inc     cx
+        jmp     est_next
+est_done:
+        pop     di
+        pop     cx
+        pop     ax
+        ret
+end_subtasks endp
+
+; subtask CX (not the current one) ends:  done, MAXVTSR frees its objects
+end_one proc near
+        push    ax
+        push    bx
+        push    di
+        mov     bx,cx
+        call    taskptr
+        mov     di,bx
+        cmp     [di].T_STATE,TS_READY
+        jne     eo_ret
+        mov     [di].T_STATE,TS_DONE
+        mov     [di].T_EXIT,0
+        mov     bx,cx
+        mov     ax,0D708h
+        int     2Fh
+        cmp     cx,cs:newfg
+        jne     @F
+        mov     cs:newfg,0
+@@:     cmp     cx,cs:kfocus
+        jne     eo_ret
+        mov     cs:kfocus,0
+eo_ret: pop     di
+        pop     bx
+        pop     ax
+        ret
+end_one endp
+
 ; INT 28h (DOS idle):  the other tasks
 int28   proc far
         cmp     cs:running,0
@@ -1963,7 +2290,7 @@ int10   proc far
         cmp     cs:running,0
         je      i10_old
         push    ax
-        mov     ax,cs:cur
+        mov     ax,cs:scur
         cmp     ax,cs:fg
         pop     ax
         je      i10_fg

@@ -98,12 +98,17 @@ MAILBOX_NAME_SIZE  equ 32
 SECOND_LEVEL_COUNT equ 16
 SOUND_QUEUE_COUNT equ 32
 TASK_STACK_SIZE equ 512
+READN_SIZE equ 80
+API_STACK_SIZE equ 512                ; a call's stack (api_enter), per task
+API_COPY equ 64                       ; the caller's frame and arguments                     ; READN:  characters at most
 FIELD_BUFFER_SIZE equ 128
 WF_VISIBLE equ 1
 WF_FRAME equ 2
 WF_DRAWN equ 4
 WF_LOGICAL equ 8                      ; DAh:  colours 1-16 (wobj_logical)
 WF_TOP equ 16                         ; on top (C0h-C2h):  a double frame
+SUB_COUNT equ 8                       ; subtasks (their stacks)
+SUB_SIZE equ 512
 WOBJ_COUNT equ 8                      ; window objects (stream E6h)
 WOBJ_POOL_SIZE equ 8192                     ; their contents and saved screens
 WOBJ_TITLE_SIZE equ 32
@@ -270,6 +275,10 @@ int1c_handler:
 
 int15_handler:
         pushf
+        cmp     byte ptr cs:api_crit,0 ; in a call:  this INT 15h is nested
+        je      short int15_not_nested ; (an IRQ's:  INT 9 AH=4Fh, the disk
+        inc     word ptr cs:api_nest  ; BIOS' AH=90h/91h), api_leave not
+int15_not_nested:                     ; for it
         cmp     word ptr cs:task_handle_segment,0
         jne     short int15_have_task
         call    task_handle_init
@@ -284,6 +293,10 @@ int15_not_11:
         je      short int15_message_dispatch
         jmp     int15_not_message
 int15_message_dispatch:
+        cmp     byte ptr cs:api_crit,0 ; a call is one critical section, as
+        jne     short message_dispatch_crit ; DESQview's (its waits:
+        call    api_enter             ; api_pause), on a stack of its own
+message_dispatch_crit:
         cmp     bl,3                  ; the current task's mailbox
         jne     short message_dispatch_not3
         jmp     message_default_mailbox
@@ -366,9 +379,9 @@ int15_dispatch_erase:
 int15_dispatch_mailbox_setname:
         jmp     int15_message_at_gateway
 int15_dispatch_mailbox_getname:
-        jmp     int15_message_mailbox_getname
+        jmp     int15_message_readn_gateway
 int15_dispatch_mailbox_readinto:
-        jmp     int15_message_mailbox_readinto
+        jmp     int15_message_redraw_gateway
 int15_dispatch_mailbox_setflags:
         jmp     int15_message_mailbox_setflags
 int15_unknown_message:
@@ -1326,7 +1339,7 @@ int15_message_at_gateway:
         mov     ax,word ptr ss:[bp+12]
         call    mailbox_validate
         jnc     short message_at_gateway_mailbox
-        cmp     ax,word ptr cs:task_handle_segment
+        call    own_window
         je      short message_at_gateway_window
         call    wobj_validate         ; a window object:  its cursor to
         jc      short message_at_gateway_chain ; the row and column
@@ -1688,6 +1701,7 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
         mov     word ptr cs:mailbox_lock_count[si],0
+        mov     word ptr cs:mailbox_lock_waiter[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
         mov     ax,word ptr cs:mailbox_handle_segments[si]
@@ -1708,7 +1722,10 @@ message_new_window:
         push    ds
         xor     di,di
         cmp     word ptr ss:[bp+12],0
-        jne     short message_new_window_done
+        je      short message_new_window_only
+        call    subtask_new           ; an entry point:  a subtask
+        jmp     short message_new_window_done
+message_new_window_only:
         mov     ch,byte ptr ss:[bp+30]
         mov     cl,byte ptr ss:[bp+26]
         call    wobj_create
@@ -1751,6 +1768,15 @@ message_new_window_done:
 ; stack. Invalid, stale and non-timer handles are harmless no-ops, but the
 ; documented stack pop still occurs.
 int15_message_free:
+        cmp     bl,1                  ; the own window/task (nothing on
+        jne     short message_free_explicit ; the stack):  a subtask ends
+        push    ax
+        call    caller_tag
+        dec     ax
+        call    subtask_free          ; (itself:  no return)
+        pop     ax
+        jmp     int15_handled
+message_free_explicit:
         push    bp
         mov     bp,sp
         push    ax
@@ -1783,8 +1809,14 @@ message_free_not_kobj:
         jmp     short message_free_done
 message_free_not_pointer:
         call    mailbox_validate
-        jc      short message_free_done
+        jc      short message_free_not_mailbox
         call    mailbox_release
+        jmp     short message_free_done
+message_free_not_mailbox:
+        call    task_validate         ; a subtask
+        jc      short message_free_done
+        dec     ax
+        call    subtask_free
 message_free_done:
         pop     si
         pop     ax
@@ -1972,6 +2004,18 @@ timer_open_close_mailbox:
         cmp     word ptr cs:mailbox_lock_count[si],0
         je      short timer_open_close_unlocked
         dec     word ptr cs:mailbox_lock_count[si]
+        jnz     short timer_open_close_done
+        push    ax                    ; the last:  to a waiting task, so
+        mov     ax,word ptr cs:mailbox_lock_waiter[si] ; one that locks
+        or      ax,ax                 ; again at once does not starve it
+        jz      short timer_unlock_free ; (as DESQview)
+        mov     word ptr cs:mailbox_lock_owner[si],ax
+        mov     word ptr cs:mailbox_lock_count[si],1
+        mov     word ptr cs:mailbox_lock_waiter[si],0
+        or      ah,80h                ; (given:  its LOCK takes it as is)
+        mov     word ptr cs:mailbox_lock_waiter[si],ax
+timer_unlock_free:
+        pop     ax
         jmp     short timer_open_close_done
 timer_open_close_unlocked:
         mov     word ptr cs:mailbox_status[si],0
@@ -2007,7 +2051,7 @@ timer_add_window_handle:
         jne     short timer_add_not_own
         push    ax
         mov     ax,word ptr ss:[bp+12]
-        cmp     ax,word ptr cs:task_handle_segment
+        call    own_window
         je      short timer_add_own
         push    si
         call    wobj_validate         ; or a window object
@@ -2096,8 +2140,7 @@ timer_read_wait:
         jne     short timer_read_expired
 timer_read_pause:
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         jmp     short timer_read_wait
 timer_read_expired:
@@ -2359,12 +2402,43 @@ window_put_bios:
         push    ax
         push    bx
         push    cx
+        push    dx
         mov     bl,ah
         mov     ah,09h
         mov     cx,1
         int     10h
-        mov     ah,0Eh
+        mov     ah,03h                ; the cursor on (DESQview:  no
+        int     10h                   ; scrolling at the window's end)
+        push    ax
+        push    bx
+        mov     ah,0Fh
         int     10h
+        mov     al,ah                 ; AL:  the columns
+        pop     bx
+        inc     dl
+        cmp     dl,al
+        jb      short window_put_move
+        push    es
+        mov     ax,40h
+        mov     es,ax
+        mov     al,byte ptr es:[84h]  ; the last row
+        pop     es
+        or      al,al
+        jnz     short window_put_rows
+        mov     al,24
+window_put_rows:
+        cmp     dh,al
+        jae     short window_put_last
+        xor     dl,dl
+        inc     dh
+        jmp     short window_put_move
+window_put_last:
+        dec     dl                    ; (the last cell:  it stays)
+window_put_move:
+        pop     ax
+        mov     ah,02h
+        int     10h
+        pop     dx
         pop     cx
         pop     bx
         pop     ax
@@ -2384,10 +2458,20 @@ window_attr:
         mov     ah,byte ptr cs:window_color
         cmp     word ptr cs:wtarget,0 ; a window object:  0 is a colour too
         jne     short window_attr_ret
+        call    window_logical_test ; the task's, logical (DAh)
+        jnz     short window_attr_logical
         or      ah,ah
         jnz     short window_attr_ret
         mov     ah,07h
 window_attr_ret:
+        ret
+window_attr_logical:
+        push    bx
+        mov     bl,ah
+        dec     bl
+        and     bx,0Fh
+        mov     ah,byte ptr cs:wobj_logical[bx]
+        pop     bx
         ret
 
 ; AL = the next stream byte (SI up to DI), CF:  the stream ended.
@@ -3115,8 +3199,7 @@ field_read_key:
         jmp     field_read_done
 field_read_idle:
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         jmp     short field_read_key
 field_read_got:
@@ -4157,7 +4240,22 @@ window_stream_flag:
         push    si
         mov     si,word ptr cs:wtarget
         or      si,si
-        jz      short window_stream_flag_ret
+        jnz     short window_stream_flag_wobj
+        cmp     al,0DAh               ; the task's window:  logical
+        jne     short window_stream_flag_task_db ; colours on / off
+        push    ax
+        mov     al,1
+        call    window_logical_set
+        pop     ax
+window_stream_flag_task_db:
+        cmp     al,0DBh
+        jne     short window_stream_flag_ret
+        push    ax
+        xor     al,al
+        call    window_logical_set
+        pop     ax
+        jmp     short window_stream_flag_ret
+window_stream_flag_wobj:
         sub     si,2
         cmp     al,0D4h
         jne     short window_stream_flag_not_d4
@@ -4402,8 +4500,21 @@ wobj_create_found:
         mov     word ptr cs:wobj_owner[si],ax
         mov     word ptr cs:wobj_pos[si],0101h
         mov     word ptr cs:wobj_cursor[si],0
-        mov     word ptr cs:wobj_color[si],71h
-        mov     word ptr cs:wobj_flags[si],WF_VISIBLE + WF_FRAME
+        mov     word ptr cs:wobj_color[si],71h ; (DESQview 2.80, a task
+        mov     word ptr cs:wobj_flags[si],WF_VISIBLE + WF_FRAME ; with no
+        push    ax                    ; colours set; else its colours)
+        mov     al,byte ptr cs:window_color
+        or      al,al
+        jz      short wobj_create_colour
+        cmp     word ptr cs:wtarget,0
+        jne     short wobj_create_colour
+        xor     ah,ah
+        mov     word ptr cs:wobj_color[si],ax
+        call    window_logical_test
+        jz      short wobj_create_colour
+        or      word ptr cs:wobj_flags[si],WF_LOGICAL
+wobj_create_colour:
+        pop     ax
         mov     word ptr cs:wobj_esize[si],7
         mov     word ptr cs:wobj_tlen[si],0
         push    si
@@ -4756,6 +4867,88 @@ wobj_undraw:
         pop     ax
         and     word ptr cs:wobj_flags[si],not WF_DRAWN
 wobj_undraw_ret:
+        ret
+
+; The drawn window objects off the screen (the top one first), into
+; wobj_off; wobj_on_all draws them again (the top one last) over what the
+; task's window shows then.
+wobj_off_all:
+        push    ax
+        push    cx
+        push    si
+        mov     word ptr cs:wobj_off,0
+        mov     ax,WF_TOP
+        call    wobj_off_pass
+        xor     ax,ax
+        call    wobj_off_pass
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+wobj_off_pass:                        ; those with WF_TOP as in AX
+        xor     si,si
+        mov     cx,WOBJ_COUNT
+wobj_off_next:
+        cmp     word ptr cs:wobj_used[si],0
+        je      short wobj_off_skip
+        test    word ptr cs:wobj_flags[si],WF_DRAWN
+        jz      short wobj_off_skip
+        push    dx
+        mov     dx,word ptr cs:wobj_flags[si]
+        and     dx,WF_TOP
+        cmp     dx,ax
+        pop     dx
+        jne     short wobj_off_skip
+        call    wobj_undraw
+        push    cx
+        mov     cx,si
+        shr     cx,1
+        push    ax
+        mov     ax,1
+        shl     ax,cl
+        or      word ptr cs:wobj_off,ax
+        pop     ax
+        pop     cx
+wobj_off_skip:
+        add     si,2
+        loop    wobj_off_next
+        ret
+wobj_on_all:
+        push    ax
+        push    cx
+        push    si
+        xor     ax,ax
+        call    wobj_on_pass
+        mov     ax,WF_TOP
+        call    wobj_on_pass
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+wobj_on_pass:
+        xor     si,si
+        mov     cx,WOBJ_COUNT
+wobj_on_next:
+        push    cx
+        mov     cx,si
+        shr     cx,1
+        push    ax
+        mov     ax,1
+        shl     ax,cl
+        test    word ptr cs:wobj_off,ax
+        pop     ax
+        pop     cx
+        jz      short wobj_on_skip
+        push    dx
+        mov     dx,word ptr cs:wobj_flags[si]
+        and     dx,WF_TOP
+        cmp     dx,ax
+        pop     dx
+        jne     short wobj_on_skip
+        call    wobj_redraw
+wobj_on_skip:
+        add     si,2
+        loop    wobj_on_next
         ret
 
 ; The frame of window object SI around its drawn rectangle.
@@ -5205,7 +5398,7 @@ int15_message_lock:
         push    dx
         push    si
         cmp     bl,0
-        jne     short lock_done
+        jne     lock_done
         cmp     word ptr ss:[bp+10],0
         jne     short lock_pop
         mov     ax,word ptr ss:[bp+12]
@@ -5215,18 +5408,32 @@ int15_message_lock:
         xor     ah,ah
         mov     dx,ax
 lock_try:
+        mov     ax,dx                 ; given to it (CLOSE):  its now
+        or      ah,80h
+        cmp     word ptr cs:mailbox_lock_waiter[si],ax
+        jne     short lock_not_given
+        mov     word ptr cs:mailbox_lock_waiter[si],0
+        jmp     short lock_pop
+lock_not_given:
         cmp     word ptr cs:mailbox_lock_count[si],0
         je      short lock_take
         cmp     word ptr cs:mailbox_lock_owner[si],dx
         je      short lock_take
         cmp     byte ptr cs:core_running,0 ; (alone:  no other task)
         je      short lock_take
+        cmp     word ptr cs:mailbox_lock_waiter[si],0 ; the next to get it
+        jne     short lock_wait
+        mov     word ptr cs:mailbox_lock_waiter[si],dx
+lock_wait:
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         jmp     short lock_try
 lock_take:
+        cmp     word ptr cs:mailbox_lock_waiter[si],dx ; (it waited:  no
+        jne     short lock_take_owner ; more)
+        mov     word ptr cs:mailbox_lock_waiter[si],0
+lock_take_owner:
         mov     word ptr cs:mailbox_lock_owner[si],dx
         inc     word ptr cs:mailbox_lock_count[si]
 lock_pop:
@@ -5310,9 +5517,11 @@ int15_message_erase:
         cmp     word ptr ss:[bp+10],0
         jne     short message_erase_done
         mov     ax,word ptr ss:[bp+12]
-        cmp     ax,word ptr cs:task_handle_segment
+        call    own_window
         jne     short message_erase_not_own
+        call    wobj_off_all          ; (the window objects stay on it)
         call    window_clear_bios     ; a window (DESQview 2.80):  blank,
+        call    wobj_on_all
         push    bx                    ; the cursor at its top left
         push    dx
         mov     bh,byte ptr cs:window_page
@@ -5489,6 +5698,112 @@ window_at_shift_default:
         add     sp,8
         jmp     int15_handled
 
+; BH=12h:  READN of the task's window (BL=01h:  the count on the stack;
+; BL=00h:  its handle, then the count):  the next N characters from the
+; cursor on (it moves past them), as DESQview; their length and address
+; in place of the arguments.  Else mailbox GETNAME.
+int15_message_readn_gateway:
+        cmp     bl,1
+        je      short readn_gateway_go
+        cmp     bl,0
+        jne     readn_gateway_getname
+        push    bp
+        mov     bp,sp
+        push    ax
+        cmp     word ptr ss:[bp+10],0
+        jne     readn_gateway_not
+        mov     ax,word ptr ss:[bp+12]
+        call    own_window
+        jne     readn_gateway_not
+        pop     ax
+        pop     bp
+readn_gateway_go:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        mov     si,10                 ; the count's place
+        cmp     bl,0
+        jne     short readn_count
+        mov     si,14
+readn_count:
+        mov     cx,word ptr ss:[bp+si]
+        cmp     word ptr ss:[bp+si+2],0
+        je      short readn_count_ok
+        mov     cx,READN_SIZE
+readn_count_ok:
+        cmp     cx,READN_SIZE
+        jbe     short readn_count_max
+        mov     cx,READN_SIZE
+readn_count_max:
+        mov     word ptr cs:message_result_len_lo,cx
+        mov     word ptr cs:message_result_len_hi,0
+        mov     word ptr cs:message_result_ptr_off,offset readn_buf
+        mov     word ptr cs:message_result_ptr_seg,cs
+        push    si
+        push    di
+        mov     di,offset readn_buf
+        mov     bh,byte ptr cs:window_page
+        push    cx
+        mov     ah,03h
+        int     10h                   ; DX:  the cursor (CX:  its shape)
+        pop     cx
+        jcxz    readn_end
+readn_next:
+        mov     ah,02h
+        int     10h
+        mov     ah,08h
+        int     10h
+        mov     byte ptr cs:[di],al
+        inc     di
+        inc     dl
+        push    ax
+        push    bx
+        mov     ah,0Fh
+        int     10h                   ; AH:  the columns
+        cmp     dl,ah
+        jb      short readn_same_row
+        xor     dl,dl
+        inc     dh
+readn_same_row:
+        pop     bx
+        pop     ax
+        loop    readn_next
+        mov     ah,02h
+        int     10h
+readn_end:
+        pop     di
+        pop     si
+        cmp     si,10
+        je      short readn_expand
+        mov     ax,word ptr cs:message_result_len_lo ; in place
+        mov     word ptr ss:[bp+10],ax
+        mov     word ptr ss:[bp+12],0
+        mov     word ptr ss:[bp+14],offset readn_buf
+        mov     word ptr ss:[bp+16],cs
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+readn_expand:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     message_expand4
+readn_gateway_not:
+        pop     ax
+        pop     bp
+readn_gateway_getname:
+        jmp     int15_message_mailbox_getname
+
 ; GETNAME copies at most the caller's buffer size and returns that byte count
 ; in the original length DWORD. Names are deliberately not NUL-terminated.
 int15_message_mailbox_getname:
@@ -5560,6 +5875,42 @@ mailbox_getname_done:
 ; call blocks when empty; foreground API 0.x instead returns zero with Carry
 ; set until scheduler-backed task waits exist. A short destination truncates
 ; the copied record and still consumes that record.
+; BH=13h:  REDRAW of a window (BL=01h:  the own one, nothing on the stack;
+; BL=00h:  the window on the stack, popped), else mailbox READINTO.
+int15_message_redraw_gateway:
+        cmp     bl,1
+        jne     short redraw_gateway_explicit
+        jmp     int15_handled         ; (the own window:  the screen)
+redraw_gateway_explicit:
+        cmp     bl,0
+        je      short redraw_gateway_handle
+        jmp     int15_message_mailbox_readinto
+redraw_gateway_handle:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        cmp     word ptr ss:[bp+10],0
+        jne     short redraw_gateway_mailbox
+        mov     ax,word ptr ss:[bp+12]
+        call    own_window
+        je      short redraw_gateway_done
+        call    wobj_validate
+        jc      short redraw_gateway_mailbox
+        test    word ptr cs:wobj_flags[si],WF_VISIBLE
+        jz      short redraw_gateway_done
+        call    wobj_redraw
+redraw_gateway_done:
+        pop     si
+        pop     ax
+        call    message_shift4
+        pop     bp
+        add     sp,4
+        jmp     int15_handled
+redraw_gateway_mailbox:
+        pop     si
+        pop     ax
+        pop     bp
 int15_message_mailbox_readinto:
         push    bp
         mov     bp,sp
@@ -6316,6 +6667,128 @@ int15_ostack:
         mov     ax,word ptr cs:task_stack_saved_ax
         iret
 
+; A call (AH=12h) begins:  its critical section (BEGINC of the core), and
+; the task's API stack, as DESQview's calls run on its own stacks:  the
+; caller's then holds only the interrupt frame (a DV C library subtask's
+; is 256 bytes).  The handler's flags, the interrupt frame and the
+; arguments (API_COPY bytes) are copied there; api_leave copies back what
+; is left of them, with what the call pushed or popped, as the caller's.
+api_enter:
+        mov     byte ptr cs:api_crit,1
+        pop     word ptr cs:api_ret
+        mov     word ptr cs:api_ax,ax
+        cmp     byte ptr cs:core_running,0 ; (alone:  INT 15h is ours)
+        je      short api_enter_alone
+        mov     ax,101Bh              ; BEGINC (the core)
+        int     15h
+api_enter_alone:
+        mov     word ptr cs:api_cx,cx
+        mov     word ptr cs:api_si,si
+        mov     word ptr cs:api_di,di
+        mov     word ptr cs:api_ds,ds
+        mov     word ptr cs:api_es,es
+        mov     ax,ss
+        mov     word ptr cs:api_user_ss,ax
+        mov     word ptr cs:api_user_sp,sp
+        mov     ds,ax
+        mov     si,sp
+        push    cs
+        pop     es
+        mov     di,offset api_stack_top - API_COPY
+        mov     cx,API_COPY / 2
+        cld
+        rep     movsw
+        mov     ax,cs
+        cli
+        mov     ss,ax
+        mov     sp,offset api_stack_top - API_COPY
+        sti
+        mov     ax,word ptr cs:api_ax
+        mov     cx,word ptr cs:api_cx
+        mov     si,word ptr cs:api_si
+        mov     di,word ptr cs:api_di
+        mov     ds,word ptr cs:api_ds
+        mov     es,word ptr cs:api_es
+        jmp     word ptr cs:api_ret
+
+; The end of a call (int15_handled, int15_chain):  back on the caller's
+; stack with what is left of the copied frame and arguments (the API
+; stack's top less API_COPY was the caller's SP), then ENDC.  Registers
+; and flags kept.
+api_leave:
+        cmp     byte ptr cs:api_crit,0
+        je      api_leave_ret
+        cmp     word ptr cs:api_nest,0 ; a nested INT 15h's end
+        je      short api_leave_call
+        dec     word ptr cs:api_nest
+        ret
+api_leave_call:
+        pop     word ptr cs:api_ret
+        pushf
+        pop     word ptr cs:api_flags
+        mov     word ptr cs:api_ax,ax
+        mov     word ptr cs:api_cx,cx
+        mov     word ptr cs:api_si,si
+        mov     word ptr cs:api_di,di
+        mov     word ptr cs:api_ds,ds
+        mov     word ptr cs:api_es,es
+        mov     si,sp                 ; what is left:  SP .. the top
+        mov     cx,offset api_stack_top
+        sub     cx,si
+        mov     di,word ptr cs:api_user_sp ; the caller's SP for it
+        add     di,si
+        sub     di,offset api_stack_top - API_COPY
+        mov     word ptr cs:api_user_sp,di
+        mov     es,word ptr cs:api_user_ss
+        push    cs
+        pop     ds
+        cld
+        cli
+        rep     movsb
+        mov     ss,word ptr cs:api_user_ss
+        mov     sp,word ptr cs:api_user_sp
+        sti
+        mov     byte ptr cs:api_crit,0
+        cmp     byte ptr cs:core_running,0
+        je      short api_leave_alone
+        mov     ax,101Ch              ; ENDC
+        int     15h
+api_leave_alone:
+        mov     ax,word ptr cs:api_ax
+        mov     cx,word ptr cs:api_cx
+        mov     si,word ptr cs:api_si
+        mov     di,word ptr cs:api_di
+        mov     ds,word ptr cs:api_ds
+        mov     es,word ptr cs:api_es
+        push    word ptr cs:api_flags
+        popf
+        jmp     word ptr cs:api_ret
+api_leave_ret:
+        ret
+
+; PAUSE inside a call:  its critical section open meanwhile, so the other
+; tasks run (AX:  1000h after it, as the PAUSE left it).
+api_pause:
+        cmp     byte ptr cs:core_running,0 ; (alone:  INT 15h is ours, and
+        je      short api_pause_alone ; no other task)
+        cmp     byte ptr cs:api_crit,0
+        je      short api_pause_plain
+        mov     ax,101Ch
+        int     15h
+        mov     ax,1000h
+        int     15h
+        mov     ax,101Bh
+        int     15h
+        mov     ax,1000h
+        ret
+api_pause_plain:
+        mov     ax,1000h
+        int     15h
+        ret
+api_pause_alone:
+        mov     ax,1000h
+        ret
+
 ; Rebuild the USTACK return frame on the original user stack. Calls without a
 ; preceding OSTACK are outside the public contract and remain safe no-ops.
 int15_ustack:
@@ -6346,6 +6819,7 @@ int15_ustack:
         iret
 
 int15_handled:
+        call    api_leave
         cmp     byte ptr cs:message_bl,0 ; (BL as the caller passed it)
         je      short int15_handled_bl
         mov     bl,byte ptr cs:message_bl
@@ -6354,6 +6828,7 @@ int15_handled_bl:
         popf
         iret
 int15_chain:
+        call    api_leave
         popf
         jmp     dword ptr cs:old15
 
@@ -6607,10 +7082,9 @@ mailbox_add_reference_open:
 mailbox_add_reference_room:
         cmp     word ptr ss:[bp+20],0
         jne     short mailbox_add_reference_done
-        mov     cx,word ptr ss:[bp+18]
-        cmp     cx,MAILBOX_MESSAGE_SIZE
-        ja      short mailbox_add_reference_done
-        jcxz    short mailbox_add_reference_pointer_ok
+        mov     cx,word ptr ss:[bp+18]    ; (any length:  not copied; the
+        jcxz    short mailbox_add_reference_pointer_ok ; DV C library's
+        ; tsk_new hands a subtask its stack so)
         cmp     word ptr ss:[bp+16],0
         je      short mailbox_add_reference_done
 mailbox_add_reference_pointer_ok:
@@ -7088,8 +7562,7 @@ objectq_read_pointer_next:
         jmp     short objectq_read_found
 objectq_read_pause:
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         jmp     objectq_read_wait
 objectq_read_found:
@@ -7193,8 +7666,7 @@ pointer_read_wait:
         cmp     word ptr cs:pointer_count[si],0
         jne     short pointer_read_got
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         jmp     short pointer_read_wait
 pointer_read_got:
@@ -7455,8 +7927,7 @@ keyboard_read_wait:
         cmp     byte ptr cs:core_running,0
         je      short keyboard_read_key ; (alone:  INT 16h waits)
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         jmp     short keyboard_read_wait
 keyboard_read_key:
@@ -7523,6 +7994,7 @@ task_mailbox_new:
         mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
         mov     word ptr cs:mailbox_lock_count[si],0
+        mov     word ptr cs:mailbox_lock_waiter[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
 task_mailbox_done:
@@ -7541,8 +8013,7 @@ mailbox_wait:
         je      short mailbox_wait_no
         push    ax
         sti
-        mov     ax,1000h
-        int     15h
+        call    api_pause
         cli
         mov     ax,word ptr ss:[bp+12]
         call    mailbox_validate
@@ -7593,12 +8064,191 @@ mailbox_release:
         mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
         mov     word ptr cs:mailbox_lock_count[si],0
+        mov     word ptr cs:mailbox_lock_waiter[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         jmp     mailbox_clear_queue
 
 ; AL = the calling task's tag:  its number (APPNUM, the multitasking core
 ; answers it) + 1.  Its mailboxes go when the task ends (D708h), as
 ; DESQview frees them with the window.
+; ZF set:  AX is the current task's window handle (a subtask's:  also
+; its task's, whose window it shares; a task's:  also its subtasks', as
+; the DV C library's tsk_new writes to it).
+; SI = the number of the task whose window the caller writes to (its
+; own, or its task's for a subtask), or CF.
+window_owner:
+        push    ax
+        call    caller_tag
+        dec     ax
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     short window_owner_none
+        mov     si,ax
+        shl     si,1
+        mov     ax,word ptr cs:sub_parent[si]
+        or      ax,ax
+        jz      short window_owner_own
+        dec     ax
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     short window_owner_none
+        mov     si,ax
+        pop     ax
+        clc
+        ret
+window_owner_own:
+        shr     si,1
+        pop     ax
+        clc
+        ret
+window_owner_none:
+        pop     ax
+        stc
+        ret
+
+; AL to the logical-colours flag of the caller's window.
+window_logical_set:
+        push    si
+        call    window_owner
+        jc      short window_logical_set_ret
+        mov     byte ptr cs:window_logical[si],al
+window_logical_set_ret:
+        pop     si
+        ret
+
+; ZF clear:  the caller's window has logical colours (DAh).
+window_logical_test:
+        push    si
+        call    window_owner
+        jc      short window_logical_test_no
+        cmp     byte ptr cs:window_logical[si],0
+        pop     si
+        ret
+window_logical_test_no:
+        cmp     si,si
+        pop     si
+        ret
+
+own_window:
+        cmp     ax,word ptr cs:task_handle_segment
+        je      short own_window_ret
+        push    ax
+        push    bx
+        push    cx
+        push    si
+        mov     bx,ax
+        call    caller_tag
+        mov     cx,ax                 ; (the caller's tag)
+        dec     ax
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     short own_window_child
+        mov     si,ax
+        shl     si,1
+        mov     ax,word ptr cs:sub_parent[si]
+        or      ax,ax
+        jz      short own_window_child
+        dec     ax                    ; its task's handle
+        shl     ax,1                  ; (TASK_OBJECT_SIZE / 16)
+        add     ax,word ptr cs:task_objects_base
+        cmp     ax,bx
+        je      short own_window_pop
+own_window_child:
+        mov     ax,bx                 ; a subtask of the caller
+        call    task_validate
+        jc      short own_window_no
+        dec     ax
+        mov     si,ax
+        shl     si,1
+        cmp     word ptr cs:sub_parent[si],cx
+        jmp     short own_window_pop
+own_window_no:
+        or      sp,sp                 ; (ZF clear)
+own_window_pop:
+        pop     si
+        pop     cx
+        pop     bx
+        pop     ax
+own_window_ret:
+        ret
+
+; NEW 08h with an entry point (the caller's frame at BP):  a subtask
+; (DESQview:  started there with DS = ES = SS a stack of its own, the
+; handle of its task in DX:CX) by the multitasking core (INT 15h AX=
+; DEF0h); DI = its handle, else 0.  Its stack:  SUB_SIZE bytes here.
+subtask_new:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    es
+        xor     di,di
+        xor     si,si
+        mov     cx,SUB_COUNT
+subtask_new_slot:
+        cmp     word ptr cs:sub_owner[si],0
+        je      short subtask_new_have
+        add     si,2
+        loop    subtask_new_slot
+        jmp     short subtask_new_ret
+subtask_new_have:
+        mov     word ptr cs:sub_owner[si],0FFFFh ; (taken)
+        push    si
+        mov     ax,si                 ; its stack's segment
+        mov     cl,8                  ; (SUB_SIZE / 2)
+        shl     ax,cl
+        add     ax,offset sub_stacks
+        mov     cl,4
+        shr     ax,cl
+        mov     dx,cs
+        add     ax,dx
+        mov     si,ax
+        mov     dx,word ptr cs:task_handle_segment ; DX:CX its task
+        xor     cx,cx
+        les     bx,dword ptr ss:[bp+10] ; the entry point
+        mov     di,SUB_SIZE
+        mov     ax,0DEF0h
+        int     15h
+        pop     si
+        jc      short subtask_new_fail
+        mov     dx,ax                 ; its number
+        inc     ax
+        mov     word ptr cs:sub_owner[si],ax
+        call    caller_tag            ; its task
+        mov     si,dx
+        shl     si,1
+        mov     word ptr cs:sub_parent[si],ax
+        mov     ax,dx                 ; its handle valid from now on
+        push    dx
+        call    task_bit
+        or      word ptr cs:task_live[si],dx
+        pop     dx
+        mov     di,dx
+        shl     di,1                  ; (TASK_OBJECT_SIZE / 16)
+        add     di,word ptr cs:task_objects_base
+        jmp     short subtask_new_ret
+subtask_new_fail:
+        mov     word ptr cs:sub_owner[si],0
+        xor     di,di
+subtask_new_ret:
+        pop     es
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; Subtask AX (its number) ends (INT 15h AX=DEF1h:  the core; the current
+; one:  no return); not a subtask:  nothing.
+subtask_free:
+        push    ax
+        push    bx
+        mov     bx,ax
+        mov     ax,0DEF1h
+        int     15h
+        pop     bx
+        pop     ax
+        ret
+
 caller_tag:
         mov     ax,word ptr cs:task_handle_segment
         call    task_validate
@@ -8206,6 +8856,23 @@ task_end_dead:
         mov     al,bl
         inc     al                    ; its tag
         xor     ah,ah
+        xor     si,si                 ; a subtask:  its stack, its task
+        mov     cx,SUB_COUNT
+task_end_sub:
+        cmp     word ptr cs:sub_owner[si],ax
+        jne     short task_end_sub_next
+        mov     word ptr cs:sub_owner[si],0
+task_end_sub_next:
+        add     si,2
+        loop    task_end_sub
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short task_end_noparent
+        mov     si,bx
+        shl     si,1
+        mov     word ptr cs:sub_parent[si],0
+        mov     byte ptr cs:window_logical[bx],0
+task_end_noparent:
+        xor     ah,ah
         xor     si,si
         mov     cx,MAILBOX_SLOT_COUNT
 task_end_mbx:
@@ -8217,9 +8884,16 @@ task_end_mbx:
         call    mailbox_release
         pop     ax
 task_end_mbx_next:
+        cmp     word ptr cs:mailbox_lock_waiter[si],ax ; no more waiting
+        jne     short task_end_mbx_waiter
+        mov     word ptr cs:mailbox_lock_waiter[si],0
+task_end_mbx_waiter:
         cmp     word ptr cs:mailbox_lock_owner[si],ax ; its locks off
         jne     short task_end_mbx_lock
         mov     word ptr cs:mailbox_lock_count[si],0
+        test    byte ptr cs:mailbox_lock_waiter[si+1],80h
+        jz      short task_end_mbx_lock
+        mov     word ptr cs:mailbox_lock_waiter[si],0
 task_end_mbx_lock:
         add     si,2
         loop    task_end_mbx
@@ -8328,11 +9002,47 @@ message_result_len_lo dw 0
 message_result_len_hi dw 0
 message_result_ptr_off dw 0
 message_result_ptr_seg dw 0
-task_internal_stack db TASK_STACK_SIZE dup(0)
-task_internal_stack_top label byte
 ; GETMEM (system memory) per task, as DESQview's in the window's memory:
 ; a new task starts with it all free, and it goes with the task
+; the stream, field READ and window object being worked on:  per task, as
+; a task waits (PAUSE) in a field READ while others write (subtasks too)
+wobj_fchars    dw 0                    ; wobj_single or wobj_double
+wobj_scratch   dw 0                    ; wobj_cell's outside
+wobj_off       dw 0                    ; wobj_off_all's (bit N:  object N)
+wobj_hwcursor  db 0                    ; a field READ on a window object:
+wobj_task_cursor dw 0                  ;   the task's cursor meanwhile
+field_esize    db 7                    ; the field table's entry size and
+field_style    db 7                    ;   E5h's for the rest of the stream
+field_alt      db 0                    ; BDh:  the cursor keys in menus
+field_point_from db 0
+field_select_second db 0
+field_rc_char  db 0                    ; field_right_char's
+field_rc_left  dw 0
+field_rc_cell  dw 0
+wtarget_esize  db 7
+wobj_made      dw 0                    ; E6h made window object index + 2
+wtarget        dw 0                    ; the stream's window:  0 the task's,
+                                      ; else a window object's index + 2
+wtarget_color  db 0                   ; the task's window_color and
+wtarget_fields dd 0                   ;   field_header meanwhile
 task_state_pool label byte
+task_internal_stack db TASK_STACK_SIZE dup(0) ; OSTACK's (not inherited)
+task_internal_stack_top label byte
+api_stack      db API_STACK_SIZE dup(0) ; a call's (api_enter)
+api_stack_top  label byte
+api_crit       db 0                   ; 1:  in a call (its critical section;
+                                      ; not inherited:  a subtask is made in one)
+api_nest       dw 0                   ; INT 15h nested in a call (int15_handler)
+api_user_ss    dw 0                   ; the caller's stack
+api_user_sp    dw 0
+api_ret        dw 0                   ; api_enter's / api_leave's scratch
+api_flags      dw 0
+api_ax         dw 0
+api_cx         dw 0
+api_si         dw 0
+api_di         dw 0
+api_ds         dw 0
+api_es         dw 0
 task_handle_segment dw 0              ; the task's own object (0:  not yet,
                                       ; int15_handler finds it)
 window_color   db 0                   ; window stream E2h (0:  none yet)
@@ -8344,6 +9054,7 @@ keyboard_char  db 0                   ; the last key READ gave (its buffer)
 keyboard_scan  db 0                   ;   and its scan code (STATUS)
 system_used    db SYSTEM_SLOT_COUNT dup(0)
 system_pool    db (SYSTEM_SLOT_COUNT * MEM_SLOT_SIZE) dup(0)
+readn_buf      db READN_SIZE dup(0)   ; READN's characters (the task's)
 task_state_end label byte
 sound_head     dw 0
 sound_tail     dw 0
@@ -8387,10 +9098,6 @@ wobj_logical   db 31h,71h,20h,12h,4Bh,50h,30h,60h
 wobj_single    db 0DAh,0C4h,0BFh,0B3h,0C0h,0D9h ; the frame's characters
 wobj_double    db 0C9h,0CDh,0BBh,0BAh,0C8h,0BCh ;   (on top:  double)
 wobj_esize     dw WOBJ_COUNT dup(7)    ; its field table's entry size
-wobj_fchars    dw 0                    ; wobj_single or wobj_double
-wobj_scratch   dw 0                    ; wobj_cell's outside
-wobj_hwcursor  db 0                    ; a field READ on a window object:
-wobj_task_cursor dw 0                  ;   the task's cursor meanwhile
 kobj_used      dw KOBJ_COUNT dup(0)
 kobj_handle_segments dw KOBJ_COUNT dup(0)
 kobj_owner     dw KOBJ_COUNT dup(0)
@@ -8399,20 +9106,6 @@ kobj_window    dw KOBJ_COUNT dup(0)    ; OPEN:  a window object's index + 2
 KOBJ_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      KOBJ_OBJECT_PAD dup (0) ; (segment:0000 handles)
 kobj_objects   db (KOBJ_COUNT * 32) dup(0)
-field_esize    db 7                    ; the field table's entry size and
-field_style    db 7                    ;   E5h's for the rest of the stream
-field_alt      db 0                    ; BDh:  the cursor keys in menus
-field_point_from db 0
-field_select_second db 0
-field_rc_char  db 0                    ; field_right_char's
-field_rc_left  dw 0
-field_rc_cell  dw 0
-wtarget_esize  db 7
-wobj_made      dw 0                    ; E6h made window object index + 2
-wtarget        dw 0                    ; the stream's window:  0 the task's,
-                                      ; else a window object's index + 2
-wtarget_color  db 0                   ; the task's window_color and
-wtarget_fields dd 0                   ;   field_header meanwhile
 pointer_used   dw POINTER_SLOT_COUNT dup(0)
 pointer_window dw POINTER_SLOT_COUNT dup(0) ; OPEN:  a window object's
                                       ;   index + 2, else 0
@@ -8448,6 +9141,8 @@ mailbox_sender dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_flags  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_lock_owner dw MAILBOX_SLOT_COUNT dup(0) ; LOCK:  the task's tag
 mailbox_lock_count dw MAILBOX_SLOT_COUNT dup(0) ;   and its LOCKs
+mailbox_lock_waiter dw MAILBOX_SLOT_COUNT dup(0) ; a task waiting for it
+                                      ; (8000h + tag:  given to it)
 mailbox_name_length dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_noted  dw MAILBOX_SLOT_COUNT dup(0) ; of them, given by the OBJECTQ
@@ -8490,6 +9185,18 @@ timer_objects  db (TIMER_SLOT_COUNT * TIMER_OBJECT_SIZE) dup(0)
 MAILBOX_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      MAILBOX_OBJECT_PAD dup (0)
 mailbox_objects db (MAILBOX_SLOT_COUNT * MAILBOX_OBJECT_SIZE) dup(0)
+
+; The subtasks' stacks (NEW 08h with an entry point), their owners (task
+; number + 1, FFFFh:  being made); each task's parent (number + 1, 0:  not
+; a subtask).
+SUB_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      SUB_PAD dup (0)
+sub_stacks     db (SUB_COUNT * SUB_SIZE) dup(0)
+sub_owner      dw SUB_COUNT dup(0)
+sub_parent     dw TASK_OBJECT_COUNT dup(0)
+window_logical db TASK_OBJECT_COUNT dup(0) ; DAh on a task's window:  E2h's
+                                      ; colours 1-16 (wobj_logical); its
+                                      ; subtasks' too (window_owner)
 
 installed_msg  db 'Open MaxView resident API 0.36 installed.',13,10,'$'
 already_msg    db 'Open MaxView resident API is already installed.',13,10,'$'

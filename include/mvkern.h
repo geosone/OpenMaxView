@@ -17,6 +17,7 @@
 #define MVE_MEM   5
 #define MVE_IRQ   6
 #define MVE_STATE 7
+#define MVE_DVST  8
 
 /* Paragraphs of kernel data for ntask task slots (task 0, the caller,
  * included; 2..MVK_MAXTASK, 0:  8):  a block of the caller's below the task

@@ -60,12 +60,16 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AH=12h BH=0Ah BL=00h`, mailbox, status, length, address DWORDs (top first) | Copies and queues up to 128 bytes; pops all four DWORDs | Mailbox `ADDTO`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=0Bh BL=00h`, mailbox, status, length, address DWORDs (top first) | Queues a caller-owned far pointer and pops all four DWORDs | Mailbox `SUBFROM`; four-entry queue, Carry on failure |
 | `INT 15h AH=12h BH=0Ch/0Dh BL=00h`, object DWORD on caller stack | Opens/closes timer or mailbox and pops handle | `OPEN`/`CLOSE`; mailbox close discards queued mail |
+| `INT 15h AH=12h BH=01h BL=08h` with an entry point (its segment not 0) | A DESQview subtask:  a task of the multitasking core in the caller's memory and screen, started at the entry point with DS = ES = SS = a stack of its own (512 bytes in MAXVTSR), DX:CX the caller's task handle, AX = BX = SI = DI = BP = 0; its task handle (valid at once) in place of the 8 DWORDs; it writes to its task's window with that one's handle; a far return from the entry ends it | As DESQview (RBIL `NEW`, measured with tests/SUBPRB); the DV C library's `tsk_new` hands its own stack over by `SUBFROM` to the subtask's mailbox. The core:  `INT 15h AX=DEF0h` (private) |
+| `INT 15h AH=12h BH=02h BL=00h` with a subtask's handle, `BL=01h` in a subtask | The subtask ends (`BL=01h`:  itself; the DV C library's subtasks end so). Subtasks end with their task | The core:  `INT 15h AX=DEF1h` (private) |
 | `INT 15h AH=12h BH=0Eh BL=00h`, object DWORD on caller stack | A window (the own one or a window object):  blank in its colour, the cursor at its top left (DESQview 2.80); a timer cancelled; a mailbox emptied. Pops the handle | `ERASE` |
 | `INT 15h AH=12h BH=0Fh BL=00h`, object DWORD on caller stack | Replaces handle with state/status DWORD | Timer state or retained mailbox last-read status |
 | `INT 15h AH=12h BH=11h BL=00h/01h`, column (on top) and row DWORDs, below the explicit window DWORD for selector 00h | Positions the foreground logical text cursor and pops the arguments | Window `AT`; explicit or task-default foreground window |
 | `INT 15h AH=12h BH=11h BL=00h`, mailbox, length, address DWORDs (top first) | Copies up to 32 name bytes and pops all three DWORDs | Mailbox `SETNAME`; zero length clears |
 | `INT 15h AH=12h BH=12h BL=00h`, mailbox, capacity, destination DWORDs (top first) | Copies a non-terminated name and leaves a DWORD byte count in the destination's place | Mailbox `GETNAME`; bounded explicit handle |
 | `INT 15h AH=12h BH=13h BL=00h`, mailbox, size, destination DWORDs (top first) | Copies and consumes the oldest message; leaves a DWORD byte count in the destination's place | Mailbox `READINTO`; Carry on empty/invalid instead of blocking |
+| `INT 15h AH=12h BH=12h BL=01h`, count DWORD; `BL=00h` with the own window's handle (or its task's, in a subtask) | `READN` of a window:  up to 80 characters from its cursor on, the cursor moved past them; the length DWORD and the address DWORD (top) of a per-task buffer in place of the arguments | RBIL `READN` (a window handle; on a mailbox the same `BH` is `GETNAME`); the DV C library's `win_getc`-style calls (SNAKES) |
+| `INT 15h AH=12h BH=13h BL=01h`; `BL=00h` with a window handle | `REDRAW`:  the own window needs none (its text is on the screen); a shown window object is drawn again; pops the handle | RBIL `REDRAW` (a window handle; on a mailbox the same `BH` is `READINTO`) |
 | `INT 15h AH=12h BH=15h BL=00h`, flags then mailbox DWORDs on caller stack | Stores supported low flag bits and pops both DWORDs | Mailbox `SETFLAGS`; bits 0-2 only |
 | `INT 15h AH=12h BH=16h BL=00h`, mailbox DWORD on caller stack | Replaces handle with current supported flags | Mailbox `GETFLAGS` |
 | `INT 15h AX=DE04h` | `BX=free bytes`, `CX=largest block`, `DX=total bytes` | Common-memory status |
@@ -99,6 +103,26 @@ intercepted. Every other `INT 15h` call is chained to the previous handler.
 | `INT 15h AX=DE30h` | `BX=0000h` | Correctly identifies as not DESQview/X |
 | `INT 10h AH=FEh` | `ES:DI` points to the active text buffer | Foreground buffer alias |
 | `INT 10h AH=FFh` | Notification accepted | No separate virtual buffer yet |
+
+Each call (`AH=12h`) runs as DESQview's do:  as one critical section of the
+multitasking core (`BEGINC`/`ENDC`), so no other task runs in the middle of
+it, and on a stack of the task's own in MAXVTSR (512 bytes; the caller's
+then holds only the interrupt frame and the arguments, as a DV C library
+subtask's 256-byte stack needs). Where a call waits (a `READ` without input,
+a timer, a `LOCK` held by another task), the critical section is open and
+the other tasks run. An `INT 15h` of an interrupt handler during a call
+(the keyboard's `AH=4Fh`, the disk BIOS' `AH=90h`/`91h`) leaves it alone.
+
+A mailbox `LOCK` released (`CLOSE` to a count of 0) while another task waits
+for it goes to that task at once, as under DESQview:  a task that locks the
+mailbox again right away (SNAKES' crawling subtasks around each output) does
+not starve the waiting one.
+
+The task's own window:  `ERASE` keeps the window objects shown on it (they
+are drawn again, top ones last); stream `DAh`/`DBh` switch its logical
+colours on and off (window objects made then take its colours); a `WRITE`
+to it never scrolls it:  at the last cell of the last row the cursor stays
+(DESQview 2.80).
 
 The default API level is 1.00, automatic viewport justification starts
 enabled, C-style linefeeds start disabled, and error policy 0 is selected.
@@ -191,11 +215,12 @@ are bounded to one midnight wrap. Blocking `READ` remains unimplemented until
 its scheduling and task-wakeup rules have conformance coverage.
 
 Mailbox objects additionally provide a bounded FIFO write layer. Each of two
-mailboxes stores four `WRITE`, `ADDTO` or `SUBFROM` records with payloads of
-zero through 128 bytes. `WRITE` and `ADDTO` copy their bytes; `SUBFROM` retains
-the caller's far pointer. `SIZEOF` returns the queued-record count and `LEN` the total queued
+mailboxes stores four `WRITE`, `ADDTO` or `SUBFROM` records; `WRITE` and
+`ADDTO` copy payloads of zero through 128 bytes, `SUBFROM` retains the caller's
+far pointer to up to 65535 bytes (the DV C library's `tsk_new` hands a subtask
+its 256-byte stack so). `SIZEOF` returns the queued-record count and `LEN` the total queued
 bytes. `ERASE`, `CLOSE`, `FREE` and task reset discard pending records. A
-closed or full mailbox, a payload over 128 bytes or a nonzero high length word
+closed or full mailbox, a copied payload over 128 bytes or a nonzero high length word
 sets Carry and leaves the queue unchanged. `STATUS` remains the last-read
 status and is initially zero. `READ` returns the oldest record's length and a
 resident pointer, updates `STATUS`, and consumes the record. That pointer may
@@ -213,7 +238,8 @@ The producer of a `SUBFROM` record owns its referenced storage until that
 record is read, erased, closed or freed. `READ` returns the original pointer;
 `READINTO` copies from it at consumption time. Changing the referenced bytes
 before consumption is therefore visible to the reader. Open MaxView validates
-the pointer and applies the same 128-byte and four-record bounds as `ADDTO`.
+the pointer and applies the same four-record bound as `ADDTO`, but no 128-byte
+bound, since nothing is copied.
 
 Mailbox flags `0001h`, `0002h` and `0004h` are retained. The first requests
 common-memory placement and is advisory because the bounded resident pool has
@@ -273,7 +299,7 @@ applications expecting the DESQview interface.
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
 | `D709h` | `BX=1`:  the multitasking core switches tasks now, `BX=0`:  no longer (it calls it); `READ`/`READINTO` of an empty mailbox wait only meanwhile |
 | `D708h` | `BX` = a task that ended (the multitasking core calls it):  its mailboxes are freed (the owner is the task's `APPNUM` at `NEW`; its `GETMEM` pool goes with its state block), its common memory and timers stay, as DESQview 2.80 when a window is closed |
-| `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, OSTACK state and stack, then the `GETMEM` pool), `CX` = its size, `DX` = the part a new task inherits (the pool starts free); the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window |
+| `D707h` | `AX=0`, `ES:BX` = the per-task state block (API level, error policy, justify/C-style, keyboard-mouse mode, critical nesting, second-level callbacks, the stream, field `READ` and window object being worked on, then the `GETMEM` pool, the OSTACK state and stack and the stack of the calls), `CX` = its size, `DX` = the part a new task inherits (the pool starts free); the multitasking core saves and loads it on each task switch, as DESQview keeps this state per window. A block over the core's room (3520 bytes, 160 inherited) is an error of `MVRUN` ("MAXVTSR's per-task state too big"):  the tasks would share one state |
 
 For `D703h`, bit 0 of `DX` is automatic viewport justification and bit 1 is
 C-style linefeed interpretation. For `D704h`, bits 0 through 15 advertise

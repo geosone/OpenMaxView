@@ -23,7 +23,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MVRUN.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
-	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM $(BUILD)/SERVE.COM $(BUILD)/ASK.COM \
+	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM $(BUILD)/SERVE.COM $(BUILD)/ASK.COM $(BUILD)/WORMS.COM \
 	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES))
@@ -145,6 +145,18 @@ $(BUILD)/ask.obj: demos/ask.asm | $(BUILD)
 
 $(BUILD)/ASK.COM: $(BUILD)/ask.obj
 	cd $(BUILD) && $(JWLINK) format dos com name ASK.COM option quiet option map=ASK.MAP file ask.obj
+
+$(BUILD)/worms.obj: demos/worms.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/WORMS.COM: $(BUILD)/worms.obj
+	cd $(BUILD) && $(JWLINK) format dos com name WORMS.COM option quiet option map=WORMS.MAP file worms.obj
+
+$(BUILD)/subprb.obj: tests/subprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/SUBPRB.COM: $(BUILD)/subprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name SUBPRB.COM option quiet option map=SUBPRB.MAP file subprb.obj
 
 $(BUILD)/wobprb.obj: tests/wobprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<

@@ -18,6 +18,7 @@ const char *mvhost_error(int e)
     case MVE_MEM:   return "QPI memory or context call failed";
     case MVE_IRQ:   return "QPI IRQ calldowns failed";
     case MVE_STATE: return "not allowed now";
+    case MVE_DVST:  return "MAXVTSR's per-task state too big for this MVRUN";
     }
     return "error";
 }
