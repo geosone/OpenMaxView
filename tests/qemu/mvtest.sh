@@ -71,6 +71,7 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   fieldops broadcast and scrolling of fields (tests/bcsprb.asm)
 #   mouse  a click on a select field (tests/mseprb.asm; needs CuteMouse)
 #   records numbered field records (tests/numprb.asm)
 #   selects select fields by key (tests/selprb.asm)
@@ -96,7 +97,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -104,7 +105,9 @@ EXPECT_VDSFUNC='physical = linear FAIL'
 rm -f "$ROOT/build/mvkern.obj" "$ROOT/build/MVRUN.EXE"
 make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
-    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM || exit 2
+    build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
+    build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -440,6 +443,16 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+fieldops)
+    echo "== fieldops:  broadcast F7h, scrolling F8h-FBh (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\BCSPRB.COM C:\\B1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/B.BAT"
+    CMD="C:\\B.BAT" END="wait:MVRUN:_done:120 sleep:3" run fieldops 20 "" "$OUT/B.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/BCSPRB.COM $TICK" \
+        "wait:bcsprb_ready:60 sleep:3 key:z sleep:1 key:ret"
+    b1=$(file fieldops B1.TXT | tr '\n' '|')
+    echo "  B1: $b1"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/fieldops/end.txt'"
+    check "zLLO_ / field 2 / _abc / 456___ (as DV)" "echo '$b1' | grep -q '^r 00000012 7A 4C 4C 4F 20 .. .. .. 20 61 62 63 34 35 36 20 20 20|st 00000000|hdr 04 01 01 00 70 70 A1 80|'"
     ;;
 mouse)
     echo "== mouse:  a click on a select field (as under DV)"

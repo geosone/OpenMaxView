@@ -110,6 +110,12 @@ $(BUILD)/numprb.obj: tests/numprb.asm | $(BUILD)
 $(BUILD)/NUMPRB.COM: $(BUILD)/numprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name NUMPRB.COM option quiet option map=NUMPRB.MAP file numprb.obj
 
+$(BUILD)/bcsprb.obj: tests/bcsprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/BCSPRB.COM: $(BUILD)/bcsprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name BCSPRB.COM option quiet option map=BCSPRB.MAP file bcsprb.obj
+
 $(BUILD)/mseprb.obj: tests/mseprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

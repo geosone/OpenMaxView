@@ -2229,6 +2229,23 @@ field_op_skip:
         mov     si,di
         jmp     field_op_ok
 field_op_not_fc:
+        cmp     al,0F7h               ; F7h:  the broadcast fields (type bit
+        jne     short field_op_numbered ; 5) in field order, their sizes of
+        call    field_count           ; bytes each
+        jc      field_op_end
+        mov     dl,1
+field_op_broadcast:
+        mov     al,dl
+        call    field_entry
+        test    byte ptr es:[bx+4],20h
+        jz      short field_op_broadcast_next
+        call    field_contents
+        jc      field_op_end
+field_op_broadcast_next:
+        inc     dl
+        loop    field_op_broadcast
+        jmp     field_op_ok
+field_op_numbered:
         mov     dh,al                 ; the others:  a field number first
         call    window_byte
         jc      field_op_end
@@ -2242,14 +2259,29 @@ field_op_not_fc:
         cmp     dh,0F2h
         je      short field_op_color
         cmp     dh,0F3h
-        je      short field_op_contents
+        je      field_op_contents
         cmp     dh,0F6h
-        je      short field_op_type
+        je      field_op_type
         cmp     dh,0F5h
-        je      short field_op_entry
-        cmp     dh,0F8h               ; F8h-FBh:  scrolling, not done
-        jae     field_op_ok
-        jmp     field_op_end          ; F7h:  its length is not known
+        je      field_op_entry
+        cmp     dh,0F8h               ; F8h-FBh:  scrolling by one row /
+        jb      field_op_end          ; column, blanks come in
+        mov     al,dl
+        call    field_entry
+        jc      field_op_ok
+        mov     cx,0100h              ; F8h up:  each cell from below
+        cmp     dh,0F8h
+        je      short field_op_scroll
+        mov     cx,0FF00h             ; F9h down
+        cmp     dh,0F9h
+        je      short field_op_scroll
+        mov     cx,0001h              ; FAh left:  from the right
+        cmp     dh,0FAh
+        je      short field_op_scroll
+        mov     cx,00FFh              ; FBh right
+field_op_scroll:
+        call    field_scroll
+        jmp     field_op_ok
 field_op_cursor:
         mov     al,dl
         call    field_entry
@@ -2410,6 +2442,90 @@ field_next_cell:
         ret
 field_next_ok:
         clc
+        ret
+
+; DX one cell back in field ES:BX (CF:  before the start).
+field_prev_cell:
+        cmp     dl,byte ptr es:[bx+1]
+        je      short field_prev_row
+        dec     dl
+        clc
+        ret
+field_prev_row:
+        mov     dl,byte ptr es:[bx+3]
+        cmp     dh,byte ptr es:[bx]
+        je      short field_prev_none
+        dec     dh
+        clc
+        ret
+field_prev_none:
+        stc
+        ret
+
+; field ES:BX scrolled:  each cell gets the character of the one CH rows /
+; CL columns (signed) from it, a blank where that is outside the field;
+; the attributes and the cursor kept.
+field_scroll:
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        call    field_cursor_get
+        push    dx
+        mov     si,cx
+        mov     al,ch
+        add     al,cl
+        js      short field_scroll_back
+        mov     dh,byte ptr es:[bx]   ; up / left:  from the first cell
+        mov     dl,byte ptr es:[bx+1]
+field_scroll_fwd:
+        call    field_scroll_cell
+        call    field_next_cell
+        jnc     short field_scroll_fwd
+        jmp     short field_scroll_done
+field_scroll_back:
+        mov     dh,byte ptr es:[bx+2] ; down / right:  from the last cell
+        mov     dl,byte ptr es:[bx+3]
+field_scroll_bwd:
+        call    field_scroll_cell
+        call    field_prev_cell
+        jnc     short field_scroll_bwd
+field_scroll_done:
+        pop     dx
+        call    field_cursor_set
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+
+; cell DX of field ES:BX gets the character of cell DX + SI (SI high rows,
+; low columns), a blank outside the field.
+field_scroll_cell:
+        push    dx
+        mov     ax,si
+        add     dh,ah
+        add     dl,al
+        mov     al,' '
+        call    field_inside
+        jc      short field_scroll_put
+        call    field_cursor_set
+        push    bx
+        mov     bh,byte ptr cs:window_page
+        mov     ah,08h
+        int     10h
+        pop     bx
+field_scroll_put:
+        pop     dx
+        call    field_cursor_set
+        push    bx
+        push    cx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        mov     ah,0Ah
+        int     10h
+        pop     cx
+        pop     bx
         ret
 
 ; DX inside field ES:BX:  CF clear.
@@ -4497,7 +4613,7 @@ mailbox_write_value_open:
         jmp     mailbox_write_value_done
 mailbox_write_value_room:
         cmp     word ptr ss:[bp+20],0
-        jne     short mailbox_write_value_done
+        jne     mailbox_write_value_done
         mov     cx,word ptr ss:[bp+18]
         cmp     cx,MAILBOX_MESSAGE_SIZE
         ja      short mailbox_write_value_done
