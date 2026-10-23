@@ -99,6 +99,15 @@ SECOND_LEVEL_COUNT equ 16
 SOUND_QUEUE_COUNT equ 32
 TASK_STACK_SIZE equ 512
 FIELD_BUFFER_SIZE equ 128
+WF_VISIBLE equ 1
+WF_FRAME equ 2
+WF_DRAWN equ 4
+WF_LOGICAL equ 8                      ; DAh:  colours 1-16 (wobj_logical)
+WF_TOP equ 16                         ; on top (C0h-C2h):  a double frame
+WOBJ_COUNT equ 8                      ; window objects (stream E6h)
+WOBJ_POOL_SIZE equ 8192                     ; their contents and saved screens
+WOBJ_TITLE_SIZE equ 32
+KOBJ_COUNT equ 8                      ; keyboard objects (NEW 0Ah)
 POINTER_SLOT_COUNT equ 8
 POINTER_OBJECT_SIZE equ 32            ; its message at 10h (6 bytes)
 MUX_FOREGROUND equ 0D70Ah
@@ -137,6 +146,8 @@ install:
         mov     word ptr task_live,1
         call    initialize_timer_objects
         call    initialize_pointer_objects
+        call    initialize_window_objects
+        call    initialize_keyboard_objects2
         call    initialize_mailbox_objects
 
         mov     ah,0Fh
@@ -321,7 +332,11 @@ message_dispatch_go:
         je      short int15_dispatch_mailbox_setflags
         cmp     bh,16h                ; GETFLAGS
         je      short int15_dispatch_timer_query
+        cmp     bh,14h                ; LOCK
+        je      short int15_dispatch_lock
         jmp     short int15_unknown_message
+int15_dispatch_lock:
+        jmp     int15_message_lock
 int15_dispatch_handle:
         jmp     int15_message_handle
 int15_dispatch_new:
@@ -1195,6 +1210,14 @@ message_read_gateway_keyboard:
 message_read_gateway_not_pointer:
         call    objectq_validate
         jnc     short message_read_gateway_objectq_own
+        call    kobj_validate
+        jc      short message_read_gateway_not_kobj
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_kobj_read
+message_read_gateway_not_kobj:
+        mov     ax,word ptr ss:[bp+12]
         call    keyboard_validate
         jc      short message_read_gateway_chain
         pop     si
@@ -1289,7 +1312,18 @@ int15_message_at_gateway:
         call    mailbox_validate
         jnc     short message_at_gateway_mailbox
         cmp     ax,word ptr cs:task_handle_segment
-        jne     short message_at_gateway_chain
+        je      short message_at_gateway_window
+        call    wobj_validate         ; a window object:  its cursor to
+        jc      short message_at_gateway_chain ; the row and column
+        mov     al,byte ptr ss:[bp+14]
+        mov     ah,byte ptr ss:[bp+18]
+        mov     word ptr cs:wobj_cursor[si],ax
+        pop     si
+        pop     ax
+        call    message_shift12
+        pop     bp
+        add     sp,12
+        jmp     int15_handled
 message_at_gateway_window:
         pop     si
         pop     ax
@@ -1544,11 +1578,36 @@ int15_message_new:
         mov     word ptr cs:message_result_ptr_off,0
         mov     word ptr cs:message_result_ptr_seg,0
         cmp     bl,0Bh                ; TIMER object class
-        je      short message_new_timer
+        je      message_new_timer
         cmp     bl,09h                ; MAILBOX object class
         je      message_new_mailbox
         cmp     bl,0Fh                ; POINTER object class
         je      short message_new_pointer
+        cmp     bl,0Ah                ; KEYBOARD object class
+        je      short message_new_keyboard
+        cmp     bl,08h                ; WINDOW class
+        jne     short message_new_other
+        jmp     message_new_window
+message_new_other:
+        jmp     message_new_done
+message_new_keyboard:
+        xor     si,si
+        mov     cx,KOBJ_COUNT
+message_new_kobj_scan:
+        cmp     word ptr cs:kobj_used[si],0
+        je      short message_new_kobj_found
+        add     si,2
+        loop    message_new_kobj_scan
+        jmp     message_new_done
+message_new_kobj_found:
+        mov     word ptr cs:kobj_used[si],1
+        call    caller_tag
+        xor     ah,ah
+        mov     word ptr cs:kobj_owner[si],ax
+        mov     word ptr cs:kobj_flags[si],0
+        mov     word ptr cs:kobj_window[si],0
+        mov     ax,word ptr cs:kobj_handle_segments[si]
+        mov     word ptr cs:message_result_ptr_seg,ax
         jmp     message_new_done
 message_new_pointer:
         xor     si,si
@@ -1613,6 +1672,7 @@ message_new_mailbox_found:
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_lock_count[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
         mov     ax,word ptr cs:mailbox_handle_segments[si]
@@ -1622,6 +1682,55 @@ message_new_done:
         pop     cx
         pop     ax
         jmp     message_push4
+
+; NEW 08h, its 8 DWORDs (top first):  the entry address, task, stack,
+; buffer, columns, rows, the title's length and address.  Without an
+; entry (its segment 0):  a window object (wobj_create) of that size and
+; title, at the top left, not drawn; its handle in place of the 8 DWORDs.
+; A task window:  0.
+message_new_window:
+        push    di
+        push    ds
+        xor     di,di
+        cmp     word ptr ss:[bp+12],0
+        jne     short message_new_window_done
+        mov     ch,byte ptr ss:[bp+30]
+        mov     cl,byte ptr ss:[bp+26]
+        call    wobj_create
+        jc      short message_new_window_done
+        mov     ax,si
+        add     ax,2
+        xchg    ax,word ptr cs:wtarget
+        push    ax
+        mov     cx,word ptr ss:[bp+34]
+        lds     si,dword ptr ss:[bp+38]
+        call    wobj_set_title
+        pop     ax
+        xchg    ax,word ptr cs:wtarget
+        sub     ax,2
+        mov     si,ax
+        mov     di,word ptr cs:wobj_handle_segments[si]
+message_new_window_done:
+        mov     word ptr ss:[bp+38],0
+        mov     word ptr ss:[bp+40],di
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        pop     ax
+        push    ax                    ; the frame over 28 bytes
+        mov     ax,word ptr ss:[bp+8]
+        mov     word ptr ss:[bp+36],ax
+        mov     ax,word ptr ss:[bp+6]
+        mov     word ptr ss:[bp+34],ax
+        mov     ax,word ptr ss:[bp+4]
+        mov     word ptr ss:[bp+32],ax
+        mov     ax,word ptr ss:[bp+2]
+        mov     word ptr ss:[bp+30],ax
+        pop     ax
+        pop     bp
+        add     sp,28
+        jmp     int15_handled
 
 ; FREE message class 00h consumes and pops a timer pointer from the caller's
 ; stack. Invalid, stale and non-timer handles are harmless no-ops, but the
@@ -1643,6 +1752,16 @@ int15_message_free:
         mov     word ptr cs:timer_state[si],0
         jmp     short message_free_done
 message_free_mailbox:
+        call    wobj_validate
+        jc      short message_free_not_window
+        call    wobj_free
+        jmp     short message_free_done
+message_free_not_window:
+        call    kobj_validate
+        jc      short message_free_not_kobj
+        mov     word ptr cs:kobj_used[si],0
+        jmp     short message_free_done
+message_free_not_kobj:
         call    pointer_validate
         jc      short message_free_not_pointer
         mov     word ptr cs:pointer_used[si],0
@@ -1733,8 +1852,13 @@ timer_query_length:
         mov     dx,cx
         jmp     short timer_query_store
 timer_query_keyboard:
+        push    si
+        call    kobj_validate
+        pop     si
+        jnc     short timer_query_kobj
         call    keyboard_validate
         jc      short timer_query_invalid
+timer_query_kobj:
         cmp     bh,0Fh
         jne     short timer_query_invalid
         mov     al,byte ptr cs:keyboard_scan ; STATUS:  the last key's scan
@@ -1758,6 +1882,10 @@ timer_query_done:
 ; OPEN and CLOSE consume one timer handle DWORD. ADDTO and WRITE consume a
 ; timer handle followed by relative/absolute DWORD time in hundredths.
 int15_message_timer_open_close:
+        cmp     bl,7                  ; the task's OBJECTQ:  no handle, it
+        jne     short timer_open_close_object ; is always there
+        jmp     int15_handled
+timer_open_close_object:
         push    bp
         mov     bp,sp
         push    ax
@@ -1765,14 +1893,45 @@ int15_message_timer_open_close:
         cmp     word ptr ss:[bp+10],0
         jne     timer_open_close_done
         mov     ax,word ptr ss:[bp+12]
+        call    kobj_validate
+        jc      short timer_open_close_not_kobj
+        mov     word ptr cs:kobj_window[si],0
+        cmp     bh,0Ch                ; CLOSE:  the handle
+        jne     timer_open_close_done
+        push    si                    ; OPEN:  and the window (an object's
+        mov     ax,word ptr ss:[bp+16] ; index + 2, else 0:  the task's)
+        call    wobj_validate
+        mov     ax,0
+        jc      short timer_open_kobj_window
+        lea     ax,[si+2]
+timer_open_kobj_window:
+        pop     si
+        mov     word ptr cs:kobj_window[si],ax
+        pop     si
+        pop     ax
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
+timer_open_close_not_kobj:
+        mov     ax,word ptr ss:[bp+12]
         call    pointer_validate
         jc      short timer_open_close_timer
         mov     word ptr cs:pointer_count[si],0
         mov     word ptr cs:pointer_noted[si],0
         mov     word ptr cs:pointer_open[si],0
         cmp     bh,0Ch                ; CLOSE:  the handle
-        jne     short timer_open_close_done
+        jne     timer_open_close_done
         mov     word ptr cs:pointer_open[si],1 ; OPEN:  the window under
+        push    si
+        mov     ax,word ptr ss:[bp+16]
+        call    wobj_validate
+        mov     ax,0
+        jc      short timer_open_pointer_window
+        lea     ax,[si+2]
+timer_open_pointer_window:
+        pop     si
+        mov     word ptr cs:pointer_window[si],ax
         pop     si                    ; it too (any:  the screen is the
         pop     ax                    ; window)
         call    message_shift8
@@ -1793,6 +1952,13 @@ timer_close:
 timer_open_close_mailbox:
         call    mailbox_validate
         jc      short timer_open_close_done
+        cmp     bh,0Dh                ; CLOSE of a locked mailbox:  one
+        jne     short timer_open_close_unlocked ; LOCK less
+        cmp     word ptr cs:mailbox_lock_count[si],0
+        je      short timer_open_close_unlocked
+        dec     word ptr cs:mailbox_lock_count[si]
+        jmp     short timer_open_close_done
+timer_open_close_unlocked:
         mov     word ptr cs:mailbox_status[si],0
         cmp     bh,0Ch
         jne     short mailbox_close
@@ -1827,11 +1993,28 @@ timer_add_window_handle:
         push    ax
         mov     ax,word ptr ss:[bp+12]
         cmp     ax,word ptr cs:task_handle_segment
+        je      short timer_add_own
+        push    si
+        call    wobj_validate         ; or a window object
+        pop     si
+        jc      short timer_add_not_own_ax
+timer_add_own:
         pop     ax
-        jne     short timer_add_not_own
         pop     bp
         jmp     int15_message_window_write
+timer_add_not_own_ax:
+        pop     ax
 timer_add_not_own:
+        push    ax
+        push    si
+        mov     ax,word ptr ss:[bp+12]
+        call    pointer_validate      ; a pointer:  its position
+        pop     si
+        pop     ax
+        jc      short timer_add_not_pointer_w
+        pop     bp
+        jmp     int15_message_pointer_write
+timer_add_not_pointer_w:
         pop     bp
 timer_add_not_window:
         push    bp
@@ -1896,6 +2079,13 @@ timer_add_mailbox:
         or      word ptr cs:pointer_flags[si],ax
         jmp     short timer_add_done
 timer_add_not_pointer:
+        call    kobj_validate
+        jc      short timer_add_not_kobj
+        mov     ax,word ptr ss:[bp+14]
+        or      word ptr cs:kobj_flags[si],ax
+        jmp     short timer_add_done
+timer_add_not_kobj:
+        mov     ax,word ptr ss:[bp+12]
         call    keyboard_validate     ; a keyboard:  its bits (field mode,
         jc      short timer_add_done  ; cursor, ..)
         mov     ax,word ptr ss:[bp+14]
@@ -1939,9 +2129,15 @@ int15_message_window_write:
         push    cx
         push    si
         push    ds
+        mov     word ptr cs:wobj_made,0
         mov     si,10                 ; BL=01h:  length at BP+10
         or      bl,bl
         jnz     short window_write_args
+        mov     ax,word ptr ss:[bp+12] ; BL=00h:  a window object's handle?
+        call    wobj_validate
+        jc      short window_write_task
+        call    wobj_enter
+window_write_task:
         mov     si,14                 ; BL=00h:  below the handle
 window_write_args:
         add     si,bp
@@ -1957,11 +2153,35 @@ window_write_args:
         call    window_output
         cli
 window_write_done:
+        call    wobj_leave
         pop     ds
         pop     si
         pop     cx
         pop     bx
         pop     ax
+        cmp     word ptr cs:wobj_made,0 ; E6h:  the new window's handle is
+        je      short window_write_plain ; the result (in the address's place)
+        push    si
+        mov     si,word ptr cs:wobj_made
+        mov     si,word ptr cs:wobj_handle_segments[si-2]
+        or      bl,bl
+        jnz     short window_write_made1
+        mov     word ptr ss:[bp+18],0
+        mov     word ptr ss:[bp+20],si
+        pop     si
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
+window_write_made1:
+        mov     word ptr ss:[bp+14],0
+        mov     word ptr ss:[bp+16],si
+        pop     si
+        call    message_shift4
+        pop     bp
+        add     sp,4
+        jmp     int15_handled
+window_write_plain:
         or      bl,bl
         jnz     short window_write_pop8
         call    message_shift12
@@ -2005,9 +2225,15 @@ window_output_length:
         add     di,si                 ; its end
         or      dl,dl
         jnz     short window_output_not_window
+        mov     byte ptr cs:field_style,7 ; (E5h:  for this stream)
         call    window_stream
         jmp     short window_output_skip
 window_output_not_window:
+        cmp     dl,10h
+        jne     short window_output_not_manager
+        call    window_manager
+        jmp     short window_output_skip
+window_output_not_manager:
         cmp     dl,01h
         jne     short window_output_skip
         call    window_query
@@ -2023,8 +2249,17 @@ window_output_ret:
         pop     ax
         ret
 
-; AL as text:  teletype, or in the window colour (BEL, BS, LF and CR act).
+; AL as text:  teletype, or in the window colour (BEL, BS, LF and CR act;
+; LF begins the next line at its start, as DESQview's windows).
 window_text_char:
+        cmp     al,0Ah
+        jne     short window_text_char_go
+        mov     al,0Dh
+        call    window_text_char_go
+        mov     al,0Ah
+window_text_char_go:
+        cmp     word ptr cs:wtarget,0 ; (a window object:  its teletype)
+        jne     short window_tty
         cmp     byte ptr cs:window_color,0
         je      short window_tty
         cmp     al,07h
@@ -2041,6 +2276,10 @@ window_text_char:
         pop     ax
         ret
 window_tty:
+        cmp     word ptr cs:wtarget,0
+        je      short window_tty_bios
+        jmp     wobj_tty
+window_tty_bios:
         push    ax
         push    bx
         mov     ah,0Eh
@@ -2052,6 +2291,10 @@ window_tty:
 
 ; Character AL in attribute AH at the cursor, the cursor on (BH = page).
 window_put:
+        cmp     word ptr cs:wtarget,0
+        je      short window_put_bios
+        jmp     wobj_put
+window_put_bios:
         push    ax
         push    bx
         push    cx
@@ -2078,6 +2321,8 @@ window_run_ret:
 ; AH = the window colour, or 07h before a stream set one.
 window_attr:
         mov     ah,byte ptr cs:window_color
+        cmp     word ptr cs:wtarget,0 ; a window object:  0 is a colour too
+        jne     short window_attr_ret
         or      ah,ah
         jnz     short window_attr_ret
         mov     ah,07h
@@ -2097,6 +2342,14 @@ window_byte_end:
 
 ; DX = the cursor (BH = page); window_cursor_set sets it again.
 window_cursor_get:
+        cmp     word ptr cs:wtarget,0
+        je      short window_cursor_get_bios
+        push    si
+        mov     si,word ptr cs:wtarget
+        mov     dx,word ptr cs:wobj_cursor[si-2]
+        pop     si
+        ret
+window_cursor_get_bios:
         push    ax
         push    cx
         mov     ah,03h
@@ -2105,6 +2358,14 @@ window_cursor_get:
         pop     ax
         ret
 window_cursor_set:
+        cmp     word ptr cs:wtarget,0
+        je      short window_cursor_set_bios
+        push    si
+        mov     si,word ptr cs:wtarget
+        mov     word ptr cs:wobj_cursor[si-2],dx
+        pop     si
+        jmp     wobj_show_cursor
+window_cursor_set_bios:
         push    ax
         mov     ah,02h
         int     10h
@@ -2132,13 +2393,13 @@ window_stream_op:
         mov     cl,32
 window_stream_n:
         cmp     al,20h
-        jb      short window_stream_blanks
+        jb      window_stream_blanks
         cmp     al,40h
-        jb      short window_stream_repeat
+        jb      window_stream_repeat
         cmp     al,60h
-        jb      short window_stream_attr_blanks
+        jb      window_stream_attr_blanks
         cmp     al,80h
-        jb      short window_stream_literal
+        jb      window_stream_literal
         cmp     al,0A0h
         jae     short window_stream_not_counted
         jmp     window_stream_counted
@@ -2155,39 +2416,81 @@ window_stream_not_rel:
         jae     short window_stream_not_pair
         jmp     window_stream_pair
 window_stream_not_pair:
+        cmp     al,0E0h               ; D0h-DFh:  flags
+        jae     short window_stream_not_flag
+        call    window_stream_flag
+        jmp     window_stream_next
+window_stream_not_flag:
         cmp     al,0E2h
-        je      short window_stream_color
+        je      window_stream_color
         cmp     al,0E3h
-        je      short window_stream_clear
+        je      window_stream_clear
         cmp     al,0E4h
-        je      short window_stream_next
+        jne     short window_stream_not_redraw
+        call    window_stream_redraw
+        jmp     window_stream_next
+window_stream_not_redraw:
+        cmp     al,0E5h               ; the menu style:  bits 5,4 01b two-key
+        jne     short window_stream_not_style ; menus, entries of 8 bytes
+        call    window_byte
+        jc      short window_stream_style_done
+        and     al,30h
+        cmp     al,10h
+        mov     al,7
+        jne     short window_stream_style_set
+        inc     al
+window_stream_style_set:
+        mov     byte ptr cs:field_style,al
+window_stream_style_done:
+        jmp     window_stream_next
+window_stream_not_style:
+        cmp     al,0E6h               ; a new window, the rest in it
+        jne     short window_stream_not_new
+        jmp     window_stream_new
+window_stream_not_new:
+        cmp     al,0E8h               ; E8h-EBh scrolling:  2 arguments
+        jb      short window_stream_not_scroll
+        cmp     al,0EBh
+        ja      short window_stream_not_scroll
+        call    window_byte
+        call    window_byte
+        jmp     window_stream_next
+window_stream_not_scroll:
         cmp     al,0E7h
-        je      short window_stream_next
+        je      window_stream_next
         cmp     al,0EFh
         je      window_stream_name
         cmp     al,0F0h
         jb      short window_stream_stop
         call    window_field_op       ; F0h-FFh:  the input fields
-        jnc     short window_stream_next
+        jnc     window_stream_next
 window_stream_stop:
         jmp     window_stream_ret
 window_stream_blanks:
         mov     al,' '
         call    window_attr
         call    window_run
-        jmp     short window_stream_next
+        jmp     window_stream_next
 window_stream_repeat:
         call    window_byte
-        jc      short window_stream_end
+        jc      window_stream_end
         call    window_attr
         call    window_run
-        jmp     short window_stream_next
+        jmp     window_stream_next
 window_stream_attr_blanks:
-        call    window_byte
-        jc      short window_stream_end
-        mov     ah,al
-        mov     al,' '
-        call    window_run
+        call    window_byte           ; (DESQview 2.80:  the attribute only,
+        jc      short window_stream_end ; the characters stay)
+        jcxz    window_stream_attr_none
+        push    bx
+        mov     bl,al
+        mov     bh,byte ptr cs:window_page
+window_stream_attr_cell:
+        call    wcell_read
+        mov     ah,bl
+        call    window_put
+        loop    window_stream_attr_cell
+        pop     bx
+window_stream_attr_none:
         jmp     window_stream_next
 window_stream_literal:
         call    window_byte
@@ -2199,9 +2502,19 @@ window_stream_literal:
 window_stream_color:
         call    window_byte
         jc      short window_stream_end
-        mov     byte ptr cs:window_color,al
-        jmp     window_stream_next
+        mov     byte ptr cs:window_color,al ; (a window object's:  swapped
+        jmp     window_stream_next    ; in, wobj_enter)
 window_stream_clear:
+        cmp     word ptr cs:wtarget,0
+        je      short window_stream_clear_bios
+        call    wobj_clear
+        jmp     window_stream_next
+window_stream_clear_bios:
+        call    window_clear_bios
+        jmp     window_stream_next
+; The task's window (the screen) blank in its colour.
+window_clear_bios:
+        push    ax
         push    bx
         push    cx
         push    dx
@@ -2224,7 +2537,8 @@ window_clear_rows:
         pop     dx
         pop     cx
         pop     bx
-        jmp     window_stream_next
+        pop     ax
+        ret
 window_stream_end:
         jmp     window_stream_ret
 ; F0h-FFh (opcode AL) in a window stream (SI up to DI):  the fields of the
@@ -2243,10 +2557,12 @@ window_field_op:
         cmp     al,0FFh
         jne     short field_op_not_ff
         mov     word ptr cs:field_header,si ; FFh:  the header and N entries
-        mov     word ptr cs:field_header+2,ds ; of 7 bytes
+        mov     word ptr cs:field_header+2,ds ; of 7 bytes (E5h:  or 8)
+        mov     al,byte ptr cs:field_style
+        mov     byte ptr cs:field_esize,al
         mov     cl,byte ptr [si]
         xor     ch,ch
-        mov     ax,7
+        xor     ah,ah
         mul     cx
         add     ax,6
         add     si,ax
@@ -2271,6 +2587,7 @@ field_op_reset_one:
         mov     al,dl
         call    field_entry
         and     byte ptr es:[bx+4],ah
+        call    field_paint
         inc     dl
         loop    field_op_reset_one
         jmp     field_op_ok
@@ -2398,11 +2715,13 @@ field_op_type:
         pop     ax
         jc      field_op_ok
         mov     byte ptr es:[bx+4],al
+        call    field_paint           ; (selected / deselected:  its colour)
         jmp     short field_op_ok
 field_op_entry:
         mov     al,dl
         call    field_entry
-        mov     cx,7
+        mov     cl,byte ptr cs:field_esize
+        xor     ch,ch
         jc      field_op_skip
 field_op_entry_byte:
         call    window_byte
@@ -2468,7 +2787,7 @@ field_entry:
         ja      short field_entry_no
         les     bx,dword ptr cs:field_header
         dec     al
-        mov     cl,7
+        mov     cl,byte ptr cs:field_esize
         mul     cl
         add     bx,ax
         add     bx,6
@@ -2579,8 +2898,7 @@ field_scroll_cell:
         call    field_cursor_set
         push    bx
         mov     bh,byte ptr cs:window_page
-        mov     ah,08h
-        int     10h
+        call    wcell_read
         pop     bx
 field_scroll_put:
         pop     dx
@@ -2589,8 +2907,7 @@ field_scroll_put:
         push    cx
         mov     bh,byte ptr cs:window_page
         mov     cx,1
-        mov     ah,0Ah
-        int     10h
+        call    wcell_char
         pop     cx
         pop     bx
         ret
@@ -2627,8 +2944,7 @@ field_fill_char_one:
         push    cx
         mov     bh,byte ptr cs:window_page
         mov     cx,1
-        mov     ah,0Ah
-        int     10h
+        call    wcell_char
         pop     cx
         pop     bx
         call    field_next_cell
@@ -2655,13 +2971,11 @@ field_fill_attr_one:
         push    cx
         push    ax
         mov     bh,byte ptr cs:window_page
-        mov     ah,08h
-        int     10h
+        call    wcell_read
         pop     bx
         mov     bh,byte ptr cs:window_page
         mov     cx,1
-        mov     ah,09h
-        int     10h
+        call    wcell_charattr
         pop     cx
         pop     bx
         pop     ax
@@ -2689,8 +3003,7 @@ field_contents_one:
         push    cx
         mov     bh,byte ptr cs:window_page
         mov     cx,1
-        mov     ah,0Ah
-        int     10h
+        call    wcell_char
         pop     cx
         pop     bx
         call    field_next_cell
@@ -2728,6 +3041,9 @@ field_read:
         pop     bx
         call    field_current         ; SI = the field (0:  none)
         call    field_mouse_click     ; (presses before the READ:  gone)
+        or      si,si                 ; alternate mode (BDh):  a select
+        jnz     short field_read_key  ; field pointed at
+        call    field_point_init
 field_read_key:
         mov     ah,1
         int     16h
@@ -2749,11 +3065,28 @@ field_read_got:
         cli
         cmp     al,0Dh
         jne     short field_read_not_enter
+        call    field_select_key      ; a select field with Enter as its
+        jnc     short field_read_enter_point ; key:  selected (status 1)
+        mov     al,1
+        jmp     field_read_done
+field_read_enter_point:
+        or      si,si                 ; Enter on the pointed at field:
+        jnz     short field_read_enter ; selected (as its key)
+        call    field_point_select
+        jnc     short field_read_enter
+        mov     al,1
+        jmp     field_read_done
+field_read_enter:
         xor     al,al
         jmp     field_read_done
 field_read_not_enter:
         cmp     al,1Bh
         jne     short field_read_not_esc
+        call    field_select_key      ; Esc:  a select field with it as
+                                      ; its key selects that (status 1)
+        jnc     short field_read_esc
+        mov     al,1
+field_read_esc:
         jmp     field_read_done
 field_read_not_esc:
         cmp     al,09h
@@ -2768,10 +3101,22 @@ field_read_not_tab:
         call    field_step
         jmp     short field_read_key
 field_read_not_btab:
+        or      al,al                 ; an extended key:  a select field
+        jnz     short field_read_not_ext_select ; with it (00h, its scan
+        call    field_select_key      ; code as the second key) selects
+        jnc     short field_read_not_ext_select ; that
+        mov     al,1
+        jmp     field_read_done
+field_read_not_ext_select:
         or      si,si
         jnz     short field_read_in_field
+        or      al,al                 ; the cursor keys:  the pointed at
+        jnz     short field_read_select ; select field on
+        call    field_point_key
+        jmp     field_read_key
+field_read_select:
         call    field_select_key      ; outside a fill-in field:  a select
-        jnc     short field_read_key  ; field's key selects it, returns with
+        jnc     field_read_key  ; field's key selects it, returns with
         mov     al,1                  ; status 1; others nothing
         jmp     field_read_done
 field_read_in_field:
@@ -2783,9 +3128,9 @@ field_read_in_field:
         cmp     al,08h
         je      short field_read_bs
         or      al,al
-        jz      short field_read_ext
+        jz      field_read_ext
         cmp     al,20h
-        jb      short field_read_key
+        jb      field_read_key
         test    byte ptr es:[bx+5],10h ; force upper case
         jz      short field_read_case
         cmp     al,'a'
@@ -2794,12 +3139,17 @@ field_read_in_field:
         ja      short field_read_case
         sub     al,20h
 field_read_case:
+        test    byte ptr es:[bx+5],20h ; from the right end (numbers)
+        jz      short field_read_left
+        call    field_right_char
+        or      byte ptr es:[bx+4],01h
+        jmp     field_read_key
+field_read_left:
         push    bx
         push    cx
         mov     bh,byte ptr cs:window_page
         mov     cx,1
-        mov     ah,0Ah
-        int     10h
+        call    wcell_char
         pop     cx
         pop     bx
         or      byte ptr es:[bx+4],01h ; modified
@@ -2830,8 +3180,8 @@ field_read_bs:
         push    cx
         mov     bh,byte ptr cs:window_page
         mov     cx,1
-        mov     ax,0A20h
-        int     10h
+        mov     al,20h
+        call    wcell_char
         pop     cx
         pop     bx
         or      byte ptr es:[bx+4],01h
@@ -2860,7 +3210,10 @@ field_read_done:
         jz      short field_read_keep
         mov     byte ptr es:[bx+2],al ; the current field
 field_read_keep:
+        cmp     byte ptr cs:field_alt,0 ; (alternate mode:  the pointed at
+        jne     short field_read_point ; select field stays)
         mov     byte ptr es:[bx+3],0
+field_read_point:
         mov     al,byte ptr es:[bx+1]
         push    ax
         call    field_data            ; CX bytes in field_buffer
@@ -2872,6 +3225,7 @@ field_read_len:
         test    al,04h                ; modified bits off at the return
         jz      short field_read_result
         push    ax
+        push    cx                    ; (the data's length)
         mov     ah,0FEh
         call    field_count
         jc      short field_read_nobits
@@ -2883,6 +3237,7 @@ field_read_bits:
         inc     dl
         loop    field_read_bits
 field_read_nobits:
+        pop     cx
         pop     ax
 field_read_result:
         mov     word ptr cs:message_result_len_lo,cx
@@ -2898,8 +3253,8 @@ field_read_result:
         pop     ax
         ret
 
-; The select fields (class 11b) in their colour:  the header's selected
-; attribute when selected, else their own (entry byte 6), as DESQview.
+; The selected and pointed at select fields in their colour (the others
+; keep the window's), as DESQview 2.80.
 field_paint_selects:
         push    ax
         push    bx
@@ -2910,9 +3265,15 @@ field_paint_selects:
         jc      short field_paint_ret
         mov     dl,1
 field_paint_one:
-        mov     al,dl
-        call    field_entry
+        mov     al,dl                 ; (DESQview 2.80:  only the selected
+        call    field_entry           ; and the pointed at ones; the others
+        test    byte ptr es:[bx+4],02h ; keep the window's colours)
+        jnz     short field_paint_this
+        call    field_pointed
+        jc      short field_paint_skip
+field_paint_this:
         call    field_paint
+field_paint_skip:
         inc     dl
         loop    field_paint_one
 field_paint_ret:
@@ -2923,13 +3284,26 @@ field_paint_ret:
         pop     ax
         ret
 
-; field ES:BX, if a select field, in its colour.
+; field ES:BX, if a select field, in its colour (pointed at, alternate
+; mode:  the header's pointed at colour).
 field_paint:
         push    ax
         mov     al,byte ptr es:[bx+4]
         and     al,0C0h
         cmp     al,0C0h
         jne     short field_paint_done
+        call    field_pointable       ; (keyboard only:  not on the screen)
+        jc      short field_paint_done
+        call    field_pointed
+        jc      short field_paint_normal
+        push    es
+        push    bx
+        les     bx,dword ptr cs:field_header
+        mov     al,byte ptr es:[bx+4]
+        pop     bx
+        pop     es
+        jmp     short field_paint_attr
+field_paint_normal:
         mov     al,byte ptr es:[bx+6]
         test    byte ptr es:[bx+4],02h
         jz      short field_paint_attr
@@ -2945,6 +3319,252 @@ field_paint_done:
         pop     ax
         ret
 
+; AL typed into field ES:BX that fills from its right end:  its contents
+; one cell to the left, AL in the last one, the cursor there.
+field_right_char:
+        push    ax
+        push    cx
+        push    dx
+        mov     byte ptr cs:field_rc_char,al
+        call    field_first_cell      ; DX the first cell, CX the cells
+        mov     word ptr cs:field_rc_left,cx
+field_right_shift:
+        dec     word ptr cs:field_rc_left
+        jz      short field_right_last
+        mov     word ptr cs:field_rc_cell,dx
+        call    field_next_cell       ; the next cell's character
+        call    field_cursor_set
+        push    bx
+        mov     bh,byte ptr cs:window_page
+        call    wcell_read
+        pop     bx
+        push    dx                    ; into this cell
+        mov     dx,word ptr cs:field_rc_cell
+        call    field_cursor_set
+        call    field_right_put
+        pop     dx
+        jmp     short field_right_shift
+field_right_last:
+        call    field_cursor_set
+        mov     al,byte ptr cs:field_rc_char
+        call    field_right_put
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+field_right_put:
+        push    bx
+        push    cx
+        mov     bh,byte ptr cs:window_page
+        mov     cx,1
+        call    wcell_char
+        pop     cx
+        pop     bx
+        ret
+
+; CF clear:  field ES:BX is the one pointed at (alternate mode, BDh).
+field_pointed:
+        push    ax
+        push    cx
+        push    dx
+        push    bx
+        push    es
+        cmp     byte ptr cs:field_alt,0
+        je      short field_pointed_no
+        mov     ax,bx                 ; its number:  (BX - table - 6) /
+        les     bx,dword ptr cs:field_header ; entry size + 1
+        sub     ax,bx
+        sub     ax,6
+        mov     cl,byte ptr cs:field_esize
+        div     cl
+        inc     al
+        cmp     al,byte ptr es:[bx+3]
+        jne     short field_pointed_no
+        clc
+        jmp     short field_pointed_ret
+field_pointed_no:
+        stc
+field_pointed_ret:
+        pop     es
+        pop     bx
+        pop     dx
+        pop     cx
+        pop     ax
+        ret
+
+; CF clear:  field ES:BX may be pointed at (a select field, its start not
+; right of / below its end:  not keyboard only).
+field_pointable:
+        push    ax
+        mov     al,byte ptr es:[bx+4]
+        and     al,0C0h
+        cmp     al,0C0h
+        jne     short field_pointable_no
+        mov     ax,word ptr es:[bx+2] ; end row, column
+        xchg    al,ah
+        cmp     ah,byte ptr es:[bx]
+        jb      short field_pointable_no
+        ja      short field_pointable_yes
+        cmp     al,byte ptr es:[bx+1]
+        jb      short field_pointable_no
+field_pointable_yes:
+        pop     ax
+        clc
+        ret
+field_pointable_no:
+        pop     ax
+        stc
+        ret
+
+; Alternate mode at a READ:  the header's current select field (or the
+; first that may be pointed at) pointed at and painted.
+field_point_init:
+        cmp     byte ptr cs:field_alt,0
+        je      short field_point_init_ret
+        push    ax
+        push    bx
+        push    es
+        les     bx,dword ptr cs:field_header
+        mov     al,byte ptr es:[bx+3]
+        call    field_entry
+        jc      short field_point_init_first
+        call    field_pointable
+        jnc     short field_point_init_set
+field_point_init_first:
+        mov     byte ptr cs:field_point_from,0
+        push    dx
+        mov     dl,1
+        call    field_point_move
+        pop     dx
+        jmp     short field_point_init_done
+field_point_init_set:
+        call    field_point_set
+field_point_init_done:
+        pop     es
+        pop     bx
+        pop     ax
+field_point_init_ret:
+        ret
+
+; Field AL pointed at:  the header's current select field, the old one and
+; it painted again.
+field_point_set:
+        push    ax
+        push    bx
+        push    es
+        push    ax
+        les     bx,dword ptr cs:field_header
+        mov     ah,byte ptr es:[bx+3]
+        mov     byte ptr es:[bx+3],al
+        mov     al,ah
+        call    field_entry
+        jc      short field_point_set_new
+        call    field_paint
+field_point_set_new:
+        pop     ax
+        call    field_entry
+        jc      short field_point_set_ret
+        call    field_paint
+field_point_set_ret:
+        pop     es
+        pop     bx
+        pop     ax
+        ret
+
+; From the pointed at field (field_point_from:  0 for before the first)
+; DL (1 / -1) on to the next one that may be pointed at, round.
+field_point_move:
+        push    ax
+        push    bx
+        push    cx
+        push    es
+        call    field_count
+        jc      short field_point_move_ret
+        mov     al,byte ptr cs:field_point_from
+field_point_move_one:
+        add     al,dl
+        or      al,al
+        jnz     short field_point_move_low
+        mov     al,cl
+field_point_move_low:
+        cmp     al,cl
+        jbe     short field_point_move_chk
+        mov     al,1
+field_point_move_chk:
+        call    field_entry
+        jc      short field_point_move_ret
+        call    field_pointable
+        jnc     short field_point_move_found
+        loop    field_point_move_one
+        jmp     short field_point_move_ret
+field_point_move_found:
+        call    field_point_set
+field_point_move_ret:
+        pop     es
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; An extended key (AH) outside fill-in fields, alternate mode:  Up / Left
+; the previous select field pointed at, Down / Right the next.
+field_point_key:
+        cmp     byte ptr cs:field_alt,0
+        je      short field_point_key_ret
+        push    bx
+        push    dx
+        push    es
+        mov     dl,-1
+        cmp     ah,48h
+        je      short field_point_key_go
+        cmp     ah,4Bh
+        je      short field_point_key_go
+        mov     dl,1
+        cmp     ah,50h
+        je      short field_point_key_go
+        cmp     ah,4Dh
+        jne     short field_point_key_done
+field_point_key_go:
+        les     bx,dword ptr cs:field_header
+        mov     dh,byte ptr es:[bx+3]
+        mov     byte ptr cs:field_point_from,dh
+        call    field_point_move
+field_point_key_done:
+        pop     es
+        pop     dx
+        pop     bx
+field_point_key_ret:
+        ret
+
+; Enter, alternate mode:  the pointed at field selected and modified,
+; painted; CF set then (as its key).
+field_point_select:
+        cmp     byte ptr cs:field_alt,0
+        je      short field_point_select_no
+        push    ax
+        push    bx
+        push    es
+        les     bx,dword ptr cs:field_header
+        mov     al,byte ptr es:[bx+3]
+        call    field_entry
+        jc      short field_point_select_none
+        call    field_pointable
+        jc      short field_point_select_none
+        or      byte ptr es:[bx+4],03h
+        call    field_paint
+        pop     es
+        pop     bx
+        pop     ax
+        stc
+        ret
+field_point_select_none:
+        pop     es
+        pop     bx
+        pop     ax
+field_point_select_no:
+        clc
+        ret
+
 ; A mouse driver's (INT 33h) left button presses since the last call:
 ; at the last one the select field under the pointer (text cell = pixel
 ; / 8) selected, modified and painted, CF set then (DESQview 2.80:  a
@@ -2955,11 +3575,8 @@ field_mouse_click:
         push    cx
         push    dx
         push    es
-        xor     ax,ax                 ; no driver:  nothing
-        mov     es,ax
-        mov     ax,word ptr es:[33h*4]
-        or      ax,word ptr es:[33h*4+2]
-        jz      short field_mouse_no
+        call    mouse_driver          ; no driver:  nothing
+        jc      short field_mouse_no
         mov     ax,5
         xor     bx,bx
         int     33h
@@ -3011,7 +3628,13 @@ field_select_key:
         push    dx
         push    es
         or      al,al
-        jz      short field_select_no
+        jnz     short field_select_char
+        cmp     byte ptr cs:field_esize,8 ; an extended key:  two-key menus
+        jne     short field_select_no ; only (first key 00h, the second
+        mov     al,ah                 ; its scan code)
+        mov     ah,0
+        jmp     short field_select_go
+field_select_char:
         cmp     al,'a'
         jb      short field_select_case
         cmp     al,'z'
@@ -3019,6 +3642,9 @@ field_select_key:
         sub     al,20h
 field_select_case:
         mov     ah,al
+        mov     al,0FFh               ; (no second key)
+field_select_go:
+        mov     byte ptr cs:field_select_second,al
         les     bx,dword ptr cs:field_header
         test    byte ptr es:[bx+1],40h
         jz      short field_select_no
@@ -3041,6 +3667,12 @@ field_select_one:
 field_select_cmp:
         cmp     al,ah
         jne     short field_select_next
+        or      al,al                 ; 00h:  the second key too
+        jnz     short field_select_hit
+        mov     al,byte ptr es:[bx+7]
+        cmp     al,byte ptr cs:field_select_second
+        jne     short field_select_next
+field_select_hit:
         or      byte ptr es:[bx+4],03h
         call    field_paint
         stc
@@ -3195,8 +3827,7 @@ field_data_cell:
         call    field_cursor_set
         push    bx
         mov     bh,byte ptr cs:window_page
-        mov     ah,08h
-        int     10h
+        call    wcell_read
         pop     bx
         mov     byte ptr cs:[di],al
         inc     di
@@ -3234,6 +3865,10 @@ window_stream_name:
         jc      window_stream_end
         mov     cl,al
         xor     ch,ch
+        cmp     word ptr cs:wtarget,0 ; a window object:  its title
+        je      short window_stream_name_skip
+        call    wobj_set_title
+window_stream_name_skip:
         add     si,cx
         cmp     si,di
         jbe     short window_stream_name_done
@@ -3262,6 +3897,10 @@ window_stream_set:
         mov     dl,al                 ; A0h row, A1h column, others:  1 arg
         call    window_byte
         jc      window_stream_end
+        cmp     dl,0A4h               ; A4h, A5h:  a window object's place
+        je      short window_stream_set_place
+        cmp     dl,0A5h
+        je      short window_stream_set_place
         cmp     dl,0A1h
         ja      short window_stream_next_far
         push    dx
@@ -3278,10 +3917,17 @@ window_stream_set_go:
         call    window_cursor_set
 window_stream_next_far:
         jmp     window_stream_next
+window_stream_set_place:
+        call    wobj_place
+        jmp     window_stream_next
 window_stream_rel:
         mov     dl,al                 ; B0h rows, B1h columns, signed
         call    window_byte
         jc      window_stream_end
+        cmp     dl,0B4h               ; B4h, B5h:  a window object moved
+        je      short window_stream_set_place
+        cmp     dl,0B5h
+        je      short window_stream_set_place
         cmp     dl,0B1h
         ja      short window_stream_next_far
         mov     cl,al
@@ -3307,6 +3953,10 @@ window_stream_pair:
         mov     al,dl
         cmp     al,0C0h
         je      short window_stream_pair_set
+        cmp     al,0C2h               ; C2h, CAh:  a window object's place
+        je      short window_stream_pair_place
+        cmp     al,0CAh
+        je      short window_stream_pair_place
         cmp     al,0C8h
         jne     short window_stream_next_far
         call    window_cursor_get
@@ -3317,10 +3967,1044 @@ window_stream_pair_set:
         mov     dh,ch
         mov     dl,cl
         jmp     short window_stream_set_go
+window_stream_pair_place:
+        mov     dl,0A4h               ; C2h as A4h, A5h; CAh as B4h, B5h
+        cmp     al,0C2h
+        je      short window_stream_pair_row
+        mov     dl,0B4h
+window_stream_pair_row:
+        mov     al,ch
+        call    wobj_place            ; the row
+        inc     dl
+        mov     al,cl
+        call    wobj_place            ; the column
+        jmp     window_stream_next
 window_stream_ret:
         pop     dx
         pop     cx
         pop     ax
+        ret
+
+; A manager stream (type 10h) at SI up to DI:  BCh / BDh the standard /
+; alternate field mode (the cursor keys in menus), BEh, BFh nothing,
+; C0h-C2h the window (object) on top, C3h, C4h (2 arguments) nothing;
+; another opcode ends it.
+window_manager:
+        push    ax
+window_manager_next:
+        call    window_byte
+        jc      short window_manager_ret
+        cmp     al,0BCh
+        jne     short window_manager_not_bc
+        mov     byte ptr cs:field_alt,0
+        jmp     short window_manager_next
+window_manager_not_bc:
+        cmp     al,0BDh
+        jne     short window_manager_not_bd
+        mov     byte ptr cs:field_alt,1
+        jmp     short window_manager_next
+window_manager_not_bd:
+        cmp     al,0BEh
+        je      short window_manager_next
+        cmp     al,0BFh
+        je      short window_manager_next
+        cmp     al,0C3h
+        je      short window_manager_two
+        cmp     al,0C4h
+        je      short window_manager_two
+        cmp     al,0C0h
+        jb      short window_manager_ret
+        cmp     al,0C2h
+        ja      short window_manager_ret
+        call    wobj_top
+        jmp     short window_manager_next
+window_manager_two:
+        call    window_byte
+        call    window_byte
+        jmp     short window_manager_next
+window_manager_ret:
+        pop     ax
+        ret
+
+; The target window object on top:  a double frame, drawn again over the
+; others (theirs single again); the task's window:  nothing.
+wobj_top:
+        push    cx
+        push    si
+        push    di
+        mov     di,word ptr cs:wtarget
+        or      di,di
+        jz      short wobj_top_ret
+        sub     di,2
+        xor     si,si
+        mov     cx,WOBJ_COUNT
+wobj_top_others:
+        cmp     si,di
+        je      short wobj_top_next
+        test    word ptr cs:wobj_flags[si],WF_TOP
+        jz      short wobj_top_next
+        and     word ptr cs:wobj_flags[si],not WF_TOP
+        test    word ptr cs:wobj_flags[si],WF_DRAWN
+        jz      short wobj_top_next
+        test    word ptr cs:wobj_flags[si],WF_FRAME
+        jz      short wobj_top_next
+        call    wobj_frame
+wobj_top_next:
+        add     si,2
+        loop    wobj_top_others
+        mov     si,di
+        or      word ptr cs:wobj_flags[si],WF_TOP
+        test    word ptr cs:wobj_flags[si],WF_VISIBLE
+        jz      short wobj_top_ret
+        call    wobj_redraw
+wobj_top_ret:
+        pop     di
+        pop     si
+        pop     cx
+        ret
+
+; E6h rows, columns (SI up to DI):  a new window object (wobj_create) and
+; the rest of the stream in it; its handle is the WRITE's result
+; (wobj_made).  For a window object as the target:  a window of its own.
+window_stream_new:
+        call    window_byte
+        jc      window_stream_ret
+        mov     ch,al
+        call    window_byte
+        jc      window_stream_ret
+        mov     cl,al
+        push    si
+        call    wobj_create
+        mov     ax,si
+        pop     si
+        jc      window_stream_ret
+        mov     word ptr cs:wobj_made,ax
+        add     word ptr cs:wobj_made,2
+        cmp     word ptr cs:wtarget,0 ; (one level:  the task's window)
+        jne     window_stream_ret
+        push    si
+        mov     si,ax
+        call    wobj_enter
+        pop     si
+        call    window_stream         ; the rest
+        call    wobj_leave
+        jmp     window_stream_ret
+
+; D0h-DFh (AL):  a window object's flags (visible D4h/D5h, frame D6h/D7h,
+; logical / physical colours DAh/DBh); the task's window:  nothing.
+window_stream_flag:
+        push    si
+        mov     si,word ptr cs:wtarget
+        or      si,si
+        jz      short window_stream_flag_ret
+        sub     si,2
+        cmp     al,0D4h
+        jne     short window_stream_flag_not_d4
+        or      word ptr cs:wobj_flags[si],WF_VISIBLE
+        test    word ptr cs:wobj_flags[si],WF_DRAWN
+        jnz     short window_stream_flag_not_d4
+        call    wobj_redraw
+window_stream_flag_not_d4:
+        cmp     al,0D5h
+        jne     short window_stream_flag_not_d5
+        and     word ptr cs:wobj_flags[si],not WF_VISIBLE
+        call    wobj_undraw
+window_stream_flag_not_d5:
+        cmp     al,0D6h
+        jne     short window_stream_flag_not_d6
+        or      word ptr cs:wobj_flags[si],WF_FRAME
+window_stream_flag_not_d6:
+        cmp     al,0D7h
+        jne     short window_stream_flag_not_d7
+        and     word ptr cs:wobj_flags[si],not WF_FRAME
+window_stream_flag_not_d7:
+        cmp     al,0DAh
+        jne     short window_stream_flag_not_da
+        or      word ptr cs:wobj_flags[si],WF_LOGICAL
+        call    wobj_paint_all
+window_stream_flag_not_da:
+        cmp     al,0DBh
+        jne     short window_stream_flag_ret
+        and     word ptr cs:wobj_flags[si],not WF_LOGICAL
+        call    wobj_paint_all
+window_stream_flag_ret:
+        pop     si
+        ret
+
+; E4h:  a window object drawn again where it is now (or taken off the
+; screen when hidden); the task's window:  nothing.
+window_stream_redraw:
+        push    si
+        mov     si,word ptr cs:wtarget
+        or      si,si
+        jz      short window_stream_redraw_ret
+        sub     si,2
+        call    wobj_redraw
+window_stream_redraw_ret:
+        pop     si
+        ret
+
+; A4h/A5h (row / column, DL) to AL, B4h/B5h (signed) by AL:  the place of
+; the target window object (DESQview:  of its contents; seen at the next
+; E4h); the task's window:  nothing.
+wobj_place:
+        push    si
+        mov     si,word ptr cs:wtarget
+        or      si,si
+        jz      short wobj_place_ret
+        sub     si,2
+        cmp     dl,0A4h
+        jne     short wobj_place_not_a4
+        mov     byte ptr cs:wobj_pos[si+1],al
+wobj_place_not_a4:
+        cmp     dl,0A5h
+        jne     short wobj_place_not_a5
+        mov     byte ptr cs:wobj_pos[si],al
+wobj_place_not_a5:
+        cmp     dl,0B4h
+        jne     short wobj_place_not_b4
+        add     byte ptr cs:wobj_pos[si+1],al
+wobj_place_not_b4:
+        cmp     dl,0B5h
+        jne     short wobj_place_ret
+        add     byte ptr cs:wobj_pos[si],al
+wobj_place_ret:
+        pop     si
+        ret
+
+; CX bytes of the stream at SI as the target window object's title.
+wobj_set_title:
+        push    ax
+        push    cx
+        push    si
+        push    di
+        push    es
+        mov     di,word ptr cs:wtarget
+        sub     di,2
+        cmp     cx,WOBJ_TITLE_SIZE
+        jbe     short wobj_set_title_len
+        mov     cx,WOBJ_TITLE_SIZE
+wobj_set_title_len:
+        mov     word ptr cs:wobj_tlen[di],cx
+        mov     ax,di
+        shl     ax,1
+        shl     ax,1
+        shl     ax,1
+        shl     ax,1                  ; (index * 2) * 16 = slot * 32
+        add     ax,offset wobj_title
+        mov     di,ax
+        push    cs
+        pop     es
+        cld
+        rep     movsb
+        pop     es
+        pop     di
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+
+; The window object SI the target (wtarget):  its colour and field table
+; in window_color / field_header, the task's kept; wobj_leave undoes it.
+wobj_enter:
+        push    ax
+        mov     ax,si
+        add     ax,2
+        mov     word ptr cs:wtarget,ax
+        mov     al,byte ptr cs:window_color
+        mov     byte ptr cs:wtarget_color,al
+        mov     ax,word ptr cs:wobj_color[si]
+        mov     byte ptr cs:window_color,al
+        mov     ax,word ptr cs:field_header
+        mov     word ptr cs:wtarget_fields,ax
+        mov     ax,word ptr cs:field_header+2
+        mov     word ptr cs:wtarget_fields+2,ax
+        mov     al,byte ptr cs:field_esize
+        mov     byte ptr cs:wtarget_esize,al
+        mov     ax,word ptr cs:wobj_esize[si]
+        mov     byte ptr cs:field_esize,al
+        push    si
+        shl     si,1
+        mov     ax,word ptr cs:wobj_fields[si]
+        mov     word ptr cs:field_header,ax
+        mov     ax,word ptr cs:wobj_fields[si+2]
+        mov     word ptr cs:field_header+2,ax
+        pop     si
+        pop     ax
+        ret
+wobj_leave:
+        push    ax
+        push    si
+        mov     si,word ptr cs:wtarget
+        or      si,si
+        jz      short wobj_leave_ret
+        sub     si,2
+        mov     al,byte ptr cs:window_color
+        xor     ah,ah
+        mov     word ptr cs:wobj_color[si],ax
+        mov     al,byte ptr cs:field_esize
+        mov     word ptr cs:wobj_esize[si],ax
+        mov     al,byte ptr cs:wtarget_esize
+        mov     byte ptr cs:field_esize,al
+        shl     si,1
+        mov     ax,word ptr cs:field_header
+        mov     word ptr cs:wobj_fields[si],ax
+        mov     ax,word ptr cs:field_header+2
+        mov     word ptr cs:wobj_fields[si+2],ax
+        mov     al,byte ptr cs:wtarget_color
+        mov     byte ptr cs:window_color,al
+        mov     ax,word ptr cs:wtarget_fields
+        mov     word ptr cs:field_header,ax
+        mov     ax,word ptr cs:wtarget_fields+2
+        mov     word ptr cs:field_header+2,ax
+        mov     word ptr cs:wtarget,0
+wobj_leave_ret:
+        pop     si
+        pop     ax
+        ret
+
+; AX handle:  SI = its window object's index, CF:  none.
+wobj_validate:
+        push    cx
+        xor     si,si
+        mov     cx,WOBJ_COUNT
+wobj_validate_scan:
+        cmp     ax,word ptr cs:wobj_handle_segments[si]
+        jne     short wobj_validate_next
+        cmp     word ptr cs:wobj_used[si],1
+        jne     short wobj_validate_no
+        clc
+        jmp     short wobj_validate_ret
+wobj_validate_next:
+        add     si,2
+        loop    wobj_validate_scan
+wobj_validate_no:
+        stc
+wobj_validate_ret:
+        pop     cx
+        ret
+
+; A new window object of CH rows, CL columns (1-25, 1-80):  SI = its index
+; (CF:  no room).  As DESQview's:  framed, its contents at 1,1, visible but
+; not drawn before an E4h or D4h, blanks in 71h, physical colours.
+wobj_create:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        or      ch,ch
+        jnz     short wobj_create_rows
+        inc     ch
+wobj_create_rows:
+        cmp     ch,25
+        jbe     short wobj_create_cols
+        mov     ch,25
+wobj_create_cols:
+        or      cl,cl
+        jnz     short wobj_create_cols2
+        inc     cl
+wobj_create_cols2:
+        cmp     cl,80
+        jbe     short wobj_create_slot
+        mov     cl,80
+wobj_create_slot:
+        xor     si,si
+        mov     bx,WOBJ_COUNT
+wobj_create_scan:
+        cmp     word ptr cs:wobj_used[si],0
+        je      short wobj_create_found
+        add     si,2
+        dec     bx
+        jnz     short wobj_create_scan
+        jmp     wobj_create_fail
+wobj_create_found:
+        mov     word ptr cs:wobj_size[si],cx
+        mov     al,ch                 ; bytes:  rows * cols * 2 + (rows + 2)
+        mul     cl                    ; * (cols + 2) * 2
+        mov     bx,ax
+        mov     al,ch
+        add     al,2
+        mov     dl,cl
+        add     dl,2
+        mul     dl
+        add     ax,bx
+        shl     ax,1
+        mov     cx,ax
+        call    wobj_alloc
+        jc      wobj_create_fail
+        mov     word ptr cs:wobj_buf[si],ax
+        mov     word ptr cs:wobj_bytes[si],cx
+        mov     word ptr cs:wobj_used[si],1
+        call    caller_tag
+        xor     ah,ah
+        mov     word ptr cs:wobj_owner[si],ax
+        mov     word ptr cs:wobj_pos[si],0101h
+        mov     word ptr cs:wobj_cursor[si],0
+        mov     word ptr cs:wobj_color[si],71h
+        mov     word ptr cs:wobj_flags[si],WF_VISIBLE + WF_FRAME
+        mov     word ptr cs:wobj_esize[si],7
+        mov     word ptr cs:wobj_tlen[si],0
+        push    si
+        shl     si,1
+        mov     word ptr cs:wobj_fields[si],0
+        mov     word ptr cs:wobj_fields[si+2],0
+        pop     si
+        mov     ax,7120h
+        call    wobj_fill
+        clc
+        jmp     short wobj_create_ret
+wobj_create_fail:
+        stc
+wobj_create_ret:
+        pop     di
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; CX bytes of wobj_pool for a window object:  AX = their offset (CF:  no
+; room); the first gap that fits (the blocks of the used objects).
+wobj_alloc:
+        push    bx
+        push    dx
+        push    di
+        xor     ax,ax                 ; candidates:  0 and each block's end
+        mov     di,-2
+wobj_alloc_try:
+        mov     dx,ax
+        add     dx,cx
+        jc      short wobj_alloc_next
+        cmp     dx,WOBJ_POOL_SIZE
+        ja      short wobj_alloc_next
+        xor     bx,bx                 ; overlaps a used block?
+wobj_alloc_check:
+        cmp     word ptr cs:wobj_used[bx],0
+        je      short wobj_alloc_check_next
+        cmp     dx,word ptr cs:wobj_buf[bx]
+        jbe     short wobj_alloc_check_next
+        push    dx
+        mov     dx,word ptr cs:wobj_buf[bx]
+        add     dx,word ptr cs:wobj_bytes[bx]
+        cmp     ax,dx
+        pop     dx
+        jb      short wobj_alloc_next
+wobj_alloc_check_next:
+        add     bx,2
+        cmp     bx,WOBJ_COUNT * 2
+        jb      short wobj_alloc_check
+        clc
+        jmp     short wobj_alloc_ret
+wobj_alloc_next:
+        add     di,2
+        cmp     di,WOBJ_COUNT * 2
+        jae     short wobj_alloc_fail
+        cmp     word ptr cs:wobj_used[di],0
+        je      short wobj_alloc_next
+        mov     ax,word ptr cs:wobj_buf[di]
+        add     ax,word ptr cs:wobj_bytes[di]
+        jmp     short wobj_alloc_try
+wobj_alloc_fail:
+        stc
+wobj_alloc_ret:
+        pop     di
+        pop     dx
+        pop     bx
+        ret
+
+; Window object SI gone:  off the screen, its block free.
+wobj_free:
+        call    wobj_undraw
+        mov     word ptr cs:wobj_used[si],0
+        ret
+
+; Its contents all AL in attribute AH.
+wobj_fill:
+        push    ax
+        push    cx
+        push    di
+        push    es
+        push    ax
+        mov     ax,word ptr cs:wobj_size[si]
+        mul     ah
+        mov     cx,ax
+        pop     ax
+        push    cs
+        pop     es
+        mov     di,word ptr cs:wobj_buf[si]
+        add     di,offset wobj_pool
+        cld
+        rep     stosw
+        pop     es
+        pop     di
+        pop     cx
+        pop     ax
+        ret
+
+; E3h:  the target's contents blanks in the output colour, then on the
+; screen.
+wobj_clear:
+        push    ax
+        push    si
+        mov     si,word ptr cs:wtarget
+        sub     si,2
+        call    window_attr
+        mov     al,' '
+        call    wobj_fill
+        call    wobj_paint_all
+        pop     si
+        pop     ax
+        ret
+
+; DI = the offset in CS of cell DX (DH row, DL column) of window object
+; SI's contents, CF:  outside them (DI then a scratch cell).
+wobj_cell:
+        cmp     dh,byte ptr cs:wobj_size[si+1]
+        jae     short wobj_cell_out
+        cmp     dl,byte ptr cs:wobj_size[si]
+        jb      short wobj_cell_in
+wobj_cell_out:
+        mov     di,offset wobj_scratch
+        stc
+        ret
+wobj_cell_in:
+        push    ax
+        push    dx
+        mov     al,dh
+        mul     byte ptr cs:wobj_size[si]
+        xor     dh,dh
+        add     ax,dx
+        shl     ax,1
+        add     ax,word ptr cs:wobj_buf[si]
+        add     ax,offset wobj_pool
+        mov     di,ax
+        pop     dx
+        pop     ax
+        clc
+        ret
+
+; ES:DI = the screen cell DX (DH row, DL column), CF:  off the screen.
+wobj_screen:
+        push    ax
+        push    bx
+        push    dx
+        mov     ax,40h
+        mov     es,ax
+        mov     bl,byte ptr es:[84h]  ; rows - 1 (EGA and later)
+        or      bl,bl
+        jnz     short wobj_screen_rows
+        mov     bl,24
+wobj_screen_rows:
+        cmp     dh,bl
+        ja      short wobj_screen_off
+        mov     bx,word ptr es:[4Ah]  ; columns
+        cmp     dl,bl
+        jae     short wobj_screen_off
+        mov     al,dh
+        mul     bl
+        xor     dh,dh
+        add     ax,dx
+        shl     ax,1
+        add     ax,word ptr es:[4Eh]  ; the page
+        mov     di,ax
+        mov     ax,0B800h
+        cmp     word ptr es:[63h],3B4h
+        jne     short wobj_screen_seg
+        mov     ax,0B000h
+wobj_screen_seg:
+        mov     es,ax
+        clc
+        jmp     short wobj_screen_ret
+wobj_screen_off:
+        stc
+wobj_screen_ret:
+        pop     dx
+        pop     bx
+        pop     ax
+        ret
+
+; AH to the screen's attribute:  with WF_LOGICAL a colour 1-16 (the low
+; nibble, 0 for 16) through wobj_logical; else as it is (DESQview:  through
+; the creating window's colour translation, which MaxView's windows do
+; not have).
+wobj_attr:
+        test    word ptr cs:wobj_flags[si],WF_LOGICAL
+        jz      short wobj_attr_ret
+        push    bx
+        mov     bl,ah
+        dec     bl
+        and     bx,0Fh
+        mov     ah,byte ptr cs:wobj_logical[bx]
+        pop     bx
+wobj_attr_ret:
+        ret
+
+; Cell DX of window object SI's contents to the screen, if it is drawn.
+wobj_paint_cell:
+        test    word ptr cs:wobj_flags[si],WF_DRAWN
+        jz      short wobj_paint_cell_ret
+        push    ax
+        push    dx
+        push    di
+        push    es
+        call    wobj_cell
+        jc      short wobj_paint_cell_off
+        mov     ax,word ptr cs:[di]
+        call    wobj_attr
+        add     dx,word ptr cs:wobj_pos[si]
+        call    wobj_screen
+        jc      short wobj_paint_cell_off
+        mov     word ptr es:[di],ax
+wobj_paint_cell_off:
+        pop     es
+        pop     di
+        pop     dx
+        pop     ax
+wobj_paint_cell_ret:
+        ret
+
+; All its contents to the screen (if drawn).
+wobj_paint_all:
+        push    cx
+        push    dx
+        xor     dx,dx
+wobj_paint_all_cell:
+        call    wobj_paint_cell
+        inc     dl
+        cmp     dl,byte ptr cs:wobj_size[si]
+        jb      short wobj_paint_all_cell
+        xor     dl,dl
+        inc     dh
+        cmp     dh,byte ptr cs:wobj_size[si+1]
+        jb      short wobj_paint_all_cell
+        pop     dx
+        pop     cx
+        ret
+
+; E4h for window object SI:  off the screen, then (visible) on it again at
+; its place:  the screen under it saved, the frame (07h:  single lines,
+; the title after the top left corner, as DESQview 2.80) and the contents.
+wobj_redraw:
+        call    wobj_undraw
+        test    word ptr cs:wobj_flags[si],WF_VISIBLE
+        jnz     short wobj_redraw_draw
+        ret
+wobj_redraw_draw:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        push    es
+        mov     dx,word ptr cs:wobj_pos[si]
+        mov     cx,word ptr cs:wobj_size[si]
+        test    word ptr cs:wobj_flags[si],WF_FRAME
+        jz      short wobj_redraw_rect
+        sub     dx,0101h
+        add     cx,0202h
+wobj_redraw_rect:
+        mov     word ptr cs:wobj_drawn[si],dx
+        mov     word ptr cs:wobj_dsize[si],cx
+        or      word ptr cs:wobj_flags[si],WF_DRAWN
+        call    wobj_save_cells       ; the screen under it saved
+        test    word ptr cs:wobj_flags[si],WF_FRAME
+        jz      short wobj_redraw_contents
+        call    wobj_frame
+wobj_redraw_contents:
+        call    wobj_paint_all
+        pop     es
+        pop     di
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; BX = the offset in CS of the saved screen of window object SI.
+wobj_saved:
+        push    ax
+        mov     ax,word ptr cs:wobj_size[si]
+        mul     ah
+        shl     ax,1
+        add     ax,word ptr cs:wobj_buf[si]
+        add     ax,offset wobj_pool
+        mov     bx,ax
+        pop     ax
+        ret
+
+; The screen in its drawn rectangle into the saved screen (AL = 0) or back
+; from it (AL = 1).
+wobj_save_cells:
+        xor     al,al
+wobj_cells:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        push    es
+        call    wobj_saved
+        mov     dx,word ptr cs:wobj_drawn[si]
+        mov     cx,word ptr cs:wobj_dsize[si]
+wobj_cells_row:
+        push    cx
+        push    dx
+wobj_cells_col:
+        push    di
+        call    wobj_screen
+        jc      short wobj_cells_skip
+        or      al,al
+        jnz     short wobj_cells_back
+        push    ax
+        mov     ax,word ptr es:[di]
+        mov     word ptr cs:[bx],ax
+        pop     ax
+        jmp     short wobj_cells_skip
+wobj_cells_back:
+        push    ax
+        mov     ax,word ptr cs:[bx]
+        mov     word ptr es:[di],ax
+        pop     ax
+wobj_cells_skip:
+        pop     di
+        add     bx,2
+        inc     dl
+        dec     cl
+        jnz     short wobj_cells_col
+        pop     dx
+        pop     cx
+        inc     dh
+        dec     ch
+        jnz     short wobj_cells_row
+        pop     es
+        pop     di
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; Window object SI off the screen (the saved screen back), if drawn.
+wobj_undraw:
+        test    word ptr cs:wobj_flags[si],WF_DRAWN
+        jz      short wobj_undraw_ret
+        push    ax
+        mov     al,1
+        call    wobj_cells
+        pop     ax
+        and     word ptr cs:wobj_flags[si],not WF_DRAWN
+wobj_undraw_ret:
+        ret
+
+; The frame of window object SI around its drawn rectangle.
+wobj_frame:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        push    es
+        mov     dx,word ptr cs:wobj_drawn[si]
+        mov     cx,word ptr cs:wobj_dsize[si]
+        mov     word ptr cs:wobj_fchars,offset wobj_single
+        test    word ptr cs:wobj_flags[si],WF_TOP
+        jz      short wobj_frame_style
+        mov     word ptr cs:wobj_fchars,offset wobj_double
+wobj_frame_style:
+        mov     al,0                  ; the top:  the corner, the title, lines
+        call    wobj_frame_char
+        call    wobj_frame_cell
+        mov     bx,si                 ; the title's characters
+        shl     bx,1
+        shl     bx,1
+        shl     bx,1
+        shl     bx,1
+        add     bx,offset wobj_title
+        push    cx
+        mov     ch,byte ptr cs:wobj_tlen[si]
+        sub     cl,2
+wobj_frame_top:
+        inc     dl
+        mov     al,1
+        call    wobj_frame_char
+        or      ch,ch
+        jz      short wobj_frame_top_line
+        mov     al,byte ptr cs:[bx]
+        inc     bx
+        dec     ch
+wobj_frame_top_line:
+        call    wobj_frame_cell
+        dec     cl
+        jnz     short wobj_frame_top
+        pop     cx
+        inc     dl
+        mov     al,2
+        call    wobj_frame_char
+        call    wobj_frame_cell
+        mov     bl,ch                 ; the sides
+        sub     bl,2
+wobj_frame_side:
+        inc     dh
+        mov     dl,byte ptr cs:wobj_drawn[si]
+        mov     al,3
+        call    wobj_frame_char
+        call    wobj_frame_cell
+        add     dl,cl
+        dec     dl
+        call    wobj_frame_cell
+        dec     bl
+        jnz     short wobj_frame_side
+        inc     dh                    ; the bottom
+        mov     dl,byte ptr cs:wobj_drawn[si]
+        mov     al,4
+        call    wobj_frame_char
+        call    wobj_frame_cell
+        mov     bl,cl
+        sub     bl,2
+        mov     al,1
+        call    wobj_frame_char
+wobj_frame_bottom:
+        inc     dl
+        call    wobj_frame_cell
+        dec     bl
+        jnz     short wobj_frame_bottom
+        inc     dl
+        mov     al,5
+        call    wobj_frame_char
+        call    wobj_frame_cell
+        pop     es
+        pop     di
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+; AX = the frame's character AL (0-5 of wobj_fchars) in 07h.
+wobj_frame_char:
+        push    bx
+        mov     bx,word ptr cs:wobj_fchars
+        xlat    byte ptr cs:[bx]
+        mov     ah,07h
+        pop     bx
+        ret
+wobj_frame_cell:
+        push    di
+        push    es
+        call    wobj_screen
+        jc      short wobj_frame_cell_off
+        mov     word ptr es:[di],ax
+wobj_frame_cell_off:
+        pop     es
+        pop     di
+        ret
+
+; During a field READ on the target window object (wobj_hwcursor):  the
+; hardware cursor at its cursor on the screen.
+wobj_show_cursor:
+        cmp     byte ptr cs:wobj_hwcursor,0
+        je      short wobj_show_cursor_ret
+        push    ax
+        push    bx
+        push    dx
+        push    si
+        call    wobj_target
+        mov     dx,word ptr cs:wobj_cursor[si]
+        add     dx,word ptr cs:wobj_pos[si]
+        mov     ah,02h
+        mov     bh,0
+        int     10h
+        pop     si
+        pop     dx
+        pop     bx
+        pop     ax
+wobj_show_cursor_ret:
+        ret
+
+; SI = the target window object's index.
+wobj_target:
+        mov     si,word ptr cs:wtarget
+        sub     si,2
+        ret
+
+; AL in attribute AH at the target's cursor, the cursor on; past the end
+; of a row it stays there (column = width), the next character goes to
+; the next row (at the bottom:  the contents up, blanks in AH below), as
+; DESQview's.
+wobj_put:
+        push    dx
+        push    di
+        push    si
+        call    wobj_target
+        mov     dx,word ptr cs:wobj_cursor[si]
+        cmp     dl,byte ptr cs:wobj_size[si]
+        jb      short wobj_put_cell
+        xor     dl,dl
+        call    wobj_newline
+wobj_put_cell:
+        call    wobj_cell
+        mov     word ptr cs:[di],ax
+        call    wobj_paint_cell
+        inc     dl
+        mov     word ptr cs:wobj_cursor[si],dx
+        pop     si
+        pop     di
+        pop     dx
+        ret
+
+; DH one row on (at the bottom:  the contents up, blanks in AH below).
+wobj_newline:
+        inc     dh
+        cmp     dh,byte ptr cs:wobj_size[si+1]
+        jb      short wobj_newline_ret
+        dec     dh
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        push    es
+        push    ds
+        push    ax                    ; (AH:  the blanks' attribute)
+        xor     dx,dx
+        call    wobj_cell             ; DI = row 0
+        mov     ax,word ptr cs:wobj_size[si]
+        mov     bl,al
+        xor     bh,bh                 ; BX = a row's cells
+        mov     al,ah
+        dec     al
+        mul     bl
+        mov     cx,ax                 ; the cells of rows 1 ..
+        push    si
+        mov     si,bx
+        shl     si,1
+        add     si,di
+        push    cs
+        pop     ds
+        push    cs
+        pop     es
+        cld
+        rep     movsw
+        pop     si
+        pop     ax
+        mov     al,' '
+        mov     cx,bx
+        rep     stosw                 ; the last row blank
+        pop     ds
+        pop     es
+        pop     di
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        call    wobj_paint_all
+wobj_newline_ret:
+        ret
+
+; Teletype output to the target window object:  CR, LF, BS act, BEL is
+; ignored, the rest in the output colour.
+wobj_tty:
+        push    dx
+        push    si
+        call    wobj_target
+        mov     dx,word ptr cs:wobj_cursor[si]
+        cmp     al,0Dh
+        jne     short wobj_tty_not_cr
+        xor     dl,dl
+        jmp     short wobj_tty_cursor
+wobj_tty_not_cr:
+        cmp     al,0Ah
+        jne     short wobj_tty_not_lf
+        push    ax
+        call    window_attr
+        call    wobj_newline
+        pop     ax
+        jmp     short wobj_tty_cursor
+wobj_tty_not_lf:
+        cmp     al,08h
+        jne     short wobj_tty_not_bs
+        or      dl,dl
+        jz      short wobj_tty_cursor
+        dec     dl
+        jmp     short wobj_tty_cursor
+wobj_tty_not_bs:
+        cmp     al,07h
+        je      short wobj_tty_ret
+        push    ax
+        call    window_attr
+        call    wobj_put
+        pop     ax
+        jmp     short wobj_tty_ret
+wobj_tty_cursor:
+        mov     word ptr cs:wobj_cursor[si],dx
+wobj_tty_ret:
+        pop     si
+        pop     dx
+        ret
+
+; The field manager's cells at the cursor of the target (BH = the page for
+; the task's window):  wcell_read AL character, AH attribute; wcell_char
+; AL (the attribute kept); wcell_charattr AL in attribute BL.
+wcell_read:
+        cmp     word ptr cs:wtarget,0
+        jne     short wcell_read_obj
+        mov     ah,08h
+        int     10h
+        ret
+wcell_read_obj:
+        push    dx
+        push    di
+        push    si
+        call    wobj_target
+        mov     dx,word ptr cs:wobj_cursor[si]
+        call    wobj_cell
+        mov     ax,word ptr cs:[di]
+        pop     si
+        pop     di
+        pop     dx
+        ret
+wcell_char:
+        cmp     word ptr cs:wtarget,0
+        jne     short wcell_char_obj
+        push    ax
+        mov     ah,0Ah
+        int     10h
+        pop     ax
+        ret
+wcell_char_obj:
+        push    dx
+        push    di
+        push    si
+        call    wobj_target
+        mov     dx,word ptr cs:wobj_cursor[si]
+        call    wobj_cell
+        mov     byte ptr cs:[di],al
+        call    wobj_paint_cell
+        pop     si
+        pop     di
+        pop     dx
+        ret
+wcell_charattr:
+        cmp     word ptr cs:wtarget,0
+        jne     short wcell_charattr_obj
+        push    ax
+        mov     ah,09h
+        int     10h
+        pop     ax
+        ret
+wcell_charattr_obj:
+        push    dx
+        push    di
+        push    si
+        call    wobj_target
+        mov     dx,word ptr cs:wobj_cursor[si]
+        call    wobj_cell
+        mov     byte ptr cs:[di],al
+        mov     byte ptr cs:[di+1],bl
+        call    wobj_paint_cell
+        pop     si
+        pop     di
+        pop     dx
         ret
 
 ; A query stream (type 01h) at SI up to DI, as DESQview's (RBIL table
@@ -3450,6 +5134,55 @@ window_query_pair_screen:
 window_query_pair_ret:
         ret
 
+; LOCK (BH=14h) of a mailbox (BL=00h; 02h and 03h come here as 00h):
+; exclusive access, as TopView's:  the caller's again and again (each
+; needs a CLOSE), another task's waits (PAUSE) until all its CLOSEs.
+int15_message_lock:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    dx
+        push    si
+        cmp     bl,0
+        jne     short lock_done
+        cmp     word ptr ss:[bp+10],0
+        jne     short lock_pop
+        mov     ax,word ptr ss:[bp+12]
+        call    mailbox_validate
+        jc      short lock_pop
+        call    caller_tag
+        xor     ah,ah
+        mov     dx,ax
+lock_try:
+        cmp     word ptr cs:mailbox_lock_count[si],0
+        je      short lock_take
+        cmp     word ptr cs:mailbox_lock_owner[si],dx
+        je      short lock_take
+        cmp     byte ptr cs:core_running,0 ; (alone:  no other task)
+        je      short lock_take
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        jmp     short lock_try
+lock_take:
+        mov     word ptr cs:mailbox_lock_owner[si],dx
+        inc     word ptr cs:mailbox_lock_count[si]
+lock_pop:
+        pop     si
+        pop     dx
+        pop     ax
+        call    message_shift4
+        pop     bp
+        add     sp,4
+        jmp     int15_handled
+lock_done:
+        pop     si
+        pop     dx
+        pop     ax
+        pop     bp
+        jmp     int15_handled
+
 ; SUBFROM queues the caller's far pointer rather than copying its bytes. The
 ; producer must keep that storage valid until the record is read or erased.
 mailbox_ref_keyboard:                 ; SUBFROM of a keyboard / pointer:
@@ -3460,6 +5193,14 @@ mailbox_ref_keyboard:                 ; SUBFROM of a keyboard / pointer:
         and     word ptr cs:pointer_flags[si],ax
         jmp     short mailbox_ref_bits_done
 mailbox_ref_not_pointer:
+        call    kobj_validate
+        jc      short mailbox_ref_not_kobj
+        mov     ax,word ptr ss:[bp+14]
+        not     ax
+        and     word ptr cs:kobj_flags[si],ax
+        jmp     short mailbox_ref_bits_done
+mailbox_ref_not_kobj:
+        mov     ax,word ptr ss:[bp+12]
         call    keyboard_validate
         jc      short mailbox_ref_done
         mov     ax,word ptr ss:[bp+14]
@@ -3508,6 +5249,29 @@ int15_message_erase:
         cmp     word ptr ss:[bp+10],0
         jne     short message_erase_done
         mov     ax,word ptr ss:[bp+12]
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short message_erase_not_own
+        call    window_clear_bios     ; a window (DESQview 2.80):  blank,
+        push    bx                    ; the cursor at its top left
+        push    dx
+        mov     bh,byte ptr cs:window_page
+        xor     dx,dx
+        call    window_cursor_set
+        pop     dx
+        pop     bx
+        jmp     short message_erase_done
+message_erase_not_own:
+        call    wobj_validate
+        jc      short message_erase_not_wobj
+        call    wobj_enter
+        call    wobj_clear
+        push    dx
+        xor     dx,dx
+        call    window_cursor_set
+        pop     dx
+        call    wobj_leave
+        jmp     short message_erase_done
+message_erase_not_wobj:
         call    timer_validate
         jc      short message_erase_mailbox
         mov     word ptr cs:timer_state[si],0
@@ -4635,7 +6399,7 @@ mailbox_add_value_room:
         jne     mailbox_add_value_done
         mov     cx,word ptr ss:[bp+18]
         cmp     cx,MAILBOX_MESSAGE_SIZE
-        ja      short mailbox_add_value_done
+        ja      mailbox_add_value_done
         jcxz    short mailbox_add_pointer_ok
         cmp     word ptr ss:[bp+16],0
         je      short mailbox_add_value_done
@@ -5101,8 +6865,6 @@ mailbox_message:
         je      short mailbox_message_no
         cmp     bh,10h
         je      short mailbox_message_no
-        cmp     bh,14h
-        je      short mailbox_message_no
         cmp     bh,16h
         ja      short mailbox_message_no
         clc
@@ -5255,9 +7017,11 @@ objectq_read_pointer:
 objectq_read_pointer_next:
         add     si,2
         loop    objectq_read_pointer
-        mov     ah,1                  ; a key
-        int     16h
-        jz      short objectq_read_pause
+        mov     ah,1                  ; a key:  for the keyboard object
+        int     16h                   ; of the task's window on top (else
+        jz      short objectq_read_pause ; one opened to a window object),
+        call    kobj_focus            ; else the task's keyboard
+        jnc     short objectq_read_found
         mov     ax,dx
         call    keyboard_of
         jmp     short objectq_read_found
@@ -5395,6 +7159,74 @@ pointer_read_len:
 ; (AX=05h, left before right), with bit 2 a release (AX=06h), without bit
 ; 0 a move to another cell (AX=03h) become its message.  Cells are pixels
 ; / 8; the window is the screen.
+; CF clear:  a mouse driver (INT 33h not null and not the BIOS's IRET).
+mouse_driver:
+        push    ax
+        push    bx
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        les     bx,dword ptr es:[33h*4]
+        mov     ax,es
+        or      ax,bx
+        jz      short mouse_driver_no
+        cmp     byte ptr es:[bx],0CFh
+        je      short mouse_driver_no
+        clc
+        jmp     short mouse_driver_ret
+mouse_driver_no:
+        stc
+mouse_driver_ret:
+        pop     es
+        pop     bx
+        pop     ax
+        ret
+
+; WRITE (BL=00h) to a pointer object:  its handle, the column, the row
+; (DWORDs, top first):  the mouse pointer there, relative to the window it
+; is opened to (a window object's contents; else the screen); 12 bytes
+; popped.
+int15_message_pointer_write:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        call    mouse_driver
+        jc      short pointer_write_done
+        mov     ax,word ptr ss:[bp+12]
+        call    pointer_validate
+        jc      short pointer_write_done
+        mov     cx,word ptr ss:[bp+14] ; column, row
+        mov     dx,word ptr ss:[bp+18]
+        mov     si,word ptr cs:pointer_window[si]
+        or      si,si
+        jz      short pointer_write_cells
+        sub     si,2
+        add     cl,byte ptr cs:wobj_pos[si]
+        add     dl,byte ptr cs:wobj_pos[si+1]
+pointer_write_cells:
+        xor     ch,ch                 ; cells to pixels (8 x 8)
+        xor     dh,dh
+        shl     cx,1
+        shl     cx,1
+        shl     cx,1
+        shl     dx,1
+        shl     dx,1
+        shl     dx,1
+        mov     ax,4
+        int     33h
+pointer_write_done:
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        call    message_shift12
+        pop     bp
+        add     sp,12
+        jmp     int15_handled
+
 pointer_poll:
         push    ax
         push    bx
@@ -5403,11 +7235,8 @@ pointer_poll:
         push    si
         push    di
         push    es
-        xor     ax,ax                 ; a driver?
-        mov     es,ax
-        mov     ax,word ptr es:[33h*4]
-        or      ax,word ptr es:[33h*4+2]
-        jnz     short pointer_poll_driver
+        call    mouse_driver          ; a driver?
+        jnc     short pointer_poll_driver
         jmp     pointer_poll_ret
 pointer_poll_driver:
         call    caller_tag
@@ -5632,6 +7461,7 @@ task_mailbox_new:
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_lock_count[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         call    mailbox_clear_queue
 task_mailbox_done:
@@ -5701,6 +7531,7 @@ mailbox_release:
         mov     word ptr cs:mailbox_status[si],0
         mov     word ptr cs:mailbox_sender[si],0
         mov     word ptr cs:mailbox_flags[si],0
+        mov     word ptr cs:mailbox_lock_count[si],0
         mov     word ptr cs:mailbox_name_length[si],0
         jmp     mailbox_clear_queue
 
@@ -5792,6 +7623,191 @@ initialize_timer_loop:
         pop     bx
         pop     ax
         ret
+
+; The window objects (type 00h, as the tasks' windows).
+initialize_window_objects:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        mov     bx,offset wobj_objects
+        xor     si,si
+        mov     cx,WOBJ_COUNT
+initialize_wobj_loop:
+        mov     ax,bx
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        mov     dx,cs
+        add     ax,dx
+        mov     word ptr wobj_handle_segments[si],ax
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],0
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        add     bx,32
+        add     si,2
+        loop    initialize_wobj_loop
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; The keyboard objects of NEW 0Ah (the tasks' own:  keyboard_objects).
+initialize_keyboard_objects2:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        mov     bx,offset kobj_objects
+        xor     si,si
+        mov     cx,KOBJ_COUNT
+initialize_kobj_loop:
+        mov     ax,bx
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        mov     dx,cs
+        add     ax,dx
+        mov     word ptr kobj_handle_segments[si],ax
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Eh],ax
+        add     bx,32
+        add     si,2
+        loop    initialize_kobj_loop
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; AX handle:  SI = its keyboard object's index, CF:  none.
+kobj_validate:
+        push    cx
+        xor     si,si
+        mov     cx,KOBJ_COUNT
+kobj_validate_scan:
+        cmp     ax,word ptr cs:kobj_handle_segments[si]
+        jne     short kobj_validate_next
+        cmp     word ptr cs:kobj_used[si],1
+        jne     short kobj_validate_no
+        clc
+        jmp     short kobj_validate_ret
+kobj_validate_next:
+        add     si,2
+        loop    kobj_validate_scan
+kobj_validate_no:
+        stc
+kobj_validate_ret:
+        pop     cx
+        ret
+
+; AX = the keyboard object of task DX (its tag) that gets the keys:  the
+; one opened to its window object on top, else one opened to a window
+; object; CF:  none (the task's keyboard).
+kobj_focus:
+        push    bx
+        push    cx
+        push    si
+        mov     bx,WF_TOP
+kobj_focus_pass:
+        xor     si,si
+        mov     cx,KOBJ_COUNT
+kobj_focus_scan:
+        cmp     word ptr cs:kobj_used[si],1
+        jne     short kobj_focus_next
+        cmp     word ptr cs:kobj_owner[si],dx
+        jne     short kobj_focus_next
+        mov     ax,word ptr cs:kobj_window[si]
+        or      ax,ax
+        jz      short kobj_focus_next
+        push    si
+        mov     si,ax
+        mov     ax,word ptr cs:wobj_flags[si-2]
+        pop     si
+        and     ax,bx
+        cmp     ax,bx
+        jne     short kobj_focus_next
+        mov     ax,word ptr cs:kobj_handle_segments[si]
+        clc
+        jmp     short kobj_focus_ret
+kobj_focus_next:
+        add     si,2
+        loop    kobj_focus_scan
+        or      bx,bx                 ; then without the top
+        mov     bx,0
+        jnz     short kobj_focus_pass
+        stc
+kobj_focus_ret:
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+
+; READ of a keyboard object:  in field mode, opened to a window object
+; with a field table, the field manager on that window; else keystrokes.
+int15_message_kobj_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        mov     ax,word ptr ss:[bp+12]
+        call    kobj_validate
+        jc      short kobj_read_keys
+        test    byte ptr cs:kobj_flags[si],1
+        jz      short kobj_read_keys
+        mov     ax,word ptr cs:kobj_window[si]
+        or      ax,ax
+        jz      short kobj_read_task
+        mov     si,ax
+        sub     si,2
+        cmp     word ptr cs:wobj_used[si],1
+        jne     short kobj_read_keys
+        call    wobj_enter
+        cmp     word ptr cs:field_header+2,0
+        je      short kobj_read_none
+        push    bx                    ; the hardware cursor in the window
+        push    cx                    ; meanwhile, the task's kept
+        push    dx
+        mov     ah,03h
+        mov     bh,0
+        int     10h
+        mov     word ptr cs:wobj_task_cursor,dx
+        mov     byte ptr cs:wobj_hwcursor,1
+        call    wobj_show_cursor
+        call    field_read
+        mov     byte ptr cs:wobj_hwcursor,0
+        mov     dx,word ptr cs:wobj_task_cursor
+        mov     ah,02h
+        mov     bh,0
+        int     10h
+        pop     dx
+        pop     cx
+        pop     bx
+        call    wobj_leave
+        pop     si
+        pop     ax
+        jmp     message_expand4
+kobj_read_none:
+        call    wobj_leave
+kobj_read_keys:
+        pop     si
+        jmp     keyboard_read_wait
+kobj_read_task:
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_keyboard_read
 
 ; The pointer objects (type 0Fh), as the timers'.
 initialize_pointer_objects:
@@ -6008,7 +8024,7 @@ int2f_handler:
         cmp     ax,MUX_INFO
         je      short int2f_info
         cmp     ax,MUX_RESET
-        je      short int2f_reset
+        je      int2f_reset
         cmp     ax,MUX_TASK_INFO
         jne     short int2f_not_task_info
         jmp     int2f_task_info
@@ -6140,8 +8156,31 @@ task_end_mbx:
         call    mailbox_release
         pop     ax
 task_end_mbx_next:
+        cmp     word ptr cs:mailbox_lock_owner[si],ax ; its locks off
+        jne     short task_end_mbx_lock
+        mov     word ptr cs:mailbox_lock_count[si],0
+task_end_mbx_lock:
         add     si,2
         loop    task_end_mbx
+        xor     si,si                 ; its windows
+        mov     cx,WOBJ_COUNT
+task_end_wobj:
+        cmp     word ptr cs:wobj_owner[si],ax
+        jne     short task_end_wobj_next
+        mov     word ptr cs:wobj_used[si],0
+        mov     word ptr cs:wobj_flags[si],0
+task_end_wobj_next:
+        add     si,2
+        loop    task_end_wobj
+        xor     si,si                 ; its keyboards
+        mov     cx,KOBJ_COUNT
+task_end_kobj:
+        cmp     word ptr cs:kobj_owner[si],ax
+        jne     short task_end_kobj_next
+        mov     word ptr cs:kobj_used[si],0
+task_end_kobj_next:
+        add     si,2
+        loop    task_end_kobj
         xor     si,si                 ; its pointers
         mov     cx,POINTER_SLOT_COUNT
 task_end_ptr:
@@ -6261,7 +8300,57 @@ task_live      dw 2 dup(0)            ; bit N:  task N lives
 install_path   db 67 dup(0)
 alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
+wobj_used      dw WOBJ_COUNT dup(0)
+wobj_handle_segments dw WOBJ_COUNT dup(0)
+wobj_owner     dw WOBJ_COUNT dup(0)    ; caller_tag at its making
+wobj_pos       dw WOBJ_COUNT dup(0)    ; its contents' origin:  row, column
+wobj_size      dw WOBJ_COUNT dup(0)    ; rows, columns
+wobj_cursor    dw WOBJ_COUNT dup(0)    ; the logical cursor:  row, column
+wobj_color     dw WOBJ_COUNT dup(0)    ; the output colour (E2h)
+wobj_flags     dw WOBJ_COUNT dup(0)    ; WF_*
+wobj_buf       dw WOBJ_COUNT dup(0)    ; its block in wobj_pool:  the
+wobj_bytes     dw WOBJ_COUNT dup(0)    ;   contents, then the saved screen
+wobj_drawn     dw WOBJ_COUNT dup(0)    ; drawn:  the top left (frame incl.)
+wobj_dsize     dw WOBJ_COUNT dup(0)    ;   and the size
+wobj_tlen      dw WOBJ_COUNT dup(0)
+wobj_fields    dd WOBJ_COUNT dup(0)    ; its field table (FFh)
+wobj_title     db (WOBJ_COUNT * WOBJ_TITLE_SIZE) dup(0)
+wobj_objects   db (WOBJ_COUNT * 32) dup(0)
+wobj_pool      db WOBJ_POOL_SIZE dup(0)
+; DESQview 2.80's logical colours 1-16 (DAh; the attribute's low nibble,
+; 0 for 16), as its default colours show them
+wobj_logical   db 31h,71h,20h,12h,4Bh,50h,30h,60h
+               db 13h,17h,02h,21h,3Ch,05h,03h,06h
+wobj_single    db 0DAh,0C4h,0BFh,0B3h,0C0h,0D9h ; the frame's characters
+wobj_double    db 0C9h,0CDh,0BBh,0BAh,0C8h,0BCh ;   (on top:  double)
+wobj_esize     dw WOBJ_COUNT dup(7)    ; its field table's entry size
+wobj_fchars    dw 0                    ; wobj_single or wobj_double
+wobj_scratch   dw 0                    ; wobj_cell's outside
+wobj_hwcursor  db 0                    ; a field READ on a window object:
+wobj_task_cursor dw 0                  ;   the task's cursor meanwhile
+kobj_used      dw KOBJ_COUNT dup(0)
+kobj_handle_segments dw KOBJ_COUNT dup(0)
+kobj_owner     dw KOBJ_COUNT dup(0)
+kobj_flags     dw KOBJ_COUNT dup(0)    ; ADDTO/SUBFROM bits (0:  field mode)
+kobj_window    dw KOBJ_COUNT dup(0)    ; OPEN:  a window object's index + 2
+kobj_objects   db (KOBJ_COUNT * 32) dup(0)
+field_esize    db 7                    ; the field table's entry size and
+field_style    db 7                    ;   E5h's for the rest of the stream
+field_alt      db 0                    ; BDh:  the cursor keys in menus
+field_point_from db 0
+field_select_second db 0
+field_rc_char  db 0                    ; field_right_char's
+field_rc_left  dw 0
+field_rc_cell  dw 0
+wtarget_esize  db 7
+wobj_made      dw 0                    ; E6h made window object index + 2
+wtarget        dw 0                    ; the stream's window:  0 the task's,
+                                      ; else a window object's index + 2
+wtarget_color  db 0                   ; the task's window_color and
+wtarget_fields dd 0                   ;   field_header meanwhile
 pointer_used   dw POINTER_SLOT_COUNT dup(0)
+pointer_window dw POINTER_SLOT_COUNT dup(0) ; OPEN:  a window object's
+                                      ;   index + 2, else 0
 pointer_handle_segments dw POINTER_SLOT_COUNT dup(0)
 pointer_owner  dw POINTER_SLOT_COUNT dup(0) ; caller_tag at NEW
 pointer_open   dw POINTER_SLOT_COUNT dup(0) ; OPEN to a window
@@ -6290,6 +8379,8 @@ mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_sender dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_flags  dw MAILBOX_SLOT_COUNT dup(0)
+mailbox_lock_owner dw MAILBOX_SLOT_COUNT dup(0) ; LOCK:  the task's tag
+mailbox_lock_count dw MAILBOX_SLOT_COUNT dup(0) ;   and its LOCKs
 mailbox_name_length dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_count  dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_noted  dw MAILBOX_SLOT_COUNT dup(0) ; of them, given by the OBJECTQ

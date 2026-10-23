@@ -71,6 +71,8 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   wobj   a window object (tests/wobprb.asm)
+#   menu   demos/menu.asm:  a menu window with a keyboard object
 #   pointer a pointer object (tests/ptrprb.asm; needs CuteMouse)
 #   fieldops broadcast and scrolling of fields (tests/bcsprb.asm)
 #   mouse  a click on a select field (tests/mseprb.asm; needs CuteMouse)
@@ -98,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -108,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -444,6 +446,73 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+wobj)
+    echo "== wobj:  a window object (stream E6h), as under DV"
+    xp() { echo "mon:xp+/28xb+$((0xb8000 + $1 * 160 + $2 * 2))>$3"; }
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 25 C:\\WOBPRB.COM C:\\W1.TXT\r\n' > "$OUT/WB.BAT"
+    CMD="C:\\WB.BAT" END="wait:MVRUN:_done:120 sleep:3" run wobj 25 "" "$OUT/WB.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/WOBPRB.COM" \
+        "wait:wobprb_ready:60 sleep:1 $(xp 13 29 top) $(xp 14 29 hello) $(xp 17 29 colours) $(xp 18 29 bottom) sleep:4 $(xp 16 49 moved) $(xp 13 29 old) sleep:5 text:freed"
+    hx() { grep -o "0x[0-9a-f][0-9a-f]" "$OUT/wobj/$1.txt" | tr '\n' ' ' | sed 's/ $//'; }
+    w1=$(file wobj W1.TXT | tr '\n' '|')
+    echo "  W1: $w1"
+    l=$(printf '0xc4 0x07 %.0s' 1 2 3 4 5 6 7); b=$(printf '0x20 0x71 %.0s' 1 2 3 4 5 6 7 8)
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/wobj/end.txt'"
+    check "E6h:  a handle as the WRITE's result" "echo '$w1' | grep -q '|new [0-9A-F]*:0000 4|'"
+    check "frame, title, contents as DV:  top" "[ \"$(hx top)\" = '0xda 0x07 0x70 0x07 0x72 0x07 0x6f 0x07 0x62 0x07 0x65 0x07 ${l}0xbf 0x07' ]"
+    check "  hello in 1Fh, blanks 71h (physical colours)" "[ \"$(hx hello)\" = '0xb3 0x07 0x68 0x1f 0x65 0x1f 0x6c 0x1f 0x6c 0x1f 0x6f 0x1f $(printf '0x20 0x71 %.0s' 1 2 3 4 5 6 7)0xb3 0x07' ]"
+    check "  00h 1Fh 70h 7Fh as they are" "[ \"$(hx colours)\" = '0xb3 0x07 0x41 0x00 0x42 0x1f 0x43 0x70 0x44 0x7f ${b}0xb3 0x07' ]"
+    check "  bottom" "[ \"$(hx bottom)\" = '0xc0 0x07 $(printf '0xc4 0x07 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)0xd9 0x07' ]"
+    check "C2h 17,50 + E4h:  moved, the old place restored" "hx moved | grep -q '^0xda 0x07 0x70 0x07' && ! hx old | grep -q '^0xda'"
+    check "FREE:  the screen restored" "! grep -q probe '$OUT/wobj/freed.txt'"
+    ;;
+menu)
+    echo "== menu:  demos/MENU, a window and keyboard of its own, as under DV"
+    xr() { local s=""; for r in 8 9 10 11 12 13; do s="$s mon:xp+/28xb+$((0xb8000 + r * 160 + 64))>$1$r"; done; echo $s; }
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 25 C:\\MENU.COM C:\\M.TXT\r\n' > "$OUT/MN.BAT"
+    CMD="C:\\MN.BAT" END="wait:MVRUN:_done:120 sleep:3" run menu 25 "" "$OUT/MN.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/MENU.COM" \
+        "wait:green:60 sleep:2 $(xr a) key:down sleep:1 $(xr b) key:ret sleep:2 $(xr c) text:items key:b sleep:2 key:q sleep:3"
+    rows() { for r in 8 9 10 11 12 13; do grep -o "0x[0-9a-f][0-9a-f]" "$OUT/menu/$1$r.txt"; done | tr '\n' ' '; }
+    m=$(file menu M.TXT | tr '\n' '|')
+    echo "  M: $m"
+    # the screen bytes of DV 2.80 (rows 8-13, columns 32-45):  a double
+    # frame (on top), "colours", the pointed at field 13h, the others 31h
+    fr() { printf '0xc9 0x07 0x63 0x07 0x6f 0x07 0x6c 0x07 0x6f 0x07 0x75 0x07 0x72 0x07 0x73 0x07 %s0xbb 0x07 ' "$(printf '0xcd 0x07 %.0s' 1 2 3 4 5)"; }
+    ln() { local t="$1" i; printf '0xba 0x07 '; for ((i = 0; i < ${#t}; i++)); do printf '0x%02x 0x%s ' "'${t:i:1}" "$2"; done; printf '0xba 0x07 '; }
+    bot() { printf '0xc8 0x07 %s0xbc 0x07 ' "$(printf '0xcd 0x07 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)"; }
+    want() { echo "$(fr)$(ln ' red      R ' $1)$(ln ' green    G ' $2)$(ln ' blue     B ' 31)$(ln ' quit     Q ' 31)$(bot)" | sed 's/ $//'; }
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/menu/end.txt'"
+    check "red pointed at (13h), a double frame, colours 31h" "[ \"$(rows a | sed 's/ $//')\" = \"$(want 13 31)\" ]"
+    check "Down:  green pointed at" "[ \"$(rows b | sed 's/ $//')\" = \"$(want 31 13)\" ]"
+    check "Enter:  green stays pointed at" "[ \"$(rows c | sed 's/ $//')\" = \"$(want 31 13)\" ]"
+    check "the records as DV's:  02/03/04, 'Y'" "[ '$m' = '02 04 02010059|03 04 03010059|04 04 04010059|' ]"
+    check "Enter:  item 2 chosen in the own window, at its start" "grep -q '^item 2 chosen' '$OUT/menu/items.txt'"
+    ;;
+countdn)
+    echo "== countdn:  demos/COUNTDN, fields + timer + OBJECTQ (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\COUNTDN.COM\r\n' > "$OUT/CD.BAT"
+    CMD="C:\\CD.BAT" END="wait:MVRUN:_done:120 sleep:3" run countdn 60 "" "$OUT/CD.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/COUNTDN.COM" \
+        "wait:countdown:60 sleep:3 text:c0 type:3 sleep:1 key:ret sleep:1.5 text:c1 sleep:5 text:c2 key:esc"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/countdn/end.txt'"
+    check "the window, the seconds' field empty" "grep -q 'Seconds:  \\[  \\]' '$OUT/countdn/c0.txt' && grep -q 'Left:  000' '$OUT/countdn/c0.txt'"
+    check "3 from the right, Enter:  002 after 1.5 s" "grep -q 'Seconds:  \\[ 3\\]' '$OUT/countdn/c1.txt' && grep -q 'Left:  002' '$OUT/countdn/c1.txt'"
+    check "000 and 'time is up' in the own window" "grep -q 'Left:  000' '$OUT/countdn/c2.txt' && grep -q '^time is up' '$OUT/countdn/c2.txt'"
+    ;;
+demos)
+    echo "== demos:  demos/MOUSE then demos/HELLO in one task (as under DV)"
+    CTM=${CTMOUSE:-$HOME/mars/scratch-386max/ctm/bin/ctmouse.exe}
+    if [ ! -f "$CTM" ]; then echo "  SKIP  no CuteMouse (CTMOUSE=path of ctmouse.exe)"; continue; fi
+    cp "$CTM" "$OUT/CTMOUSE.EXE"
+    printf 'C:\\MOUSE.COM\r\nC:\\HELLO.COM\r\nPAUSE\r\n' > "$OUT/D.BAT"
+    printf 'C:\\CTMOUSE.EXE\r\nC:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\COMMAND.COM /C C:\\D.BAT\r\n' > "$OUT/DM.BAT"
+    mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
+    CMD="C:\\DM.BAT" END="wait:MVRUN:_done:120 sleep:3" run demos 60 "" "$OUT/DM.BAT $OUT/D.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MOUSE.COM $ROOT/build/HELLO.COM" \
+        "wait:right_button:60 sleep:3 text:m0 $(mv -100 -100 10) $(mv 4 0 23) $(mv 0 8 4) $(mv 0 4 1) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0 sleep:2 text:m1 mon:mouse_button+2 sleep:0.5 mon:mouse_button+0 wait:Hello_from:60 sleep:1 text:h key:ret"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/demos/end.txt'"
+    check "MOUSE:  the window erased, its text on top" "head -1 '$OUT/demos/m0.txt' | grep -q '^Move the mouse'"
+    check "  WRITE of the pointer:  a move to row 5, column 30" "[ \"\$(sed -n 6p '$OUT/demos/m0.txt' | cut -c31)\" = . ]"
+    check "  the left button marked where it was" "sed -n 5p '$OUT/demos/m1.txt' | grep -q L"
+    check "HELLO:  its line through the API" "grep -q '^Hello from a DESQview API program.' '$OUT/demos/h.txt'"
     ;;
 pointer)
     echo "== pointer:  a pointer object (as under DV)"

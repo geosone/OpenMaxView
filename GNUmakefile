@@ -23,7 +23,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MVRUN.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
-	$(BUILD)/MAXVDVP.EXE \
+	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM \
 	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES))
@@ -109,6 +109,36 @@ $(BUILD)/numprb.obj: tests/numprb.asm | $(BUILD)
 
 $(BUILD)/NUMPRB.COM: $(BUILD)/numprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name NUMPRB.COM option quiet option map=NUMPRB.MAP file numprb.obj
+
+$(BUILD)/menu.obj: demos/menu.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/MENU.COM: $(BUILD)/menu.obj
+	cd $(BUILD) && $(JWLINK) format dos com name MENU.COM option quiet option map=MENU.MAP file menu.obj
+
+$(BUILD)/hello.obj: demos/hello.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/HELLO.COM: $(BUILD)/hello.obj
+	cd $(BUILD) && $(JWLINK) format dos com name HELLO.COM option quiet option map=HELLO.MAP file hello.obj
+
+$(BUILD)/mouse.obj: demos/mouse.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/MOUSE.COM: $(BUILD)/mouse.obj
+	cd $(BUILD) && $(JWLINK) format dos com name MOUSE.COM option quiet option map=MOUSE.MAP file mouse.obj
+
+$(BUILD)/countdn.obj: demos/countdn.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/COUNTDN.COM: $(BUILD)/countdn.obj
+	cd $(BUILD) && $(JWLINK) format dos com name COUNTDN.COM option quiet option map=COUNTDN.MAP file countdn.obj
+
+$(BUILD)/wobprb.obj: tests/wobprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/WOBPRB.COM: $(BUILD)/wobprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name WOBPRB.COM option quiet option map=WOBPRB.MAP file wobprb.obj
 
 $(BUILD)/ptrprb.obj: tests/ptrprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
