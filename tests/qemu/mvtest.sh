@@ -71,6 +71,7 @@
 #   wstream a window stream in WRITE (tests/strprb.asm)
 #   wquery a query stream in WRITE (tests/qryprb.asm)
 #   crtc  a background task's CRTC/DAC OUTs trapped (tests/crtprb.asm)
+#   pointer a pointer object (tests/ptrprb.asm; needs CuteMouse)
 #   fieldops broadcast and scrolling of fields (tests/bcsprb.asm)
 #   mouse  a click on a select field (tests/mseprb.asm; needs CuteMouse)
 #   records numbered field records (tests/numprb.asm)
@@ -97,7 +98,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -107,7 +108,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -443,6 +444,21 @@ crtc)
     check "the foreground's cursor stays on the CRTC" "echo '$f1' | grep -q '^cur 0668|'"
     check "the foreground's DAC stays" "echo '$f1' | grep -q '|dac same|'"
     check "the background task reads its own cursor back" "[ '$b2' = 'rb 0005|bios 0 5|' ]"
+    ;;
+pointer)
+    echo "== pointer:  a pointer object (as under DV)"
+    CTM=${CTMOUSE:-$HOME/mars/scratch-386max/ctm/bin/ctmouse.exe}
+    if [ ! -f "$CTM" ]; then echo "  SKIP  no CuteMouse (CTMOUSE=path of ctmouse.exe)"; continue; fi
+    cp "$CTM" "$OUT/CTMOUSE.EXE"
+    printf 'C:\\CTMOUSE.EXE\r\nC:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\PTRPRB.COM C:\\P1.TXT ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/P.BAT"
+    mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
+    CMD="C:\\P.BAT" END="wait:MVRUN:_done:120 sleep:3" run pointer 60 "" "$OUT/P.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/PTRPRB.COM $TICK" \
+        "wait:pptrprb_ready:60 sleep:3 $(mv -100 -100 10) $(mv 4 0 23) $(mv 0 8 4) $(mv 0 4 1) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0 sleep:2 $(mv 4 0 8) $(mv 0 8 1) sleep:1 mon:mouse_button+2 sleep:0.5 mon:mouse_button+0"
+    p1=$(file pointer P1.TXT | tr '\n' '|')
+    echo "  P1: $p1"
+    ph=$(echo "$p1" | sed -n 's/^ptr \([0-9A-F:]*\)|.*/\1/p')
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/pointer/end.txt'"
+    check "left at 4,11 then right at 5,15, through the OBJECTQ (as DV)" "echo '$p1' | grep -q '|q1 $ph|p1 5 4 11 01|q2 $ph|p2 5 5 15 02|'"
     ;;
 fieldops)
     echo "== fieldops:  broadcast F7h, scrolling F8h-FBh (as under DV)"

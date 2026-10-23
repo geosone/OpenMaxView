@@ -1216,6 +1216,19 @@ buf2scr endp
 
 ; DX = the new foreground task.  Its screen to the display, the old one's
 ; into its private page.  IF = 0, DS = DGROUP, on a shared stack.
+; MAXVTSR (INT 2Fh D70Ah):  the foreground task is DX (FFFFh:  none known),
+; its pointer objects take the mouse.
+fgtell  proc near
+        push    ax
+        push    bx
+        mov     bx,dx
+        mov     ax,0D70Ah
+        int     2Fh
+        pop     bx
+        pop     ax
+        ret
+fgtell  endp
+
 setfg   proc near
         pusha
         push    es
@@ -1272,6 +1285,7 @@ sfg_t1: mov     dx,[di].T_PT
 sfg_g1: mov     [di].T_HOLD,0
         pop     dx
         mov     cs:fg,dx
+        call    fgtell
         pop     dx
         call    setctx
         call    fgcursor
@@ -2731,6 +2745,10 @@ start_k proc near
         mov     ax,0D709h
         int     2Fh
         pop     bx
+        push    dx
+        mov     dx,cs:fg
+        call    fgtell
+        pop     dx
         push    bx              ; QPI 0Eh:  our cursor callbacks (a
         push    dx              ; background task's CRTC trapped, crtset)
         push    ds
@@ -2789,6 +2807,10 @@ stop_k proc near
         mov     ax,0D709h
         int     2Fh
         pop     bx
+        push    dx
+        mov     dx,0FFFFh
+        call    fgtell
+        pop     dx
         mov     ax,1C00h
         qpi
         xor     ax,ax

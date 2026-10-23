@@ -62,6 +62,7 @@
 ;   INT 2Fh AX=D707h                 per-task state block (for the core)
 ;                                    with the GETMEM pool
 ;   INT 2Fh AX=D708h, BX=task        a task ended:  free its objects
+;   INT 2Fh AX=D70Ah, BX=task        the foreground task (FFFFh:  none known)
 ;   INT 2Fh AX=D709h, BX=1/0         the multitasking core switches / no
 ;                                    longer:  READ of an empty mailbox waits
 
@@ -98,6 +99,9 @@ SECOND_LEVEL_COUNT equ 16
 SOUND_QUEUE_COUNT equ 32
 TASK_STACK_SIZE equ 512
 FIELD_BUFFER_SIZE equ 128
+POINTER_SLOT_COUNT equ 8
+POINTER_OBJECT_SIZE equ 32            ; its message at 10h (6 bytes)
+MUX_FOREGROUND equ 0D70Ah
 TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
 TASK_OBJECT_SIZE equ 32
 
@@ -132,6 +136,7 @@ install:
         mov     word ptr task_handle_segment,ax ; task 0's, the caller's
         mov     word ptr task_live,1
         call    initialize_timer_objects
+        call    initialize_pointer_objects
         call    initialize_mailbox_objects
 
         mov     ah,0Fh
@@ -1181,6 +1186,13 @@ message_read_gateway_not6:
         pop     bp
         jmp     int15_message_mailbox_read
 message_read_gateway_keyboard:
+        call    pointer_validate
+        jc      short message_read_gateway_not_pointer
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_pointer_read
+message_read_gateway_not_pointer:
         call    objectq_validate
         jnc     short message_read_gateway_objectq_own
         call    keyboard_validate
@@ -1244,11 +1256,15 @@ int15_message_ref_gateway:
         jne     short message_ref_gateway_chain
         mov     ax,word ptr ss:[bp+12]
         call    mailbox_validate
-        jc      short message_ref_gateway_chain
+        jc      short message_ref_gateway_bits
         pop     si
         pop     ax
         pop     bp
         jmp     int15_message_mailbox_ref
+message_ref_gateway_bits:
+        cmp     bh,0Bh                ; SUBFROM of a keyboard or pointer
+        jne     short message_ref_gateway_chain
+        jmp     mailbox_ref_keyboard
 message_ref_gateway_chain:
         pop     si
         pop     ax
@@ -1530,7 +1546,32 @@ int15_message_new:
         cmp     bl,0Bh                ; TIMER object class
         je      short message_new_timer
         cmp     bl,09h                ; MAILBOX object class
-        je      short message_new_mailbox
+        je      message_new_mailbox
+        cmp     bl,0Fh                ; POINTER object class
+        je      short message_new_pointer
+        jmp     message_new_done
+message_new_pointer:
+        xor     si,si
+        mov     cx,POINTER_SLOT_COUNT
+message_new_pointer_scan:
+        cmp     word ptr cs:pointer_used[si],0
+        je      short message_new_pointer_found
+        add     si,2
+        loop    message_new_pointer_scan
+        jmp     message_new_done
+message_new_pointer_found:
+        mov     word ptr cs:pointer_used[si],1
+        call    caller_tag
+        xor     ah,ah
+        mov     word ptr cs:pointer_owner[si],ax
+        xor     ax,ax
+        mov     word ptr cs:pointer_open[si],ax
+        mov     word ptr cs:pointer_flags[si],ax
+        mov     word ptr cs:pointer_count[si],ax
+        mov     word ptr cs:pointer_noted[si],ax
+        mov     word ptr cs:pointer_last[si],0FFFFh
+        mov     ax,word ptr cs:pointer_handle_segments[si]
+        mov     word ptr cs:message_result_ptr_seg,ax
         jmp     message_new_done
 message_new_timer:
         xor     si,si
@@ -1602,6 +1643,11 @@ int15_message_free:
         mov     word ptr cs:timer_state[si],0
         jmp     short message_free_done
 message_free_mailbox:
+        call    pointer_validate
+        jc      short message_free_not_pointer
+        mov     word ptr cs:pointer_used[si],0
+        jmp     short message_free_done
+message_free_not_pointer:
         call    mailbox_validate
         jc      short message_free_done
         call    mailbox_release
@@ -1717,8 +1763,23 @@ int15_message_timer_open_close:
         push    ax
         push    si
         cmp     word ptr ss:[bp+10],0
-        jne     short timer_open_close_done
+        jne     timer_open_close_done
         mov     ax,word ptr ss:[bp+12]
+        call    pointer_validate
+        jc      short timer_open_close_timer
+        mov     word ptr cs:pointer_count[si],0
+        mov     word ptr cs:pointer_noted[si],0
+        mov     word ptr cs:pointer_open[si],0
+        cmp     bh,0Ch                ; CLOSE:  the handle
+        jne     short timer_open_close_done
+        mov     word ptr cs:pointer_open[si],1 ; OPEN:  the window under
+        pop     si                    ; it too (any:  the screen is the
+        pop     ax                    ; window)
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
+timer_open_close_timer:
         call    timer_validate
         jc      short timer_open_close_mailbox
         mov     word ptr cs:timer_state[si],0
@@ -1829,6 +1890,12 @@ timer_add_mailbox:
         jne     short timer_add_done
         call    mailbox_validate
         jnc     short timer_add_mailbox_ok
+        call    pointer_validate      ; a pointer:  its bits
+        jc      short timer_add_not_pointer
+        mov     ax,word ptr ss:[bp+14]
+        or      word ptr cs:pointer_flags[si],ax
+        jmp     short timer_add_done
+timer_add_not_pointer:
         call    keyboard_validate     ; a keyboard:  its bits (field mode,
         jc      short timer_add_done  ; cursor, ..)
         mov     ax,word ptr ss:[bp+14]
@@ -3385,13 +3452,21 @@ window_query_pair_ret:
 
 ; SUBFROM queues the caller's far pointer rather than copying its bytes. The
 ; producer must keep that storage valid until the record is read or erased.
-mailbox_ref_keyboard:                 ; SUBFROM of a keyboard:  bits off
+mailbox_ref_keyboard:                 ; SUBFROM of a keyboard / pointer:
+        call    pointer_validate      ; bits off
+        jc      short mailbox_ref_not_pointer
+        mov     ax,word ptr ss:[bp+14]
+        not     ax
+        and     word ptr cs:pointer_flags[si],ax
+        jmp     short mailbox_ref_bits_done
+mailbox_ref_not_pointer:
         call    keyboard_validate
         jc      short mailbox_ref_done
-        and     word ptr ss:[bp+8],0FFFEh
         mov     ax,word ptr ss:[bp+14]
         not     ax
         and     word ptr cs:keyboard_flags,ax
+mailbox_ref_bits_done:
+        and     word ptr ss:[bp+8],0FFFEh
         pop     si
         pop     ax
         call    message_shift8
@@ -4482,6 +4557,26 @@ timer_validate_done:
         pop     bx
         ret
 
+pointer_validate:
+        push    cx
+        xor     si,si
+        mov     cx,POINTER_SLOT_COUNT
+pointer_validate_scan:
+        cmp     ax,word ptr cs:pointer_handle_segments[si]
+        jne     short pointer_validate_next
+        cmp     word ptr cs:pointer_used[si],1
+        jne     short pointer_validate_invalid
+        clc
+        jmp     short pointer_validate_done
+pointer_validate_next:
+        add     si,2
+        loop    pointer_validate_scan
+pointer_validate_invalid:
+        stc
+pointer_validate_done:
+        pop     cx
+        ret
+
 mailbox_validate:
         push    bx
         push    cx
@@ -5122,7 +5217,7 @@ objectq_read_timer:
         jne     short objectq_read_timer_next
         mov     word ptr cs:timer_noted[si],1
         mov     ax,word ptr cs:timer_handle_segments[si]
-        jmp     short objectq_read_found
+        jmp     objectq_read_found
 objectq_read_timer_next:
         add     si,2
         loop    objectq_read_timer
@@ -5142,6 +5237,24 @@ objectq_read_mailbox:
 objectq_read_mailbox_next:
         add     si,2
         loop    objectq_read_mailbox
+        call    pointer_poll          ; a pointer with a message
+        xor     si,si
+        mov     cx,POINTER_SLOT_COUNT
+objectq_read_pointer:
+        cmp     word ptr cs:pointer_used[si],0
+        je      short objectq_read_pointer_next
+        cmp     word ptr cs:pointer_owner[si],dx
+        jne     short objectq_read_pointer_next
+        cmp     word ptr cs:pointer_count[si],0
+        je      short objectq_read_pointer_next
+        cmp     word ptr cs:pointer_noted[si],0
+        jne     short objectq_read_pointer_next
+        mov     word ptr cs:pointer_noted[si],1
+        mov     ax,word ptr cs:pointer_handle_segments[si]
+        jmp     objectq_read_found
+objectq_read_pointer_next:
+        add     si,2
+        loop    objectq_read_pointer
         mov     ah,1                  ; a key
         int     16h
         jz      short objectq_read_pause
@@ -5236,6 +5349,204 @@ message_task_keyboard_none:
 ; READ of a keyboard (keystroke mode, as DESQview):  waits for a key (with
 ; PAUSE while the multitasking core runs) and leaves length 1 on top of the
 ; address of its character; a zero character's scan code is STATUS's.
+; READ of pointer SI:  waits (PAUSE) for its message and gives it,
+; DESQview's (RBIL table 00437):  word row, word column, byte status (01h
+; left / 02h right button, 80h pressed / 40h released in press-release
+; mode), with API level 2.00 on the byte field under it (6 bytes, else 5).
+int15_message_pointer_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    dx
+        push    si
+        mov     ax,word ptr ss:[bp+12]
+        call    pointer_validate
+pointer_read_wait:
+        cmp     word ptr cs:pointer_count[si],0
+        jne     short pointer_read_got
+        call    pointer_poll
+        cmp     word ptr cs:pointer_count[si],0
+        jne     short pointer_read_got
+        sti
+        mov     ax,1000h
+        int     15h
+        cli
+        jmp     short pointer_read_wait
+pointer_read_got:
+        mov     word ptr cs:pointer_count[si],0
+        mov     word ptr cs:pointer_noted[si],0
+        mov     ax,5
+        cmp     word ptr cs:api_level,0200h
+        jb      short pointer_read_len
+        inc     ax
+pointer_read_len:
+        mov     word ptr cs:message_result_len_lo,ax
+        mov     word ptr cs:message_result_len_hi,0
+        mov     word ptr cs:message_result_ptr_off,10h
+        mov     ax,word ptr cs:pointer_handle_segments[si]
+        mov     word ptr cs:message_result_ptr_seg,ax
+        pop     si
+        pop     dx
+        pop     ax
+        jmp     message_expand4
+
+; The mouse (INT 33h) for the calling task's first open pointer without a
+; waiting message, if the task is in the foreground (D70Ah):  a press
+; (AX=05h, left before right), with bit 2 a release (AX=06h), without bit
+; 0 a move to another cell (AX=03h) become its message.  Cells are pixels
+; / 8; the window is the screen.
+pointer_poll:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        xor     ax,ax                 ; a driver?
+        mov     es,ax
+        mov     ax,word ptr es:[33h*4]
+        or      ax,word ptr es:[33h*4+2]
+        jnz     short pointer_poll_driver
+        jmp     pointer_poll_ret
+pointer_poll_driver:
+        call    caller_tag
+        xor     ah,ah
+        mov     dx,ax
+        mov     ax,word ptr cs:foreground_task
+        cmp     ax,0FFFFh
+        je      short pointer_poll_fg
+        inc     ax                    ; (tag = number + 1)
+        cmp     ax,dx
+        je      short pointer_poll_fg
+        jmp     pointer_poll_ret
+pointer_poll_fg:
+        xor     si,si
+        mov     cx,POINTER_SLOT_COUNT
+pointer_poll_find:
+        cmp     word ptr cs:pointer_used[si],0
+        je      short pointer_poll_find_next
+        cmp     word ptr cs:pointer_owner[si],dx
+        jne     short pointer_poll_find_next
+        cmp     word ptr cs:pointer_open[si],0
+        je      short pointer_poll_find_next
+        cmp     word ptr cs:pointer_count[si],0
+        je      short pointer_poll_found
+        jmp     pointer_poll_ret      ; (one message at a time)
+pointer_poll_find_next:
+        add     si,2
+        loop    pointer_poll_find
+        jmp     pointer_poll_ret
+pointer_poll_found:
+        mov     di,1                  ; DI = the status
+pointer_poll_press:
+        mov     ax,5
+        lea     bx,[di-1]
+        int     33h
+        or      bx,bx
+        jnz     short pointer_poll_event_press
+        inc     di
+        cmp     di,2
+        jbe     short pointer_poll_press
+        test    word ptr cs:pointer_flags[si],04h ; releases too
+        jz      short pointer_poll_move
+        mov     di,1
+pointer_poll_release:
+        mov     ax,6
+        lea     bx,[di-1]
+        int     33h
+        or      bx,bx
+        jnz     short pointer_poll_event_release
+        inc     di
+        cmp     di,2
+        jbe     short pointer_poll_release
+pointer_poll_move:
+        test    word ptr cs:pointer_flags[si],01h ; buttons only
+        jnz     short pointer_poll_ret
+        mov     ax,3
+        int     33h
+        mov     di,bx
+        and     di,3
+        call    pointer_cell
+        cmp     ax,word ptr cs:pointer_last[si]
+        je      short pointer_poll_ret
+        jmp     short pointer_poll_store
+pointer_poll_event_release:
+        or      di,40h
+        jmp     short pointer_poll_event
+pointer_poll_event_press:
+        test    word ptr cs:pointer_flags[si],04h
+        jz      short pointer_poll_event
+        or      di,80h
+pointer_poll_event:
+        call    pointer_cell
+pointer_poll_store:
+        mov     word ptr cs:pointer_last[si],ax
+        push    ax
+        mov     ax,word ptr cs:pointer_handle_segments[si]
+        mov     es,ax
+        pop     ax
+        xor     bx,bx
+        mov     bl,ah
+        mov     word ptr es:[10h],bx  ; row
+        mov     bl,al
+        mov     word ptr es:[12h],bx  ; column
+        mov     bx,di
+        mov     byte ptr es:[14h],bl
+        mov     dx,ax                 ; the field under it
+        push    es
+        call    pointer_field
+        pop     es
+        mov     byte ptr es:[15h],al
+        mov     word ptr cs:pointer_count[si],1
+pointer_poll_ret:
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; AX = the cell (AH row, AL column) of the pixel position CX, DX.
+pointer_cell:
+        mov     ax,dx
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        mov     ah,al
+        push    cx
+        shr     cx,1
+        shr     cx,1
+        shr     cx,1
+        mov     al,cl
+        pop     cx
+        ret
+
+; AL = the number of the field of the task's table at cell DX (DH row, DL
+; column), 0:  none.
+pointer_field:
+        push    bx
+        push    cx
+        push    es
+        call    field_count
+        jc      short pointer_field_none
+        mov     al,1
+pointer_field_one:
+        call    field_entry
+        call    field_inside
+        jnc     short pointer_field_ret
+        inc     al
+        loop    pointer_field_one
+pointer_field_none:
+        xor     al,al
+pointer_field_ret:
+        pop     es
+        pop     cx
+        pop     bx
+        ret
+
 int15_message_keyboard_read:
         push    bp
         mov     bp,sp
@@ -5482,6 +5793,41 @@ initialize_timer_loop:
         pop     ax
         ret
 
+; The pointer objects (type 0Fh), as the timers'.
+initialize_pointer_objects:
+        push    ax
+        push    bx
+        push    cx
+        push    si
+        mov     bx,offset pointer_objects
+        xor     si,si
+        mov     cx,POINTER_SLOT_COUNT
+initialize_pointer_loop:
+        mov     ax,bx
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        push    dx
+        mov     dx,cs
+        add     ax,dx
+        pop     dx
+        mov     word ptr pointer_handle_segments[si],ax
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],0Fh
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        add     bx,POINTER_OBJECT_SIZE
+        add     si,2
+        loop    initialize_pointer_loop
+        pop     si
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; One task object per task of the multitasking core:  task N's handle is
 ; task_objects_base + 2 * N (32-byte objects), as DESQview has one per task.
 initialize_task_objects:
@@ -5683,6 +6029,13 @@ int2f_not_sound_info:
         jne     short int2f_not_task_end
         jmp     int2f_task_end
 int2f_not_task_end:
+        cmp     ax,MUX_FOREGROUND
+        jne     short int2f_not_foreground
+        mov     word ptr cs:foreground_task,bx
+        xor     ax,ax
+        popf
+        iret
+int2f_not_foreground:
         cmp     ax,MUX_CORE
         jne     short int2f_not_core
         mov     byte ptr cs:core_running,bl
@@ -5789,6 +6142,15 @@ task_end_mbx:
 task_end_mbx_next:
         add     si,2
         loop    task_end_mbx
+        xor     si,si                 ; its pointers
+        mov     cx,POINTER_SLOT_COUNT
+task_end_ptr:
+        cmp     word ptr cs:pointer_owner[si],ax
+        jne     short task_end_ptr_next
+        mov     word ptr cs:pointer_used[si],0
+task_end_ptr_next:
+        add     si,2
+        loop    task_end_ptr
         pop     si
         pop     dx
         pop     cx
@@ -5899,6 +6261,16 @@ task_live      dw 2 dup(0)            ; bit N:  task N lives
 install_path   db 67 dup(0)
 alloc_tag      db 1
 common_used    db COMMON_SLOT_COUNT dup(0)
+pointer_used   dw POINTER_SLOT_COUNT dup(0)
+pointer_handle_segments dw POINTER_SLOT_COUNT dup(0)
+pointer_owner  dw POINTER_SLOT_COUNT dup(0) ; caller_tag at NEW
+pointer_open   dw POINTER_SLOT_COUNT dup(0) ; OPEN to a window
+pointer_flags  dw POINTER_SLOT_COUNT dup(0) ; ADDTO/SUBFROM bits
+pointer_count  dw POINTER_SLOT_COUNT dup(0) ; 1:  a message waits
+pointer_noted  dw POINTER_SLOT_COUNT dup(0) ; 1:  given by the OBJECTQ
+pointer_last   dw POINTER_SLOT_COUNT dup(0) ; the last cell (movement)
+pointer_objects db (POINTER_SLOT_COUNT * POINTER_OBJECT_SIZE) dup(0)
+foreground_task dw 0FFFFh              ; the core's (D70Ah)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
 timer_handle_segments dw TIMER_SLOT_COUNT dup(0)
 timer_open     dw TIMER_SLOT_COUNT dup(0)
