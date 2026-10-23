@@ -61,6 +61,14 @@ int dvp_load(const char *path, dvp_info *info)
         checksum = (checksum + data[index]) & 0xff;
     if (checksum != data[1])
         return DVP_CHECKSUM;
+    return dvp_parse(data, length, info);
+}
+
+int dvp_parse(const unsigned char *data, size_t length, dvp_info *info)
+{
+    memset(info, 0, sizeof(*info));
+    if (length < DVP_BASE_SIZE)
+        return DVP_TOO_SHORT;
     if (!field_terminated(data + 0x24, 64) ||
         !field_terminated(data + 0x65, 64) ||
         !field_terminated(data + 0xa5, 64))
@@ -96,6 +104,7 @@ int dvp_load(const char *path, dvp_info *info)
         info->serial_ports = data[0x18a];
         info->flags4 = data[0x18b];
         info->protection = data[0x18c];
+        info->close_on_exit = data[0x17c] != 0;
     }
     return DVP_OK;
 }

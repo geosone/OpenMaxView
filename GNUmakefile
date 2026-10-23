@@ -23,7 +23,7 @@ DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
 all: $(BUILD)/MAXVTSR.COM $(BUILD)/MAXVIEW.EXE $(BUILD)/MVRUN.EXE $(BUILD)/MAXVAPP.EXE \
 	$(BUILD)/MAXVMEM.EXE $(BUILD)/MAXVSET.EXE $(BUILD)/MAXVAUTO.EXE \
 	$(BUILD)/MAXVFILE.EXE $(BUILD)/MAXVANSI.COM $(BUILD)/DVPROBE.EXE \
-	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM $(BUILD)/SERVE.COM $(BUILD)/ASK.COM $(BUILD)/WORMS.COM \
+	$(BUILD)/MAXVDVP.EXE $(BUILD)/MENU.COM $(BUILD)/HELLO.COM $(BUILD)/MOUSE.COM $(BUILD)/COUNTDN.COM $(BUILD)/SERVE.COM $(BUILD)/ASK.COM $(BUILD)/WORMS.COM $(BUILD)/LAUNCH.COM \
 	$(BUILD)/SETUP.EXE $(BUILD)/MAXVIEW.CFG \
 	$(BUILD)/MAXVSET.INI $(BUILD)/MAXVAUTO.DAT $(BUILD)/README.TXT \
 	$(BUILD)/LICENSE.TXT $(addprefix $(BUILD)/,$(DOCFILES))
@@ -64,21 +64,21 @@ $(BUILD)/mvui.obj: src/mvui.c include/mvui.h | $(BUILD)
 $(BUILD)/maxbackend.obj: kernel/maxbackend.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 
-$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/mvprocess.obj $(BUILD)/vmtask.obj $(BUILD)/vmbackend.obj $(BUILD)/maxbackend.obj $(BUILD)/mvhost.obj $(BUILD)/mvkern.obj
-	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,mvprocess.obj,vmtask.obj,vmbackend.obj,maxbackend.obj,mvhost.obj,mvkern.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+$(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/mvprocess.obj $(BUILD)/vmtask.obj $(BUILD)/vmbackend.obj $(BUILD)/maxbackend.obj $(BUILD)/mvhost.obj $(BUILD)/mvkern.obj $(BUILD)/dvp.obj
+	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,mvprocess.obj,vmtask.obj,vmbackend.obj,maxbackend.obj,mvhost.obj,mvkern.obj,dvp.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 MVDEBUG ?= 0
 $(BUILD)/mvkern.obj: kernel/mvkern.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -DMVDEBUG=$(MVDEBUG) -Fo$@ $<
 
-$(BUILD)/mvhost.obj: src/mvhost.c include/mvhost.h include/mvkern.h | $(BUILD)
+$(BUILD)/mvhost.obj: src/mvhost.c include/mvhost.h include/mvkern.h include/dvp.h include/catalog.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
 $(BUILD)/mvrun.obj: src/mvrun.c include/mvkern.h include/mvhost.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
 
-$(BUILD)/MVRUN.EXE: $(BUILD)/mvrun.obj $(BUILD)/mvhost.obj $(BUILD)/mvkern.obj
-	cd $(BUILD) && $(JWLINK) format dos name MVRUN.EXE option quiet option map=MVRUN.MAP option stack=4096 option nofarcalls file mvrun.obj,mvhost.obj,mvkern.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+$(BUILD)/MVRUN.EXE: $(BUILD)/mvrun.obj $(BUILD)/mvhost.obj $(BUILD)/mvkern.obj $(BUILD)/dvp.obj $(BUILD)/catalog.obj
+	cd $(BUILD) && $(JWLINK) format dos name MVRUN.EXE option quiet option map=MVRUN.MAP option stack=4096 option nofarcalls file mvrun.obj,mvhost.obj,mvkern.obj,dvp.obj,catalog.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 $(BUILD)/memprobe.obj: tests/memprobe.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
@@ -151,6 +151,12 @@ $(BUILD)/worms.obj: demos/worms.asm | $(BUILD)
 
 $(BUILD)/WORMS.COM: $(BUILD)/worms.obj
 	cd $(BUILD) && $(JWLINK) format dos com name WORMS.COM option quiet option map=WORMS.MAP file worms.obj
+
+$(BUILD)/launch.obj: demos/launch.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/LAUNCH.COM: $(BUILD)/launch.obj
+	cd $(BUILD) && $(JWLINK) format dos com name LAUNCH.COM option quiet option map=LAUNCH.MAP file launch.obj
 
 $(BUILD)/subprb.obj: tests/subprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<

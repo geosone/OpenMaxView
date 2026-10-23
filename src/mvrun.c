@@ -13,7 +13,8 @@
  * (more than a command line holds); one that cannot start is reported and
  * the others run.  /Tf,b:  time slices in ticks of the task with the keys
  * and of the others (default 6,2).  /Nn:  task slots, MVRUN's included (default 16).  Prints the switch count and each task's state and
- * ends with "MVRUN: done". */
+ * ends with "MVRUN: done".  A program a task starts (APP_START) is a task
+ * too, in front until it ends ("task n: started by m title"). */
 #include <direct.h>
 #include <dos.h>
 #include <stdio.h>
@@ -35,7 +36,11 @@ int main(int argc, char **argv)
     static char tail[128];
     static char ltail[128];
     const char *lprog = 0;
+    static unsigned char parent[MVK_MAXTASK];
+    static char title[40];
     int ntask = 0, i, t, rc, fg = 0, ksecs = 0, tfg = 0, tbg = 0, nslot = 16;
+    unsigned from;
+    int shown;
     unsigned long secs, start, n;
 
     while (argc > 1 && (argv[1][0] == '/' || argv[1][0] == '-')) {
@@ -156,6 +161,22 @@ int main(int argc, char **argv)
                 printf("task %d: %s%s\n", t, lprog, ltail);
             lprog = 0;
         }
+        t = mvhost_appstart(&from, title, &shown);
+        if (t > 0) {
+            printf("task %d: started by %u %s\n", t, from, title);
+            parent[t] = (unsigned char)from;
+            if (t > ntask)
+                ntask = t;
+            if (shown)
+                mvk_setfg(t);
+        }
+        for (t = 1; t <= ntask; ++t)
+            if (parent[t] != 0 && mvk_state(t) != MVK_READY) {
+                /* the one that started it in front again */
+                if (mvk_fg() == 0 && mvk_state(parent[t]) == MVK_READY)
+                    mvk_setfg(parent[t]);
+                parent[t] = 0;
+            }
         for (t = 1; t <= ntask; ++t)
             if (mvk_state(t) == MVK_READY)
                 break;

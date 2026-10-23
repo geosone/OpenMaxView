@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -514,6 +514,19 @@ worms)
     check "N:  three worms (green, red, yellow)" "[ $(cells a 0x0a) -gt 0 ] && [ $(cells a 0x0c) -gt 0 ] && [ $(cells a 0x0e) -gt 0 ]"
     check "they crawl" "[ '$(sc a)' != '$(sc b)' ]"
     check "S:  all stand still" "[ '$(sc c)' = '$(sc d)' ]"
+    ;;
+launch)
+    echo "== launch:  demos/LAUNCH, APP_START of a DVP made in memory (as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\LAUNCH.COM\r\n' > "$OUT/LA.BAT"
+    xs() { echo "mon:xp+/4000xb+0xb8000>$1"; }
+    CMD="C:\\LA.BAT" END="wait:MVRUN:_done:120 sleep:3" run launch 60 "" "$OUT/LA.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/LAUNCH.COM $ROOT/build/HELLO.COM $ROOT/build/WORMS.COM" \
+        "wait:choose_a_demo:60 sleep:1 key:h sleep:6 text:l1 key:w wait:WORMS:30 sleep:1 key:n sleep:3 $(xs w) key:q sleep:4 text:l2 key:q"
+    cells() { grep -o "0x[0-9a-f][0-9a-f]" "$OUT/launch/$1.txt" | paste - - | grep -c "^0xdb	$2"; }
+    check "MVRUN ended, LAUNCH exit 0" "grep -q 'MVRUN: done' '$OUT/launch/end.txt' && grep -q 'task 1: done exit 0000' '$OUT/launch/end.txt'"
+    check "H:  HELLO started as a task of its own, from task 1" "grep -q 'started by 1 Hello' '$OUT/launch/end.txt'"
+    check "it ended (COMMAND /C:  DVP close on exit):  LAUNCH in front again, the handle in its window" "grep -q '^Hello:  task [0-9A-F][0-9A-F][0-9A-F][0-9A-F]' '$OUT/launch/l1.txt'"
+    check "W:  WORMS started and in front (N:  a worm)" "grep -q 'started by 1 Worms' '$OUT/launch/end.txt' && [ $(cells w 0x0a) -gt 0 ]"
+    check "Q in WORMS:  LAUNCH in front again" "grep -q '^Worms:  task [0-9A-F][0-9A-F][0-9A-F][0-9A-F]' '$OUT/launch/l2.txt'"
     ;;
 serve)
     echo "== serve:  demos/SERVE and ASK, two tasks over a named mailbox (as under DV)"

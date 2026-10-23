@@ -1,8 +1,14 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Setting up the multitasking core (kernel/mvkern.asm) in a small model
  * program:  the task base right behind our DGROUP. */
+#include <ctype.h>
+#include <direct.h>
 #include <dos.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
+#include "dvp.h"
 #include "mvhost.h"
 #include "mvkern.h"
 
@@ -19,6 +25,7 @@ const char *mvhost_error(int e)
     case MVE_IRQ:   return "QPI IRQ calldowns failed";
     case MVE_STATE: return "not allowed now";
     case MVE_DVST:  return "MAXVTSR's per-task state too big for this MVRUN";
+    case MVE_DIR:   return "no such directory";
     }
     return "error";
 }
@@ -113,4 +120,88 @@ int mvhost_init(unsigned ntask)
     if (base == 0 || base <= kseg)
         return MVE_BASE;
     return mvk_init(base, kseg);
+}
+
+int mvhost_launch(const char *directory, const char *command, int keep)
+{
+    static char tail[ODQ_COMMAND_LEN + 8];
+    const char *shell = getenv("COMSPEC");
+    char old_directory[ODQ_DIR_LEN + 1];
+    unsigned old_drive, drives;
+    int t;
+
+    if (shell == NULL)
+        shell = "C:\\COMMAND.COM";
+    /* the task starts with the current drive and directories of now
+     * (per task from then on):  the program's, ours back afterwards */
+    _dos_getdrive(&old_drive);
+    if (getcwd(old_directory, sizeof(old_directory)) == NULL)
+        old_directory[0] = '\0';
+    if (directory[0] != '\0') {
+        if (directory[1] == ':')
+            _dos_setdrive(toupper(directory[0]) - 'A' + 1, &drives);
+        if (chdir(directory) != 0) {
+            _dos_setdrive(old_drive, &drives);
+            return -MVE_DIR;
+        }
+    }
+    sprintf(tail, keep ? " /K %.120s" : " /C %.120s", command);
+    t = mvk_create(shell, tail);
+    if (directory[0] != '\0') {
+        if (old_directory[0] != '\0')
+            chdir(old_directory);
+        _dos_setdrive(old_drive, &drives);
+    }
+    return t;
+}
+
+/* MAXVTSR's request block (INT 2Fh D70Bh) */
+struct appreq {
+    unsigned char state;        /* 1 asked, 2 answered */
+    unsigned char from;         /* the task asking */
+    unsigned task;              /* the answer:  the new task, 0 none */
+    unsigned size;
+    unsigned char dvp[0x1a0];
+};
+
+int mvhost_appstart(unsigned *from, char *title, int *shown)
+{
+    static unsigned char data[0x1a0];
+    static dvp_info info;
+    static odq_program program;
+    struct appreq far *q;
+    union REGS r;
+    struct SREGS s;
+    unsigned n;
+    int t = 0;
+
+    r.x.ax = 0xd70b;
+    r.x.bx = 0;
+    s.es = 0;
+    int86x(0x2f, &r, &r, &s);
+    if (r.x.ax != 0 || s.es == 0)
+        return -1;
+    q = (struct appreq far *)MK_FP(s.es, r.x.bx);
+    if (q->state != 1)
+        return -1;
+    n = q->size < sizeof data ? q->size : sizeof data;
+    _fmemcpy(data, q->dvp, n);
+    *from = q->from;
+    *shown = 1;
+    if (dvp_parse(data, n, &info) == DVP_OK &&
+        dvp_make_program(&info, info.menu_keys[0] != '\0' ?
+                         info.menu_keys[0] : ' ', &program) == DVP_OK) {
+        t = mvhost_launch(program.directory, program.command,
+                          info.has_v20 && !info.close_on_exit);
+        if (t < 0)
+            t = 0;
+        if (title != NULL)
+            strcpy(title, program.title);
+        /* DESQview:  hidden without it (version 1 layouts) */
+        if (info.has_v20 && !(info.flags3 & 0x80))
+            *shown = 0;
+    }
+    q->task = t;
+    q->state = 2;
+    return t;
 }

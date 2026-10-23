@@ -16,6 +16,9 @@
 ;   INT 15h AX=101Bh/101Ch           nested critical-section markers
 ;   INT 15h AX=1022h, BX=0000h       TopView-compatible API identity
 ;   INT 15h AX=1024h                 foreground virtual-screen buffer
+;   INT 15h AX=102Ch, ES:DI=DVP      APP_START:  BX=its size; BX=the new
+;                                    task's handle (0:  none); the host starts
+;                                    it (D70Bh)
 ;   INT 15h AX=102Dh, BL=operation   keyboard-mouse mode state
 ;   INT 15h AX=102Eh                 DESQview 2.40 system-memory allocation
 ;   INT 15h AH=12h, BH=00h           HANDLE object-message subset
@@ -65,6 +68,8 @@
 ;   INT 2Fh AX=D70Ah, BX=task        the foreground task (FFFFh:  none known)
 ;   INT 2Fh AX=D709h, BX=1/0         the multitasking core switches / no
 ;                                    longer:  READ of an empty mailbox waits
+;   INT 2Fh AX=D70Bh                 for the host (task 0):  AX=0, ES:BX =
+;                                    an APP_START asked (appreq), else AX=1
 
 DV_VERSION     equ 0250h        ; 2.80:  BH major, BL minor in binary (as DV)
 MUX_STATUS     equ 0D700h
@@ -116,6 +121,8 @@ KOBJ_COUNT equ 8                      ; keyboard objects (NEW 0Ah)
 POINTER_SLOT_COUNT equ 8
 POINTER_OBJECT_SIZE equ 32            ; its message at 10h (6 bytes)
 MUX_FOREGROUND equ 0D70Ah
+MUX_APP_START  equ 0D70Bh
+APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
 TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
 TASK_OBJECT_SIZE equ 32
 
@@ -452,6 +459,10 @@ int15_not_getbuf:
         jne     short int15_not_ustack
         jmp     int15_ustack
 int15_not_ustack:
+        cmp     ax,102Ch              ; APP_START
+        jne     short int15_not_app_start
+        jmp     int15_app_start
+int15_not_app_start:
         cmp     ax,102Dh              ; keyboard mouse control
         jne     short int15_not_keyboard_mouse
         jmp     int15_keyboard_mouse
@@ -6766,6 +6777,94 @@ api_leave_alone:
 api_leave_ret:
         ret
 
+; APP_START (AX=102Ch):  ES:DI the DVP, BX its size.  The host (task 0)
+; starts its program as a new task (MAXVIEW, MVRUN:  mvhost_appstart), we
+; wait for it (10 s at most, one request at a time):  BX = the new task's
+; handle, 0 if none (also without the core).  Only BX changes, as in DV.
+int15_app_start:
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        xor     dx,dx                 ; (the answer)
+        cmp     byte ptr cs:core_running,0
+        je      app_start_done
+app_start_free:
+        cli
+        cmp     byte ptr cs:appreq_state,0
+        je      short app_start_take
+        sti
+        call    api_pause             ; another task's request first
+        jmp     short app_start_free
+app_start_take:
+        mov     byte ptr cs:appreq_state,3
+        sti
+        cld
+        mov     cx,bx
+        cmp     cx,APPREQ_MAX
+        jbe     short app_start_size
+        mov     cx,APPREQ_MAX
+app_start_size:
+        mov     word ptr cs:appreq_size,cx
+        push    es
+        pop     ds
+        mov     si,di
+        push    cs
+        pop     es
+        mov     di,offset appreq_dvp
+        rep     movsb
+        mov     ax,word ptr cs:task_handle_segment
+        sub     ax,word ptr cs:task_objects_base
+        shr     ax,1
+        mov     byte ptr cs:appreq_from,al
+        mov     word ptr cs:appreq_task,0
+        mov     byte ptr cs:appreq_state,1
+        mov     ax,40h
+        mov     ds,ax
+        mov     cx,word ptr ds:[6Ch]
+app_start_wait:
+        call    api_pause
+        cmp     byte ptr cs:appreq_state,2
+        je      short app_start_answer
+        mov     ax,word ptr ds:[6Ch]
+        sub     ax,cx
+        cmp     ax,182
+        jb      short app_start_wait
+        cli                           ; no host answers:  taken back
+        cmp     byte ptr cs:appreq_state,2
+        je      short app_start_answer
+        mov     byte ptr cs:appreq_state,0
+        sti
+        jmp     short app_start_done
+app_start_answer:
+        sti
+        mov     ax,word ptr cs:appreq_task
+        mov     byte ptr cs:appreq_state,0
+        or      ax,ax
+        jz      short app_start_done
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     short app_start_done
+        push    ax
+        call    task_bit              ; its handle valid from now on
+        or      word ptr cs:task_live[si],dx
+        pop     ax
+        shl     ax,1                  ; (TASK_OBJECT_SIZE / 16)
+        add     ax,word ptr cs:task_objects_base
+        mov     dx,ax
+app_start_done:
+        mov     bx,dx
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        jmp     int15_handled
+
 ; PAUSE inside a call:  its critical section open meanwhile, so the other
 ; tasks run (AX:  1000h after it, as the PAUSE left it).
 api_pause:
@@ -8731,9 +8830,9 @@ capture_done:
 int2f_handler:
         pushf
         cmp     ax,MUX_STATUS
-        je      short int2f_status
+        je      int2f_status
         cmp     ax,MUX_INFO
-        je      short int2f_info
+        je      int2f_info
         cmp     ax,MUX_RESET
         je      int2f_reset
         cmp     ax,MUX_TASK_INFO
@@ -8770,6 +8869,19 @@ int2f_not_foreground:
         popf
         iret
 int2f_not_core:
+        cmp     ax,MUX_APP_START
+        jne     short int2f_not_app_start
+        mov     ax,1
+        cmp     byte ptr cs:appreq_state,1
+        jne     short int2f_app_start_none
+        push    cs
+        pop     es
+        mov     bx,offset appreq_state
+        xor     ax,ax
+int2f_app_start_none:
+        popf
+        iret
+int2f_not_app_start:
         cmp     ax,MUX_TASK_STATE
         jne     short int2f_not_task_state
         push    cs
@@ -9134,6 +9246,11 @@ mailbox_used   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_owner  dw MAILBOX_SLOT_COUNT dup(0) ; caller_tag at NEW
 mailbox_default dw MAILBOX_SLOT_COUNT dup(0) ; 1:  its owner's own mailbox
 core_running   db 0                   ; D709h
+appreq_state   db 0                   ; APP_START:  1 asked, 2 answered (by
+appreq_from    db 0                   ; the host, D70Bh), 3 being filled;
+appreq_task    dw 0                   ; the asking task, the new one (0:
+appreq_size    dw 0                   ; none), the DVP
+appreq_dvp     db APPREQ_MAX dup(0)
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)

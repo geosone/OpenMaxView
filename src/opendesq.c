@@ -41,6 +41,7 @@
 static int mv_on;
 static char task_title[MVK_MAXTASK][ODQ_TITLE_LEN + 1];
 static unsigned char task_live[MVK_MAXTASK];
+static unsigned char task_parent[MVK_MAXTASK]; /* APP_START's */
 static unsigned tasks_open(void);
 static int view_windows;        /* Alt comes back to the windows */
 
@@ -542,17 +543,38 @@ static void stop_multitasking(void)
     mv_on = 0;
 }
 
-/* tasks that ended:  status, 1 */
+/* tasks that ended, or one a task started (APP_START, in front as in
+ * DESQview):  status, 1 */
 static int poll_tasks(char *status)
 {
-    unsigned t;
+    static char title[ODQ_TITLE_LEN + 1];
+    unsigned t, from;
+    int n, shown;
 
+    n = mvhost_appstart(&from, title, &shown);
+    if (n > 0) {
+        strcpy(task_title[n], title);
+        task_live[n] = 1;
+        task_parent[n] = (unsigned char)from;
+        win_add(n);
+        view_windows = 1;
+        sprintf(status, "%.40s runs as task %d; Alt returns.", title, n);
+        if (shown)
+            mvk_setfg(n);
+        return 1;
+    }
     for (t = 1; t < MVK_MAXTASK; ++t)
         if (task_live[t] && mvk_state(t) != MVK_READY) {
+            unsigned p = task_parent[t];
+
             task_live[t] = 0;
+            task_parent[t] = 0;
             win_remove(t);
             sprintf(status, "%.40s ended, code %u.", task_title[t],
                     mvk_exit(t) & 0xff);
+            /* the one that started it in front again */
+            if (p != 0 && p < MVK_MAXTASK && task_live[p] && mvk_fg() == 0)
+                mvk_setfg(p);
             return 1;
         }
     return 0;
@@ -573,35 +595,12 @@ static int wait_key(char *status)
 
 static int launch_task(const odq_program *program, char *status)
 {
-    static char tail[ODQ_COMMAND_LEN + 8];
-    const char *shell = getenv("COMSPEC");
     int t;
-    char old_directory[ODQ_DIR_LEN + 1];
-    unsigned old_drive, drives;
 
-    if (shell == NULL)
-        shell = "C:\\COMMAND.COM";
-
-    /* the task starts with the current drive and directories of now
-     * (per task from then on):  the program's, ours back afterwards */
-    _dos_getdrive(&old_drive);
-    if (getcwd(old_directory, sizeof(old_directory)) == NULL)
-        old_directory[0] = '\0';
-    if (program->directory[0] != '\0') {
-        if (program->directory[1] == ':')
-            _dos_setdrive(toupper(program->directory[0]) - 'A' + 1, &drives);
-        if (chdir(program->directory) != 0) {
-            _dos_setdrive(old_drive, &drives);
-            sprintf(status, "Cannot change to %.52s", program->directory);
-            return -1;
-        }
-    }
-    sprintf(tail, " /C %.120s", program->command);
-    t = mvk_create(shell, tail);
-    if (program->directory[0] != '\0') {
-        if (old_directory[0] != '\0')
-            chdir(old_directory);
-        _dos_setdrive(old_drive, &drives);
+    t = mvhost_launch(program->directory, program->command, 0);
+    if (t == -MVE_DIR) {
+        sprintf(status, "Cannot change to %.52s", program->directory);
+        return -1;
     }
     if (t < 0) {
         sprintf(status, "%.30s: %.40s.", program->title, mvhost_error(-t));

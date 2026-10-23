@@ -2,6 +2,8 @@
 #ifndef MAXVIEW_DVP_H
 #define MAXVIEW_DVP_H
 
+#include <stddef.h>
+
 #include "catalog.h"
 
 #define DVP_BASE_SIZE 0x173
@@ -32,6 +34,7 @@ typedef struct dvp_info {
     unsigned flags4;
     unsigned serial_ports;
     unsigned protection;
+    int close_on_exit;          /* 17Ch:  the window goes with the program */
     int has_v20;
 } dvp_info;
 
@@ -44,6 +47,8 @@ enum dvp_result {
 };
 
 int dvp_load(const char *path, dvp_info *info);
+/* A DVP in memory (APP_START's):  no checksum, as DESQview's. */
+int dvp_parse(const unsigned char *data, size_t length, dvp_info *info);
 int dvp_make_program(const dvp_info *info, char hotkey,
                      odq_program *program);
 
