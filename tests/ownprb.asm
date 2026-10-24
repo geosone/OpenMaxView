@@ -3,7 +3,9 @@
 ;   A stream to the own window (WRITE BL=01h):  C3h 5 rows 20 columns,
 ;   C5h the same logical size, C4h origin 0,0, C2h to row 6, column 30,
 ;   E2h colour 1Eh; then the text "own window" (plain WRITE) and REDRAW
-;   (BH=13h BL=01h).  Then it waits for a key and ends.
+;   (BH=13h BL=01h).  After a key, sized again (C3h, C5h 8 rows 40
+;   columns, C2h to row 3, column 10), the text "second" and REDRAW; then
+;   it waits for a key and ends.
 
         .model tiny
         .386
@@ -33,6 +35,25 @@ start:
         int     15h
         xor     ah,ah
         int     16h
+        push    ds
+        push    offset s_again
+        push    0
+        push    s_again_len
+        mov     ax,1200h
+        mov     bx,0501h
+        int     15h
+        push    ds
+        push    offset t_again
+        push    0
+        push    t_again_len
+        mov     ax,1200h
+        mov     bx,0501h
+        int     15h
+        mov     ax,1200h              ; REDRAW
+        mov     bx,1301h
+        int     15h
+        xor     ah,ah
+        int     16h
         mov     ax,4C00h
         int     21h
 
@@ -47,5 +68,14 @@ s_geom_end label byte
 s_geom_len equ  $ - s_geom
 t_text  db      'own window'
 t_text_len equ  $ - t_text
+s_again db      1Bh,0
+        dw      s_again_end - s_again - 4
+        db      0C3h,8,40
+        db      0C5h,8,40
+        db      0C2h,3,10
+s_again_end label byte
+s_again_len equ $ - s_again
+t_again db      'second'
+t_again_len equ $ - t_again
 
         end     start

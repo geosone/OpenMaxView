@@ -129,12 +129,15 @@ screen, as DESQview's task window:  a window object of the task's (double
 frame, on top, at the top left until `C2h` moves its contents; titled with
 the task's number, two double lines and the task's title (`D70Ch`:  the
 program's name from `MVRUN`, the catalog's or DVP's title from `MAXVIEW`
-and `APP_START`), as DESQview's "1══DOS"; blank in the colour at the cursor
+and `APP_START`; its blanks double lines too), as DESQview's "1══DOS═(128K)"; blank in the colour at the cursor
 when no colour was set, as DESQview keeps the window's), which from
 then on takes the task's `WRITE`s to its own window (text, streams, the
 field table), `ERASE`, `REDRAW` and, in field mode, the field manager of
 the task's keyboard (EXAMPLES:  8x16 at 1,63).  `C4h` (origin) is taken
-and ignored, a later size change too; output past the API (INT 10h, DOS)
+and ignored.  Sized again, it keeps its place and takes the new size, as
+DESQview's (its contents at the top left as far as they fit, the rest
+blank, the cursor at 0,0; DV shows its task's screen there); output past
+the API (INT 10h, DOS)
 still goes to the screen, and a subtask's own window stays the screen.
 
 The default API level is 1.00, automatic viewport justification starts

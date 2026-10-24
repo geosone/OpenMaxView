@@ -4203,11 +4203,19 @@ window_manager_ret:
 ; The task's window, sized (C3h/C5h, CH rows, CL columns) while it is the
 ; target:  a window object of that size from now on (own_wobj), framed,
 ; shown, at the top left until moved (C2h); the rest of the stream in it.
-; A window object as the target (or the task's sized before):  nothing.
+; The task's window sized before and the target:  own_resize; another
+; window object as the target:  nothing.
 own_make:
-        cmp     word ptr cs:wtarget,0
-        jne     short own_make_ret
         cmp     word ptr cs:own_wobj,0
+        je      short own_make_new
+        push    ax
+        mov     ax,word ptr cs:wtarget
+        cmp     ax,word ptr cs:own_wobj
+        pop     ax
+        jne     short own_make_ret
+        jmp     own_resize
+own_make_new:
+        cmp     word ptr cs:wtarget,0
         jne     short own_make_ret
         push    si
         call    wobj_create
@@ -4237,6 +4245,102 @@ own_make_none:
 own_make_ret:
         ret
 
+; The task's window object (the target) sized again (C3h/C5h, CH rows, CL
+; columns), as DESQview 2.80's:  that size at the same place, its contents
+; at the top left as far as they fit (the rest blank in its colour), the
+; cursor at 0,0, drawn again.  The same object (its handle stays), its
+; contents in a new block of wobj_pool (no room:  as it was).
+own_resize:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        mov     si,word ptr cs:own_wobj
+        sub     si,2
+        or      ch,ch                 ; (1-25, 1-80, as wobj_create)
+        jnz     short own_resize_rows
+        inc     ch
+own_resize_rows:
+        cmp     ch,25
+        jbe     short own_resize_cols
+        mov     ch,25
+own_resize_cols:
+        or      cl,cl
+        jnz     short own_resize_cols2
+        inc     cl
+own_resize_cols2:
+        cmp     cl,80
+        jbe     short own_resize_size
+        mov     cl,80
+own_resize_size:
+        cmp     cx,word ptr cs:wobj_size[si]
+        je      own_resize_ret
+        mov     bp,cx                 ; bytes:  rows * cols * 2 + (rows + 2)
+        mov     al,ch                 ; * (cols + 2) * 2
+        mul     cl
+        mov     bx,ax
+        mov     al,ch
+        add     al,2
+        mov     dl,cl
+        add     dl,2
+        mul     dl
+        add     ax,bx
+        shl     ax,1
+        mov     cx,ax
+        call    wobj_alloc
+        jc      own_resize_ret
+        mov     bx,ax                 ; the new block
+        push    cx
+        call    wobj_undraw
+        xor     dh,dh
+own_resize_row:
+        xor     dl,dl
+own_resize_col:
+        mov     ax,word ptr cs:wobj_color[si]
+        mov     ah,al
+        mov     al,' '
+        call    wobj_cell             ; (the old contents)
+        jc      short own_resize_put
+        mov     ax,word ptr cs:[di]
+own_resize_put:
+        push    ax
+        mov     ax,bp
+        mul     dh                    ; (AL:  the new columns)
+        xor     ch,ch
+        mov     cl,dl
+        add     ax,cx
+        shl     ax,1
+        add     ax,bx
+        mov     di,ax
+        pop     ax
+        mov     word ptr cs:wobj_pool[di],ax
+        inc     dl
+        mov     ax,bp
+        cmp     dl,al
+        jb      short own_resize_col
+        inc     dh
+        cmp     dh,ah
+        jb      short own_resize_row
+        pop     cx
+        mov     word ptr cs:wobj_buf[si],bx
+        mov     word ptr cs:wobj_bytes[si],cx
+        mov     word ptr cs:wobj_size[si],bp
+        mov     word ptr cs:wobj_cursor[si],0
+        call    wobj_top              ; (drawn again)
+        call    own_geom_set
+own_resize_ret:
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; The place and size of the task's window object SI for the host (D70Dh):
 ; own_geom of this task.
 own_geom_set:
@@ -4259,7 +4363,8 @@ own_geom_set_ret:
         ret
 
 ; The title of the task's window object (the target), as DESQview's:  its
-; number (APPNUM), then two double lines and the task's title (D70Ch).
+; number (APPNUM), then two double lines and the task's title (D70Ch),
+; its blanks double lines too.
 own_title:
         push    ax
         push    cx
@@ -4300,6 +4405,10 @@ own_title_copy:
         lodsb
         or      al,al
         jz      short own_title_set
+        cmp     al,' '                ; (blanks as the frame, as DV's
+        jne     short own_title_char  ; "DOS (128K)":  "DOS=(128K)")
+        mov     al,0CDh
+own_title_char:
         stosb
         loop    own_title_copy
 own_title_set:

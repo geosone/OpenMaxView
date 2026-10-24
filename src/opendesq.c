@@ -828,6 +828,9 @@ static void compose(int mode)
         /* the title as DESQview's:  "1==DOS" */
         sprintf(line, "%c%c%c%.30s", t < 10 ? '0' + t : 'A' + t - 10, h, h,
                 task_title[t]);
+        for (c = 3; line[c]; ++c)       /* blanks as the frame:  "DOS=(128K)" */
+            if (line[c] == ' ')
+                line[c] = (char)h;
         swrite(w->top - 1, w->left, line, fa);
         for (r = 0; r < w->rows; ++r) {
             sput(w->top + r, w->left - 1, v, fa);

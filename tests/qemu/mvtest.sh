@@ -289,17 +289,20 @@ win)
     printf 'A|Probe A|C:\\KEYPROBE.COM C:\\W1.TXT D||64|640\r\nB|Probe B|C:\\KEYPROBE.COM C:\\W2.TXT B||64|640\r\n' > "$cfg"
     CMD="C:\\MAXVIEW" END="wait:win_end:30" run win 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg" \
-        "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_B_ready:20 key:alt wait:Tab_next:20 sleep:1 text:two key:tab sleep:1 key:ret sleep:1 key:a,b sleep:2 text:typed key:alt sleep:1 key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved key:z sleep:2 text:full key:alt wait:Tab_next:20 key:c wait:Probe_A_ended:20 text:closed key:q wait:exit_to_DOS:10 key:y gone:Tab_next:20 sleep:2 type:echo_win_end"
+        "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_B_ready:20 key:alt wait:Tab_next:20 sleep:1 text:two key:tab sleep:1 key:ret sleep:1 key:a,b sleep:2 text:typed key:alt sleep:1 key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved mon:xp+/4000xb+0xb8000>mvram key:z sleep:2 text:full key:alt wait:Tab_next:20 key:c wait:Probe_A_ended:20 text:closed key:q wait:exit_to_DOS:10 key:y gone:Tab_next:20 sleep:2 type:echo_win_end"
     d=$OUT/win
     w1=$(file win W1.TXT)
     # the frame's title as DESQview's "1==Probe A" (not the status line)
     c1=$(awk '/Probe A/ && !/Typing/ {print NR*100 + index($0, "Probe A"); exit}' "$d/typed.txt" 2>/dev/null)
     c2=$(awk '/Probe A/ && !/Typing/ {print NR*100 + index($0, "Probe A"); exit}' "$d/moved.txt" 2>/dev/null)
+    # its blank a double line, as DV's "1==DOS=(128K)"
+    t=$(awk '/^[0-9a-f]+:/' "$d/mvram.txt" 2>/dev/null | grep -o "0x[0-9a-f][0-9a-f]" | awk 'NR % 2' | tr '\n' ' ')
     echo "  W1 '$w1', title at $c1 -> $c2"
     check "both windows on one screen" "grep -q 'keyprobe D ready' '$d/two.txt' && grep -q 'keyprobe B ready' '$d/two.txt'"
     check "typing into a window" "grep -q 'Typing into Probe A' '$d/typed.txt' && grep -q 'ab' '$d/typed.txt'"
     check "window keys to its task" "[ '$w1' = ab ]"
     check "window moved (3 right, 1 down)" "[ -n '$c1' ] && [ \$(( ${c2:-0} - ${c1:-0} )) -eq 103 ]"
+    check "title blank as the frame (Probe=A)" "echo '$t' | grep -q '0x50 0x72 0x6f 0x62 0x65 0xcd 0x41'"
     check "zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Tab next' '$d/full.txt'"
     check "close" "grep -q 'Probe A ended' '$d/closed.txt' && ! grep -q 'keyprobe D' '$d/closed.txt'"
     check "DOS works afterwards" "grep -q '^win end' '$d/end.txt'"
@@ -537,9 +540,9 @@ ownwin)
     echo "== ownwin:  the task's own window sized and moved (C3h/C5h/C2h), as under DV"
     printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\OWNPRB.COM\r\n' > "$OUT/OW.BAT"
     CMD="C:\\OW.BAT" END="wait:MVRUN:_done:120 sleep:3" run ownwin 20 "" "$OUT/OW.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/OWNPRB.COM" \
-        "wait:own_window:60 sleep:1 mon:xp+/4000xb+0xb8000>o key:ret"
-    # cell (row, column):  character and attribute, as two hex bytes
-    cell() { awk '/^[0-9a-f]+:/' "$OUT/ownwin/o.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
+        "wait:own_window:60 sleep:1 mon:xp+/4000xb+0xb8000>o key:ret wait:second:30 sleep:1 mon:xp+/4000xb+0xb8000>o2 key:ret"
+    # cell (row, column):  character and attribute, as two hex bytes (o2:  sized again)
+    cell() { awk '/^[0-9a-f]+:/' "$OUT/ownwin/${O:-o}.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
     text() { local c s=""; for ((c = $2; c < $3; c++)); do s="$s$(printf "\\x$(cell $1 $c | cut -c3-4)")"; done; printf "$s"; }
     echo "  row 6:  '$(text 6 30 40)'"
     check "MVRUN ended, OWNPRB exit 0" "grep -q 'MVRUN: done' '$OUT/ownwin/end.txt' && grep -q 'task 1: done exit 0000' '$OUT/ownwin/end.txt'"
@@ -548,6 +551,13 @@ ownwin)
     check "the frame's sides at 6,29 and 6,50" "[ '$(cell 6 29 | cut -c1-4)' = '0xba' ] && [ '$(cell 6 50 | cut -c1-4)' = '0xba' ]"
     check "the title as DV's:  its number, two double lines, the program (1==OWNPRB)" "[ '$(cell 5 30 | cut -c1-4) $(cell 5 31 | cut -c1-4) $(cell 5 32 | cut -c1-4)' = '0x31 0xcd 0xcd' ] && [ \"$(text 5 33 39)\" = 'OWNPRB' ] && [ '$(cell 5 39 | cut -c1-4)' = '0xcd' ]"
     check "its blanks in the window's colour (the screen's, 07h; DV:  its DOS window's)" "[ '$(cell 7 30)' = '0x20 0x07' ] && [ '$(cell 6 30 | cut -c6-9)' = '0x1e' ]"
+    O=o2
+    echo "  sized again, row 3:  '$(text 3 10 20)'"
+    check "sized again (8x40, C2h 3,10), as DV:  the text at 3,10, the cursor at 0,0" "[ \"$(text 3 10 16)\" = 'second' ]"
+    check "  the double frame around 8x40:  corners at 2,9 / 2,50 / 11,9 / 11,50" "[ '$(cell 2 9 | cut -c1-4) $(cell 2 50 | cut -c1-4) $(cell 11 9 | cut -c1-4) $(cell 11 50 | cut -c1-4)' = '0xc9 0xbb 0xc8 0xbc' ]"
+    check "  its title (1==OWNPRB), the old frame gone (5,29 / 11,29 inside)" "[ '$(cell 2 10 | cut -c1-4) $(cell 2 11 | cut -c1-4)' = '0x31 0xcd' ] && [ \"$(text 2 13 19)\" = 'OWNPRB' ] && [ '$(cell 5 29 | cut -c1-4)' != '0xc9' ] && [ '$(cell 11 29 | cut -c1-4)' != '0xc8' ]"
+    check "  the old contents at the top left (own window -> secondndow), the new part blank" "[ \"$(text 3 16 20)\" = 'ndow' ] && [ '$(cell 4 10 | cut -c1-4) $(cell 10 49 | cut -c1-4)' = '0x20 0x20' ]"
+    unset O
     ;;
 serve)
     echo "== serve:  demos/SERVE and ASK, two tasks over a named mailbox (as under DV)"
