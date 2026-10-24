@@ -607,6 +607,7 @@ static int launch_task(const odq_program *program, char *status)
         return -1;
     }
     strcpy(task_title[t], program->title);
+    mvhost_title(t, program->title);
     task_live[t] = 1;
     win_add(t);
     view_windows = 1;

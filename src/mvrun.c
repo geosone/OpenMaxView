@@ -26,6 +26,23 @@
 
 #define errtext mvhost_error
 
+/* the title of task t's window:  the program's name (no path, no
+ * extension), as DESQview's "DOS" */
+static void set_title(int t, const char *prog)
+{
+    char name[9];
+    const char *p = strrchr(prog, '\\');
+    unsigned n = 0;
+
+    p = p != 0 ? p + 1 : prog;
+    while (p[n] != '\0' && p[n] != '.' && n < 8) {
+        name[n] = p[n];
+        ++n;
+    }
+    name[n] = '\0';
+    mvhost_title(t, name);
+}
+
 static unsigned long ticks(void)
 {
     return *(unsigned long far *)MK_FP(0x40, 0x6c);
@@ -91,6 +108,7 @@ int main(int argc, char **argv)
             if (t < 0)
                 printf("MVRUN: %s: %s\n", buf, errtext(-t));
             else {
+                set_title(t, buf);
                 printf("task %d: %s%s\n", t, buf, tail);
                 ntask++;
             }
@@ -121,6 +139,7 @@ int main(int argc, char **argv)
             mvk_stop();
             return 1;
         }
+        set_title(t, prog);
         printf("task %d: %s%s\n", t, prog, tail);
         ntask++;
     }
@@ -155,6 +174,8 @@ int main(int argc, char **argv)
                        mvk_exit(t));
             putchar('\n');
             t = mvk_create(lprog, ltail);
+            if (t >= 0)
+                set_title(t, lprog);
             if (t < 0)
                 printf("MVRUN: %s: %s\n", lprog, errtext(-t));
             else

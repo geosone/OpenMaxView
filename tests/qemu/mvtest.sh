@@ -541,6 +541,8 @@ ownwin)
     check "the text at row 6, column 30 (the window's contents, as DV)" "[ \"$(text 6 30 40)\" = 'own window' ]"
     check "a double frame around 5x20:  corners at 5,29 / 5,50 / 11,29 / 11,50" "[ '$(cell 5 29 | cut -c1-4) $(cell 5 50 | cut -c1-4) $(cell 11 29 | cut -c1-4) $(cell 11 50 | cut -c1-4)' = '0xc9 0xbb 0xc8 0xbc' ]"
     check "the frame's sides at 6,29 and 6,50" "[ '$(cell 6 29 | cut -c1-4)' = '0xba' ] && [ '$(cell 6 50 | cut -c1-4)' = '0xba' ]"
+    check "the title as DV's:  its number, a double line, the program (1=OWNPRB)" "[ '$(cell 5 30 | cut -c1-4) $(cell 5 31 | cut -c1-4)' = '0x31 0xcd' ] && [ \"$(text 5 32 38)\" = 'OWNPRB' ] && [ '$(cell 5 38 | cut -c1-4)' = '0xcd' ]"
+    check "its blanks in the window's colour (the screen's, 07h; DV:  its DOS window's)" "[ '$(cell 7 30)' = '0x20 0x07' ] && [ '$(cell 6 30 | cut -c6-9)' = '0x1e' ]"
     ;;
 serve)
     echo "== serve:  demos/SERVE and ASK, two tasks over a named mailbox (as under DV)"

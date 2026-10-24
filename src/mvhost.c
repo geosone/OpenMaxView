@@ -195,6 +195,8 @@ int mvhost_appstart(unsigned *from, char *title, int *shown)
                           info.has_v20 && !info.close_on_exit);
         if (t < 0)
             t = 0;
+        else
+            mvhost_title(t, program.title);
         if (title != NULL)
             strcpy(title, program.title);
         /* DESQview:  hidden without it (version 1 layouts) */
@@ -204,4 +206,20 @@ int mvhost_appstart(unsigned *from, char *title, int *shown)
     q->task = t;
     q->state = 2;
     return t;
+}
+
+void mvhost_title(unsigned task, const char *title)
+{
+    static char buf[17];
+    union REGS r;
+    struct SREGS s;
+
+    strncpy(buf, title, 16);
+    buf[16] = '\0';
+    segread(&s);
+    s.es = s.ds;
+    r.x.ax = 0xd70c;
+    r.x.bx = task;
+    r.x.di = (unsigned)buf;
+    int86x(0x2f, &r, &r, &s);
 }

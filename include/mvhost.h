@@ -22,5 +22,8 @@ int mvhost_launch(const char *directory, const char *command, int keep);
  * (17Ch), as in DESQview.  The new
  * task, 0 if it could not start, -1:  nothing asked. */
 int mvhost_appstart(unsigned *from, char *title, int *shown);
+/* The title of task's window (MAXVTSR, INT 2Fh D70Ch:  up to 16
+ * characters), as DESQview's window title. */
+void mvhost_title(unsigned task, const char *title);
 
 #endif

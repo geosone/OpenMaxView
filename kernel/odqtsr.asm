@@ -68,6 +68,8 @@
 ;   INT 2Fh AX=D70Ah, BX=task        the foreground task (FFFFh:  none known)
 ;   INT 2Fh AX=D709h, BX=1/0         the multitasking core switches / no
 ;                                    longer:  READ of an empty mailbox waits
+;   INT 2Fh AX=D70Ch, BX=task        from the host:  ES:DI = its title
+;                                    (up to 16 bytes, 0 ends; its window's)
 ;   INT 2Fh AX=D70Bh                 for the host (task 0):  AX=0, ES:BX =
 ;                                    an APP_START asked (appreq), else AX=1
 
@@ -122,6 +124,8 @@ POINTER_SLOT_COUNT equ 8
 POINTER_OBJECT_SIZE equ 32            ; its message at 10h (6 bytes)
 MUX_FOREGROUND equ 0D70Ah
 MUX_APP_START  equ 0D70Bh
+MUX_TITLE      equ 0D70Ch
+TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
 TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
 TASK_OBJECT_SIZE equ 32
@@ -4206,11 +4210,87 @@ own_make:
         jc      short own_make_none
         mov     word ptr cs:own_wobj,si
         add     word ptr cs:own_wobj,2
+        cmp     byte ptr cs:window_color,0 ; no colour set:  the window's
+        jne     short own_make_enter  ; (the one at the cursor), as DV
+        push    ax
+        push    bx
+        mov     ah,0Fh
+        int     10h
+        mov     ah,08h
+        int     10h
+        mov     al,20h
+        mov     byte ptr cs:wobj_color[si],ah
+        call    wobj_fill
+        pop     bx
+        pop     ax
+own_make_enter:
         call    wobj_enter
+        call    own_title
         call    wobj_top              ; (double frame, drawn)
 own_make_none:
         pop     si
 own_make_ret:
+        ret
+
+; The title of the task's window object (the target), as DESQview's:  its
+; number (APPNUM), then a double line and the task's title (D70Ch).
+own_title:
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        push    cs
+        pop     es
+        push    cs
+        pop     ds
+        cld
+        mov     di,offset own_tbuf
+        mov     ax,word ptr cs:task_handle_segment
+        sub     ax,word ptr cs:task_objects_base
+        shr     ax,1
+        mov     si,ax                 ; (the task)
+        cmp     ax,10
+        jb      short own_title_one
+        mov     cl,10
+        div     cl
+        add     al,'0'
+        stosb
+        mov     al,ah
+own_title_one:
+        add     al,'0'
+        stosb
+        cmp     si,TASK_OBJECT_COUNT
+        jae     short own_title_set
+        mov     ax,TITLE_MAX
+        mul     si
+        mov     si,ax
+        add     si,offset task_titles
+        cmp     byte ptr [si],0
+        je      short own_title_set
+        mov     al,0CDh
+        stosb
+        mov     cx,TITLE_MAX
+own_title_copy:
+        lodsb
+        or      al,al
+        jz      short own_title_set
+        stosb
+        loop    own_title_copy
+own_title_set:
+        mov     cx,di
+        mov     si,offset own_tbuf
+        sub     cx,si
+        call    wobj_set_title
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
         ret
 
 ; The task's window the target (wtarget 0):  its window object if it has
@@ -8987,6 +9067,44 @@ int2f_app_start_none:
         popf
         iret
 int2f_not_app_start:
+        cmp     ax,MUX_TITLE
+        jne     short int2f_not_title
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short int2f_title_ret
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        push    es
+        pop     ds
+        mov     si,di
+        mov     ax,TITLE_MAX
+        mul     bx
+        add     ax,offset task_titles
+        mov     di,ax
+        push    cs
+        pop     es
+        cld
+        mov     cx,TITLE_MAX
+int2f_title_copy:
+        lodsb
+        stosb
+        or      al,al
+        loopnz  int2f_title_copy
+        jcxz    int2f_title_done
+        rep     stosb                 ; (the rest 0)
+int2f_title_done:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+int2f_title_ret:
+        xor     ax,ax
+        popf
+        iret
+int2f_not_title:
         cmp     ax,MUX_TASK_STATE
         jne     short int2f_not_task_state
         push    cs
@@ -9069,6 +9187,10 @@ int2f_task_end:
         call    task_bit
         not     dx
         and     word ptr cs:task_live[si],dx
+        mov     ax,TITLE_MAX          ; its title (D70Ch) gone
+        mul     bl
+        mov     si,ax
+        mov     byte ptr cs:task_titles[si],0
 task_end_dead:
         mov     al,bl
         inc     al                    ; its tag
@@ -9358,6 +9480,8 @@ appreq_from    db 0                   ; the host, D70Bh), 3 being filled;
 appreq_task    dw 0                   ; the asking task, the new one (0:
 appreq_size    dw 0                   ; none), the DVP
 appreq_dvp     db APPREQ_MAX dup(0)
+task_titles    db (TASK_OBJECT_COUNT * TITLE_MAX) dup(0) ; D70Ch
+own_tbuf       db (TITLE_MAX + 4) dup(0) ; own_title's
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)
