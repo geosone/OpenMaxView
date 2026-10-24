@@ -127,9 +127,9 @@ to it never scrolls it:  at the last cell of the last row the cursor stays
 logical size, first), it becomes a window of that size on the task's
 screen, as DESQview's task window:  a window object of the task's (double
 frame, on top, at the top left until `C2h` moves its contents; titled with
-the task's number, a double line and the task's title (`D70Ch`:  the
+the task's number, two double lines and the task's title (`D70Ch`:  the
 program's name from `MVRUN`, the catalog's or DVP's title from `MAXVIEW`
-and `APP_START`), as DESQview's "1═DOS"; blank in the colour at the cursor
+and `APP_START`), as DESQview's "1══DOS"; blank in the colour at the cursor
 when no colour was set, as DESQview keeps the window's), which from
 then on takes the task's `WRITE`s to its own window (text, streams, the
 field table), `ERASE`, `REDRAW` and, in field mode, the field manager of
@@ -311,6 +311,7 @@ applications expecting the DESQview interface.
 | `D705h` | `BX=3FFFh` extended compatibility capability bits, `CX=DX=0` |
 | `D706h` | Current normalized sound frequency in `BX`, remaining ticks in `CX`, queued entries in `DX` |
 | `D70Ch` | From the host:  `BX` = task, `ES:DI` = its title (up to 16 bytes, 0 ends), for its window's frame; gone at the task's end (`D708h`) |
+| `D70Dh` | For the host:  `BX` = task; `AX=0`, `DX` = the place (row, column) of its sized own window's contents and `CX` its size (rows, columns), else `AX=1`; `MAXVIEW` gives the task's desk window that size and place, as DESQview's |
 | `D70Bh` | For the host (task 0, `mvhost_appstart`):  `AX=0`, `ES:BX` = the pending `APP_START` (byte 1 asked; byte the asking task; word answer; word size; the DVP); the host writes the new task (0:  none) and sets the first byte to 2. `AX=1`:  none asked |
 | `D709h` | `BX=1`:  the multitasking core switches tasks now, `BX=0`:  no longer (it calls it); `READ`/`READINTO` of an empty mailbox wait only meanwhile |
 | `D708h` | `BX` = a task that ended (the multitasking core calls it):  its mailboxes are freed (the owner is the task's `APPNUM` at `NEW`; its `GETMEM` pool goes with its state block), its common memory and timers stay, as DESQview 2.80 when a window is closed |

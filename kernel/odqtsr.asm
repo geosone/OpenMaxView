@@ -70,6 +70,9 @@
 ;                                    longer:  READ of an empty mailbox waits
 ;   INT 2Fh AX=D70Ch, BX=task        from the host:  ES:DI = its title
 ;                                    (up to 16 bytes, 0 ends; its window's)
+;   INT 2Fh AX=D70Dh, BX=task        for the host:  AX=0, DX = the place
+;                                    (row, column) and CX the size of its
+;                                    sized window (own_make); else AX=1
 ;   INT 2Fh AX=D70Bh                 for the host (task 0):  AX=0, ES:BX =
 ;                                    an APP_START asked (appreq), else AX=1
 
@@ -125,6 +128,7 @@ POINTER_OBJECT_SIZE equ 32            ; its message at 10h (6 bytes)
 MUX_FOREGROUND equ 0D70Ah
 MUX_APP_START  equ 0D70Bh
 MUX_TITLE      equ 0D70Ch
+MUX_GEOM       equ 0D70Dh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
 TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
@@ -4227,13 +4231,35 @@ own_make_enter:
         call    wobj_enter
         call    own_title
         call    wobj_top              ; (double frame, drawn)
+        call    own_geom_set
 own_make_none:
         pop     si
 own_make_ret:
         ret
 
+; The place and size of the task's window object SI for the host (D70Dh):
+; own_geom of this task.
+own_geom_set:
+        push    ax
+        push    di
+        mov     di,word ptr cs:task_handle_segment
+        sub     di,word ptr cs:task_objects_base
+        shr     di,1
+        cmp     di,TASK_OBJECT_COUNT
+        jae     short own_geom_set_ret
+        shl     di,1
+        shl     di,1
+        mov     ax,word ptr cs:wobj_pos[si]
+        mov     word ptr cs:own_geom[di],ax
+        mov     ax,word ptr cs:wobj_size[si]
+        mov     word ptr cs:own_geom[di+2],ax
+own_geom_set_ret:
+        pop     di
+        pop     ax
+        ret
+
 ; The title of the task's window object (the target), as DESQview's:  its
-; number (APPNUM), then a double line and the task's title (D70Ch).
+; number (APPNUM), then two double lines and the task's title (D70Ch).
 own_title:
         push    ax
         push    cx
@@ -4251,16 +4277,12 @@ own_title:
         mov     ax,word ptr cs:task_handle_segment
         sub     ax,word ptr cs:task_objects_base
         shr     ax,1
-        mov     si,ax                 ; (the task)
-        cmp     ax,10
-        jb      short own_title_one
-        mov     cl,10
-        div     cl
-        add     al,'0'
-        stosb
-        mov     al,ah
+        mov     si,ax                 ; (the task:  1-9, then A, B, ...,
+        add     al,'0'                ; as DESQview numbers its windows)
+        cmp     al,'9'
+        jbe     short own_title_one
+        add     al,'A' - '9' - 1
 own_title_one:
-        add     al,'0'
         stosb
         cmp     si,TASK_OBJECT_COUNT
         jae     short own_title_set
@@ -4270,7 +4292,8 @@ own_title_one:
         add     si,offset task_titles
         cmp     byte ptr [si],0
         je      short own_title_set
-        mov     al,0CDh
+        mov     al,0CDh               ; (two, as DV 2.80's "1==DOS")
+        stosb
         stosb
         mov     cx,TITLE_MAX
 own_title_copy:
@@ -4324,6 +4347,7 @@ own_shown:
         cmp     si,word ptr cs:own_wobj
         jne     short own_shown_ret
         sub     si,2
+        call    own_geom_set
         test    word ptr cs:wobj_flags[si],WF_VISIBLE
         jz      short own_shown_ret
         call    wobj_redraw
@@ -9105,6 +9129,23 @@ int2f_title_ret:
         popf
         iret
 int2f_not_title:
+        cmp     ax,MUX_GEOM
+        jne     short int2f_not_geom
+        mov     ax,1
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short int2f_geom_ret
+        push    bx
+        shl     bx,1
+        shl     bx,1
+        mov     cx,word ptr cs:own_geom[bx+2]
+        mov     dx,word ptr cs:own_geom[bx]
+        pop     bx
+        jcxz    int2f_geom_ret
+        xor     ax,ax
+int2f_geom_ret:
+        popf
+        iret
+int2f_not_geom:
         cmp     ax,MUX_TASK_STATE
         jne     short int2f_not_task_state
         push    cs
@@ -9191,6 +9232,11 @@ int2f_task_end:
         mul     bl
         mov     si,ax
         mov     byte ptr cs:task_titles[si],0
+        mov     si,bx                 ; its window's place and size too
+        shl     si,1
+        shl     si,1
+        mov     word ptr cs:own_geom[si],0
+        mov     word ptr cs:own_geom[si+2],0
 task_end_dead:
         mov     al,bl
         inc     al                    ; its tag
@@ -9482,6 +9528,7 @@ appreq_size    dw 0                   ; none), the DVP
 appreq_dvp     db APPREQ_MAX dup(0)
 task_titles    db (TASK_OBJECT_COUNT * TITLE_MAX) dup(0) ; D70Ch
 own_tbuf       db (TITLE_MAX + 4) dup(0) ; own_title's
+own_geom       dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Dh:  place, size
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)

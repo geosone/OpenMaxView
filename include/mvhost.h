@@ -25,5 +25,9 @@ int mvhost_appstart(unsigned *from, char *title, int *shown);
 /* The title of task's window (MAXVTSR, INT 2Fh D70Ch:  up to 16
  * characters), as DESQview's window title. */
 void mvhost_title(unsigned task, const char *title);
+/* Task's own window sized (MAXVTSR, INT 2Fh D70Dh):  1, *pos its contents'
+ * place (row << 8 | column) on the task's screen, *size rows << 8 |
+ * columns; else 0. */
+int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size);
 
 #endif

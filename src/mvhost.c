@@ -223,3 +223,18 @@ void mvhost_title(unsigned task, const char *title)
     r.x.di = (unsigned)buf;
     int86x(0x2f, &r, &r, &s);
 }
+
+int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size)
+{
+    union REGS r;
+
+    r.x.ax = 0xd70d;
+    r.x.bx = task;
+    r.x.cx = 0;
+    int86(0x2f, &r, &r);
+    if (r.x.ax != 0)
+        return 0;
+    *pos = r.x.dx;
+    *size = r.x.cx;
+    return 1;
+}

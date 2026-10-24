@@ -49,6 +49,7 @@ static int view_windows;        /* Alt comes back to the windows */
  * is the active one) */
 typedef struct mv_window {
     unsigned char top, left, rows, cols;
+    unsigned gpos, gsize;       /* the task's own window (D70Dh), 0:  none */
 } mv_window;
 static mv_window win[MVK_MAXTASK];
 static unsigned char zorder[MVK_MAXTASK];
@@ -494,6 +495,7 @@ static void win_add(unsigned t)
     win[t].left = (unsigned char)(2 + 6 * k);
     win[t].rows = 10;
     win[t].cols = 50;
+    win[t].gpos = win[t].gsize = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -715,6 +717,32 @@ static void set_cursor(unsigned row, unsigned col, int on)
 /* all windows onto the display; mode:  0 normal, 1 move, 2 size */
 static const char *status_line = "";
 
+/* A window's colour as DESQview 2.80 shows it (its default set-up):  by
+ * window number 31h, 61h, 47h, 21h, then again; a cell's black, grey and
+ * their bright ones swapped with the window's background and foreground
+ * colours (07h shows as the window's colour). */
+static unsigned char dv_attr(unsigned t, unsigned char a)
+{
+    static const unsigned char wc[4] = { 0x31, 0x61, 0x47, 0x21 };
+    unsigned char map[16], b, f, i;
+
+    b = wc[(t - 1) & 3] >> 4;
+    f = wc[(t - 1) & 3] & 15;
+    for (i = 0; i < 16; ++i)
+        map[i] = i;
+    map[0] = b;
+    map[b] = 0;
+    map[8] = b | 8;
+    map[b | 8] = 8;
+    if (f != 7) {
+        map[7] = f;
+        map[f] = 7;
+        map[15] = f | 8;
+        map[f | 8] = 15;
+    }
+    return map[a & 15] | map[a >> 4] << 4;
+}
+
 static void compose(int mode)
 {
     static const char *help[3] = {
@@ -722,7 +750,7 @@ static void compose(int mode)
         " Move: arrows, Enter done ",
         " Size: arrows, Enter done "
     };
-    unsigned i, r, c, t, cur, vrow, vtop;
+    unsigned i, r, c, t, cur, vrow, vtop, hoff, gpos, gsize;
     unsigned focus = mvk_focused();
     unsigned crow = 0, ccol = 0;
     int cursor = 0;
@@ -742,7 +770,7 @@ static void compose(int mode)
         swrite(0, 24, status_line, ATTR_MENU);
     swrite(SCREEN_ROWS - 1, 1, help[mode], ATTR_MENU);
     for (i = 0; i < nwin; ++i) {
-        const mv_window *w;
+        mv_window *w;
         int active = i + 1 == nwin;
         unsigned char fa = active ? ATTR_ACTIVE : ATTR_DATA;
         unsigned char h = active ? 205 : 196, v = active ? 186 : 179;
@@ -752,11 +780,43 @@ static void compose(int mode)
         cur = mvk_peek(t, cells);
         if (cur == 0xffff)
             continue;
-        /* the part of the 80x25 screen with the cursor row */
         vrow = cur >> 8;
-        vtop = vrow >= w->rows ? vrow - w->rows + 1 : 0;
-        if (vtop + w->rows > SCREEN_ROWS)
-            vtop = SCREEN_ROWS - w->rows;
+        hoff = 0;
+        if (mvhost_owngeom(t, &gpos, &gsize)) {
+            /* its own window sized (and placed):  the window that size
+             * and there, as DESQview's, showing it */
+            if (gpos != w->gpos || gsize != w->gsize) {
+                w->gpos = gpos;
+                w->gsize = gsize;
+                w->rows = (unsigned char)(gsize >> 8);
+                w->cols = (unsigned char)gsize;
+                if (w->rows > SCREEN_ROWS - 4)
+                    w->rows = SCREEN_ROWS - 4;
+                if (w->cols > SCREEN_COLS - 2)
+                    w->cols = SCREEN_COLS - 2;
+                w->top = (unsigned char)(gpos >> 8);
+                w->left = (unsigned char)gpos;
+                if (w->top < 2)
+                    w->top = 2;
+                if (w->top + w->rows > SCREEN_ROWS - 2)
+                    w->top = (unsigned char)(SCREEN_ROWS - 2 - w->rows);
+                if (w->left < 1)
+                    w->left = 1;
+                if (w->left + w->cols > SCREEN_COLS - 1)
+                    w->left = (unsigned char)(SCREEN_COLS - 1 - w->cols);
+            }
+            vtop = gpos >> 8;
+            hoff = gpos & 0xff;
+            if (vtop + w->rows > SCREEN_ROWS)
+                vtop = SCREEN_ROWS - w->rows;
+            if (hoff + w->cols > SCREEN_COLS)
+                hoff = SCREEN_COLS - w->cols;
+        } else {
+            /* the part of the 80x25 screen with the cursor row */
+            vtop = vrow >= w->rows ? vrow - w->rows + 1 : 0;
+            if (vtop + w->rows > SCREEN_ROWS)
+                vtop = SCREEN_ROWS - w->rows;
+        }
         sput(w->top - 1, w->left - 1, active ? 201 : 218, fa);
         sput(w->top - 1, w->left + w->cols, active ? 187 : 191, fa);
         sput(w->top + w->rows, w->left - 1, active ? 200 : 192, fa);
@@ -765,18 +825,26 @@ static void compose(int mode)
             sput(w->top - 1, w->left + c, h, fa);
             sput(w->top + w->rows, w->left + c, h, fa);
         }
-        sprintf(line, " %u %.30s ", t, task_title[t]);
-        swrite(w->top - 1, w->left + 1, line, fa);
+        /* the title as DESQview's:  "1==DOS" */
+        sprintf(line, "%c%c%c%.30s", t < 10 ? '0' + t : 'A' + t - 10, h, h,
+                task_title[t]);
+        swrite(w->top - 1, w->left, line, fa);
         for (r = 0; r < w->rows; ++r) {
             sput(w->top + r, w->left - 1, v, fa);
             sput(w->top + r, w->left + w->cols, v, fa);
-            for (c = 0; c < w->cols; ++c)
+            for (c = 0; c < w->cols; ++c) {
+                unsigned short cell =
+                    cells[(vtop + r) * SCREEN_COLS + hoff + c];
+
                 scr[(w->top + r) * SCREEN_COLS + w->left + c] =
-                    cells[(vtop + r) * SCREEN_COLS + c];
+                    (unsigned short)dv_attr(t, cell >> 8) << 8 | (cell & 0xff);
+            }
         }
-        if (t == focus && (cur & 0xff) < w->cols) {
+        if (t == focus && (cur & 0xff) >= hoff &&
+            (cur & 0xff) < hoff + w->cols && vrow >= vtop &&
+            vrow < vtop + w->rows) {
             crow = w->top + vrow - vtop;
-            ccol = w->left + (cur & 0xff);
+            ccol = w->left + (cur & 0xff) - hoff;
             cursor = 1;
         }
     }

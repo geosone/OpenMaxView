@@ -292,8 +292,9 @@ win)
         "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_B_ready:20 key:alt wait:Tab_next:20 sleep:1 text:two key:tab sleep:1 key:ret sleep:1 key:a,b sleep:2 text:typed key:alt sleep:1 key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved key:z sleep:2 text:full key:alt wait:Tab_next:20 key:c wait:Probe_A_ended:20 text:closed key:q wait:exit_to_DOS:10 key:y gone:Tab_next:20 sleep:2 type:echo_win_end"
     d=$OUT/win
     w1=$(file win W1.TXT)
-    c1=$(awk '/1 Probe A/ {print NR*100 + index($0, "1 Probe A"); exit}' "$d/typed.txt" 2>/dev/null)
-    c2=$(awk '/1 Probe A/ {print NR*100 + index($0, "1 Probe A"); exit}' "$d/moved.txt" 2>/dev/null)
+    # the frame's title as DESQview's "1==Probe A" (not the status line)
+    c1=$(awk '/Probe A/ && !/Typing/ {print NR*100 + index($0, "Probe A"); exit}' "$d/typed.txt" 2>/dev/null)
+    c2=$(awk '/Probe A/ && !/Typing/ {print NR*100 + index($0, "Probe A"); exit}' "$d/moved.txt" 2>/dev/null)
     echo "  W1 '$w1', title at $c1 -> $c2"
     check "both windows on one screen" "grep -q 'keyprobe D ready' '$d/two.txt' && grep -q 'keyprobe B ready' '$d/two.txt'"
     check "typing into a window" "grep -q 'Typing into Probe A' '$d/typed.txt' && grep -q 'ab' '$d/typed.txt'"
@@ -541,7 +542,7 @@ ownwin)
     check "the text at row 6, column 30 (the window's contents, as DV)" "[ \"$(text 6 30 40)\" = 'own window' ]"
     check "a double frame around 5x20:  corners at 5,29 / 5,50 / 11,29 / 11,50" "[ '$(cell 5 29 | cut -c1-4) $(cell 5 50 | cut -c1-4) $(cell 11 29 | cut -c1-4) $(cell 11 50 | cut -c1-4)' = '0xc9 0xbb 0xc8 0xbc' ]"
     check "the frame's sides at 6,29 and 6,50" "[ '$(cell 6 29 | cut -c1-4)' = '0xba' ] && [ '$(cell 6 50 | cut -c1-4)' = '0xba' ]"
-    check "the title as DV's:  its number, a double line, the program (1=OWNPRB)" "[ '$(cell 5 30 | cut -c1-4) $(cell 5 31 | cut -c1-4)' = '0x31 0xcd' ] && [ \"$(text 5 32 38)\" = 'OWNPRB' ] && [ '$(cell 5 38 | cut -c1-4)' = '0xcd' ]"
+    check "the title as DV's:  its number, two double lines, the program (1==OWNPRB)" "[ '$(cell 5 30 | cut -c1-4) $(cell 5 31 | cut -c1-4) $(cell 5 32 | cut -c1-4)' = '0x31 0xcd 0xcd' ] && [ \"$(text 5 33 39)\" = 'OWNPRB' ] && [ '$(cell 5 39 | cut -c1-4)' = '0xcd' ]"
     check "its blanks in the window's colour (the screen's, 07h; DV:  its DOS window's)" "[ '$(cell 7 30)' = '0x20 0x07' ] && [ '$(cell 6 30 | cut -c6-9)' = '0x1e' ]"
     ;;
 serve)
