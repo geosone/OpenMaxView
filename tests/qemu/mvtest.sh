@@ -457,14 +457,16 @@ wobj)
     hx() { grep -o "0x[0-9a-f][0-9a-f]" "$OUT/wobj/$1.txt" | tr '\n' ' ' | sed 's/ $//'; }
     w1=$(file wobj W1.TXT | tr '\n' '|')
     echo "  W1: $w1"
-    l=$(printf '0xc4 0x07 %.0s' 1 2 3 4 5 6 7); b=$(printf '0x20 0x71 %.0s' 1 2 3 4 5 6 7 8)
+    # the bytes before window 1's colours (the core's VGA palette swaps 0/3,
+    # 7/1, 8/B, F/9:  shown as DV shows them, frame 07h, blanks 71h)
+    l=$(printf '0xc4 0x31 %.0s' 1 2 3 4 5 6 7); b=$(printf '0x20 0x17 %.0s' 1 2 3 4 5 6 7 8)
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/wobj/end.txt'"
     check "E6h:  a handle as the WRITE's result" "echo '$w1' | grep -q '|new [0-9A-F]*:0000 4|'"
-    check "frame, title, contents as DV:  top" "[ \"$(hx top)\" = '0xda 0x07 0x70 0x07 0x72 0x07 0x6f 0x07 0x62 0x07 0x65 0x07 ${l}0xbf 0x07' ]"
-    check "  hello in 1Fh, blanks 71h (physical colours)" "[ \"$(hx hello)\" = '0xb3 0x07 0x68 0x1f 0x65 0x1f 0x6c 0x1f 0x6c 0x1f 0x6f 0x1f $(printf '0x20 0x71 %.0s' 1 2 3 4 5 6 7)0xb3 0x07' ]"
-    check "  00h 1Fh 70h 7Fh as they are" "[ \"$(hx colours)\" = '0xb3 0x07 0x41 0x00 0x42 0x1f 0x43 0x70 0x44 0x7f ${b}0xb3 0x07' ]"
-    check "  bottom" "[ \"$(hx bottom)\" = '0xc0 0x07 $(printf '0xc4 0x07 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)0xd9 0x07' ]"
-    check "C2h 17,50 + E4h:  moved, the old place restored" "hx moved | grep -q '^0xda 0x07 0x70 0x07' && ! hx old | grep -q '^0xda'"
+    check "frame, title, contents as DV:  top" "[ \"$(hx top)\" = '0xda 0x31 0x70 0x31 0x72 0x31 0x6f 0x31 0x62 0x31 0x65 0x31 ${l}0xbf 0x31' ]"
+    check "  hello in 1Fh, blanks 17h (shown 71h; physical colours)" "[ \"$(hx hello)\" = '0xb3 0x31 0x68 0x1f 0x65 0x1f 0x6c 0x1f 0x6c 0x1f 0x6f 0x1f $(printf '0x20 0x17 %.0s' 1 2 3 4 5 6 7)0xb3 0x31' ]"
+    check "  00h 1Fh 70h 7Fh as they are (shown through the window's colours)" "[ \"$(hx colours)\" = '0xb3 0x31 0x41 0x00 0x42 0x1f 0x43 0x70 0x44 0x7f ${b}0xb3 0x31' ]"
+    check "  bottom" "[ \"$(hx bottom)\" = '0xc0 0x31 $(printf '0xc4 0x31 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)0xd9 0x31' ]"
+    check "C2h 17,50 + E4h:  moved, the old place restored" "hx moved | grep -q '^0xda 0x31 0x70 0x31' && ! hx old | grep -q '^0xda'"
     check "FREE:  the screen restored" "! grep -q probe '$OUT/wobj/freed.txt'"
     ;;
 menu)
@@ -477,15 +479,17 @@ menu)
     m=$(file menu M.TXT | tr '\n' '|')
     echo "  M: $m"
     # the screen bytes of DV 2.80 (rows 8-13, columns 32-45):  a double
-    # frame (on top), "colours", the pointed at field 13h, the others 31h
-    fr() { printf '0xc9 0x07 0x63 0x07 0x6f 0x07 0x6c 0x07 0x6f 0x07 0x75 0x07 0x72 0x07 0x73 0x07 %s0xbb 0x07 ' "$(printf '0xcd 0x07 %.0s' 1 2 3 4 5)"; }
-    ln() { local t="$1" i; printf '0xba 0x07 '; for ((i = 0; i < ${#t}; i++)); do printf '0x%02x 0x%s ' "'${t:i:1}" "$2"; done; printf '0xba 0x07 '; }
-    bot() { printf '0xc8 0x07 %s0xbc 0x07 ' "$(printf '0xcd 0x07 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)"; }
-    want() { echo "$(fr)$(ln ' red      R ' $1)$(ln ' green    G ' $2)$(ln ' blue     B ' 31)$(ln ' quit     Q ' 31)$(bot)" | sed 's/ $//'; }
+    # frame (on top), "colours", the pointed at field 13h, the others 31h;
+    # the bytes before window 1's colours (the core's palette):  07h shows
+    # as 31h, 70h as 13h, the frame's 31h as 07h
+    fr() { printf '0xc9 0x31 0x63 0x31 0x6f 0x31 0x6c 0x31 0x6f 0x31 0x75 0x31 0x72 0x31 0x73 0x31 %s0xbb 0x31 ' "$(printf '0xcd 0x31 %.0s' 1 2 3 4 5)"; }
+    ln() { local t="$1" i; printf '0xba 0x31 '; for ((i = 0; i < ${#t}; i++)); do printf '0x%02x 0x%s ' "'${t:i:1}" "$2"; done; printf '0xba 0x31 '; }
+    bot() { printf '0xc8 0x31 %s0xbc 0x31 ' "$(printf '0xcd 0x31 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)"; }
+    want() { echo "$(fr)$(ln ' red      R ' $1)$(ln ' green    G ' $2)$(ln ' blue     B ' 07)$(ln ' quit     Q ' 07)$(bot)" | sed 's/ $//'; }
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/menu/end.txt'"
-    check "red pointed at (13h), a double frame, colours 31h" "[ \"$(rows a | sed 's/ $//')\" = \"$(want 13 31)\" ]"
-    check "Down:  green pointed at" "[ \"$(rows b | sed 's/ $//')\" = \"$(want 31 13)\" ]"
-    check "Enter:  green stays pointed at" "[ \"$(rows c | sed 's/ $//')\" = \"$(want 31 13)\" ]"
+    check "red pointed at (70h, shown 13h), a double frame, colours 07h (shown 31h)" "[ \"$(rows a | sed 's/ $//')\" = \"$(want 70 07)\" ]"
+    check "Down:  green pointed at" "[ \"$(rows b | sed 's/ $//')\" = \"$(want 07 70)\" ]"
+    check "Enter:  green stays pointed at" "[ \"$(rows c | sed 's/ $//')\" = \"$(want 07 70)\" ]"
     check "the records as DV's:  02/03/04, 'Y'" "[ '$m' = '02 04 02010059|03 04 03010059|04 04 04010059|' ]"
     check "Enter:  item 2 chosen in the own window, at its start" "grep -q '^item 2 chosen' '$OUT/menu/items.txt'"
     ;;

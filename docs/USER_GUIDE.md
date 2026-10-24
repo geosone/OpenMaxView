@@ -86,8 +86,9 @@ carries the window's number and title ("1══Tick counter"), and each
 window has DESQview's colours for its number (1 blue on cyan, 2 on brown,
 3 on red, 4 on green, then again):  a program's black, grey and their
 bright ones show in the window's colours, so plain DOS output (07h) is
-blue on cyan in window 1. The full screen (Z) shows the program's own
-colours. The switch keys come through the BIOS keyboard intercept (INT 15h
+blue on cyan in window 1. A program in front, full screen, shows the
+same colours (through the VGA palette, in text modes; the launcher and
+graphics modes keep the standard ones). The switch keys come through the BIOS keyboard intercept (INT 15h
 function 4Fh), so they do not reach a program that reads the keyboard
 hardware itself; Alt and Ctrl+Alt+n work again once it ends or another
 task has the keys.

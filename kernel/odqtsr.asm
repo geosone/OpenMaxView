@@ -4630,7 +4630,8 @@ wobj_validate_ret:
 
 ; A new window object of CH rows, CL columns (1-25, 1-80):  SI = its index
 ; (CF:  no room).  As DESQview's:  framed, its contents at 1,1, visible but
-; not drawn before an E4h or D4h, blanks in 71h, physical colours.
+; not drawn before an E4h or D4h, blanks in 17h (window 1 shows 71h),
+; physical colours.
 wobj_create:
         push    ax
         push    bx
@@ -4685,7 +4686,7 @@ wobj_create_found:
         mov     word ptr cs:wobj_owner[si],ax
         mov     word ptr cs:wobj_pos[si],0101h
         mov     word ptr cs:wobj_cursor[si],0
-        mov     word ptr cs:wobj_color[si],71h ; (DESQview 2.80, a task
+        mov     word ptr cs:wobj_color[si],17h ; (DESQview 2.80 71h, a task
         mov     word ptr cs:wobj_flags[si],WF_VISIBLE + WF_FRAME ; with no
         push    ax                    ; colours set; else its colours)
         mov     al,byte ptr cs:window_color
@@ -4707,7 +4708,7 @@ wobj_create_colour:
         mov     word ptr cs:wobj_fields[si],0
         mov     word ptr cs:wobj_fields[si+2],0
         pop     si
-        mov     ax,7120h
+        mov     ax,1720h
         call    wobj_fill
         clc
         jmp     short wobj_create_ret
@@ -5219,12 +5220,20 @@ wobj_frame_bottom:
         pop     bx
         pop     ax
         ret
-; AX = the frame's character AL (0-5 of wobj_fchars) in 07h.
+; AX = the frame's character AL (0-5 of wobj_fchars) of window object SI
+; in 07h as DESQview shows it:  through its task's window colours (the
+; core's palette) the window's colour, 07h for task 0.
 wobj_frame_char:
         push    bx
         mov     bx,word ptr cs:wobj_fchars
         xlat    byte ptr cs:[bx]
         mov     ah,07h
+        mov     bx,word ptr cs:wobj_owner[si] ; (task + 1)
+        sub     bx,2
+        jb      short wobj_frame_char_ret
+        and     bx,3
+        mov     ah,byte ptr cs:wobj_wincol[bx]
+wobj_frame_char_ret:
         pop     bx
         ret
 wobj_frame_cell:
@@ -9479,9 +9488,12 @@ WOBJ_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
 wobj_objects   db (WOBJ_COUNT * 32) dup(0)
 wobj_pool      db WOBJ_POOL_SIZE dup(0)
 ; DESQview 2.80's logical colours 1-16 (DAh; the attribute's low nibble,
-; 0 for 16), as its default colours show them
-wobj_logical   db 31h,71h,20h,12h,4Bh,50h,30h,60h
-               db 13h,17h,02h,21h,3Ch,05h,03h,06h
+; 0 for 16), before its window colours:  window 1 shows them as 31h 71h
+; 20h 12h 4Bh 50h 30h 60h 13h 17h 02h 21h 3Ch 05h 03h 06h, window 2 the
+; first as 61h (the core's palette, MAXVIEW's windows:  as DV)
+wobj_logical   db 07h,17h,23h,72h,48h,53h,03h,63h
+               db 70h,71h,32h,27h,0Ch,35h,30h,36h
+wobj_wincol    db 31h,61h,47h,21h      ; DV 2.80's window colours, by number
 wobj_single    db 0DAh,0C4h,0BFh,0B3h,0C0h,0D9h ; the frame's characters
 wobj_double    db 0C9h,0CDh,0BBh,0BAh,0C8h,0BCh ;   (on top:  double)
 wobj_esize     dw WOBJ_COUNT dup(7)    ; its field table's entry size

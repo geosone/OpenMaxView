@@ -176,6 +176,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_base_
         public  mvk_setfg_
         public  mvk_fg_
+        public  mvk_dvcolors_
         public  mvk_kill_
         public  mvk_yield_
         public  mvk_dvkey_
@@ -224,6 +225,7 @@ wantsw   dw     0               ; scheduler:  switch tasks
 yieldf   dw     0               ; scheduler:  the task waits
 altpend  dw     0               ; Alt pressed, no other key since
 dvkey    dw     0               ; Alt alone:  task 0
+dvcol    dw     1               ; DESQview's window colours (fgpal)
 fgss     dw     0
 fgsp     dw     0
 old10    dd     0
@@ -1308,12 +1310,104 @@ sfg_g1: mov     [di].T_HOLD,0
         call    setctx
         call    fgcursor
         call    crtset
+        call    fgpal
         dec     cs:insched
 sfg_ret:
         pop     es
         popa
         ret
 setfg   endp
+
+; DESQview's window colours on the screen (dvcol):  the foreground task's
+; window (task N, a subtask its parent's) has DV 2.80's colours for its
+; number, 31h 61h 47h 21h and again (background, foreground); colour 0 and
+; the background, 7 and the foreground, 8 and 15 and their bright ones
+; swapped, as DV shows a window (07h as 31h in window 1):  the attribute
+; controller's 16 palette registers permuted so.  Task 0, mono, graphics:
+; the standard palette.
+fgpal   proc near
+        cmp     cs:dvcol,0
+        je      fp_none
+        pusha
+        sub     sp,16
+        mov     bp,sp
+        xor     si,si
+@@:     mov     ax,si
+        mov     byte ptr ss:[bp+si],al  ; (the identity)
+        inc     si
+        cmp     si,16
+        jb      @B
+        mov     bx,cs:fg
+        or      bx,bx
+        jz      fp_set
+        push    bx
+        call    taskptr
+        mov     di,bx
+        pop     bx
+        call    isgfx
+        jc      fp_set
+        cmp     [di].T_MODE,7
+        je      fp_set
+        mov     ax,[di].T_PARENT ; a subtask:  its task's window (+1)
+        or      ax,ax
+        jz      @F
+        mov     bx,ax
+        dec     bx
+@@:     dec     bx
+        and     bx,3
+        mov     al,cs:fp_win[bx]
+        mov     ah,al
+        shr     ah,4            ; AH background, AL foreground
+        and     al,0Fh
+        movzx   si,ah
+        mov     byte ptr ss:[bp],ah     ; 0 <-> background
+        mov     byte ptr ss:[bp+si],0
+        mov     cl,ah
+        or      cl,8
+        mov     byte ptr ss:[bp+8],cl   ; 8 <-> bright background
+        movzx   si,cl
+        mov     byte ptr ss:[bp+si],8
+        cmp     al,7
+        je      fp_set
+        mov     byte ptr ss:[bp+7],al   ; 7 <-> foreground
+        movzx   si,al
+        mov     byte ptr ss:[bp+si],7
+        mov     cl,al
+        or      cl,8
+        mov     byte ptr ss:[bp+15],cl  ; 15 <-> bright foreground
+        movzx   si,cl
+        mov     byte ptr ss:[bp+si],15
+fp_set: pushf
+        cli
+        mov     dx,3DAh         ; (the flip-flop to the index)
+        in      al,dx
+        mov     dx,3C0h
+        xor     di,di
+@@:     mov     ax,di
+        out     dx,al
+        movzx   si,byte ptr ss:[bp+di]
+        mov     al,cs:fp_std[si]
+        out     dx,al
+        inc     di
+        cmp     di,16
+        jb      @B
+        mov     al,20h          ; the screen on again
+        out     dx,al
+        popf
+        add     sp,16
+        popa
+fp_none:
+        ret
+fgpal   endp
+fp_win  db      31h,61h,47h,21h ; DV 2.80's window colours, by number
+fp_std  db      0,1,2,3,4,5,14h,7,38h,39h,3Ah,3Bh,3Ch,3Dh,3Eh,3Fh
+
+; void mvk_dvcolors(unsigned on):  DESQview's window colours (fgpal) on
+; the screen of the task in front (default on).
+mvk_dvcolors_ proc near
+        mov     cs:dvcol,ax
+        ret
+mvk_dvcolors_ endp
 
 ; QPI 0Dh for the task now running (cur):  the foreground's own CRTC and
 ; DAC, a background task's trapped (cursor address to crtget/crtset, the

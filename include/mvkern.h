@@ -54,6 +54,11 @@ int mvk_kill(unsigned task);
 void mvk_yield(void);
 /* on:  Alt pressed and released alone switches to task 0 (DESQview). */
 void mvk_dvkey(unsigned on);
+/* on:  the task in front shows DESQview's colours for its window number
+ * (1 blue on cyan, 2 on brown, 3 on red, 4 on green, then again:  its
+ * black and grey are the window's), through the VGA palette; task 0 the
+ * standard ones.  Default on. */
+void mvk_dvcolors(unsigned on);
 /* The keys to task (0 or ready), the display unchanged (windows drawn by
  * task 0).  0 or MVE_x. */
 int mvk_focus(unsigned task);
