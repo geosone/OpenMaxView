@@ -1,42 +1,74 @@
 # Compatibility and limitations
 
-## Milestone 0.8 status
+## DESQview 2.80 functions
 
-| Area | Status | Notes |
+The goal is a complete replacement of DESQview 2.80, not only what a BBS
+needs. This list follows DESQview 2.80's own menus (measured on Open 386MAX
+with the local scripts `build/dvdbg/dmenu.sh`) and states what Open MaxView
+does today. "As DV" means compared with DESQview 2.80 in a test.
+
+### Main menu (DESQview key, Alt)
+
+| DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
-| DESQview presence query | Implemented | Reports API 2.80. |
-| Cooperative pause | Implemented | Returns safely through the resident service. |
-| Critical markers | Implemented | Nested, saturating state reset around each child. |
-| Task-state calls | Foreground implementation | `APPNUM`, `APILEVEL`, modes, error policy and critical-state calls. |
-| Alternate text-video buffer | Foreground implementation | Aliases B000h/B800h and accepts change notification. |
-| Physical screen queries | Foreground implementation | Reports BIOS rows, columns and mode; no direct-window switch or DV/X identity. |
-| DESQview keyboard injection | Foreground implementation | `PUSHKEY` and handle-validated `PUTKEY` add scan/character pairs to the BIOS buffer. |
-| Keyboard-mouse control | Foreground state implementation | Query, enable and disable are retained per child; event synthesis is not yet implemented. |
-| System/common memory API | Bounded foreground implementation | Eight task slots and four global slots of 256 bytes each; TopView `1001h`, DESQview 2.40 `102Eh` and `DE0Ch` allocation entries share the task pool. |
-| Process memory status | Foreground implementation | Validated current-process MCB size and bounded task-system pool accounting. |
-| Conventional/expanded status | Foreground implementation | DOS MCB and standard EMS queries reported in documented KB units. |
-| Physical debug status | Implemented | `DBGPOKE` appends characters on the bottom text row without replacing attributes. |
-| Foreground task object | Foreground implementation | Real task handle supports identity, DOS ownership, enumeration and versioned window information. |
-| `HANDLE` object message | Foreground implementation | Original caller-stack ABI returns the window and validates live task/timer handles; unavailable selectors return null. |
-| Timer objects | Bounded nonblocking implementation | Four pointer-compatible timers support lifecycle, relative/absolute countdown, open/close and elapsed/remaining/state queries. |
-| Mailbox objects | Bounded nonblocking queue implementation | Two pointer-compatible mailboxes each hold four copied `WRITE`/`ADDTO` or referenced `SUBFROM` messages of up to 128 bytes; both read forms, last-read sender identity, lifecycle, queries, erase, base flags and 32-byte names/lookup are implemented. Empty reads return Carry instead of waiting. |
-| Window location, cursor and buffer | Foreground implementation | `LOCATE` resolves the one full-screen task; window `AT` positions its logical cursor; `GETBUF` exposes the active text page. |
-| TopView character output | Foreground text implementation | `PRINTC` writes character/attribute cells with cursor advance, wrap and full-screen scroll; no graphics-window rendering. |
-| TopView second-level callbacks | Bounded foreground implementation | Sixteen `GETBIT` slots support masked `SETBIT`, `FREEBIT`, nested request queuing and reset cleanup; dispatch is synchronous until the scheduler owns IRQ returns. |
-| TopView sound | Bounded foreground implementation | `SOUND` queues 32 PIT/PC-speaker tone or silence entries with clock-tick expiry and cancellation; queue saturation is nonblocking. |
-| TopView task stack | Bounded foreground implementation | `OSTACK` switches to a 512-byte resident task stack and `USTACK` restores the exact saved user stack; nesting is unsupported by contract. |
-| Installation path | Implemented | `GETDVPATH` returns the resident loader directory in a terminated 67-byte buffer. |
-| DOS program launch | Implemented | One ordinary child at a time through DOS EXEC. |
-| Add/change/delete programs | Implemented | Open text catalogue, atomic update and backup. |
-| Automatic setup | Implemented | Filename-rule scan; no binary inspection. |
-| Settings, file and memory tools | Implemented | Current foreground-safe features only. |
-| ANSI console | Foreground implementation | `INT 29h`; direct video writes bypass it. |
-| Open 386MAX backend | Discovery/status plus guarded QPI lifecycle | Private ABI 1.0 identifies the provider; one clone, a four-page private pool and four-entry mapping table have ordered allocation, activation, full-table commit across a root/clone switch, restoration and release. |
-| `.DVP` compatibility | Versioned import and task binding implemented | Launch and advanced fields persist and become a requested/pending resource contract; advanced enforcement awaits matching backends. |
-| Panels, blocking mailbox reads and blocking timer operations | Planned for 1.x | Wait/wakeup behavior and further dynamic object classes require scheduler-backed conformance tests. |
-| Concurrent V86 tasks and scheduler | Foundation implemented; execution planned for 1.x | Scheduler policy, saved register/PIC images, guarded single-clone ownership and tested master-IRQ install/inject/remove exist; IRQ0 frame switching, DOS state and private maps remain. |
-| Per-task video, keyboard and I/O | Planned for 1.x | A guarded owned-private-page QPI mapping exists; complete task memory maps and trap integration are still required. |
-| Remote viewing | Deferred to 2.x | No remote code is present in 0.8 or the 1.x goal. |
+| The menu itself (Open Window O, Switch Windows S, Close Window C, Rearrange R, Zoom Z, Mark M, Transfer, Scissors, Help F1, Quit DESQview Q) | Alt opens MAXVIEW's own windows view (Tab, Enter, Z, M, S, C, O, Q) | Missing:  the DESQview menu |
+| Open Window:  the program menu by two-letter keys, then Add / Delete / Change a Program | The launcher's catalogue with hotkeys; programs run as tasks | Partial |
+| Switch Windows:  the windows by number | Tab in the windows view, Ctrl+Alt+1..9, the task list (T) | Partial |
+| Close Window:  "Are you sure?" Yes / No | C in the windows view and the task list | Partial |
+| Zoom | Z in the windows view | Partial |
+| Help (F1):  a help index (commands, programs, companions) | none | Missing (own help text needed:  DESQview's is not copied) |
+| Quit DESQview:  "Are you sure?" Yes / No | Q in the launcher (confirmation per `MAXVSET`) | Partial |
+
+### Rearrange
+
+| DESQview 2.80 | Open MaxView today | Status |
+|---|---|---|
+| Move, Resize (with the arrows; Move / Resize / Scroll switch between each other) | M, S in the windows view | Partial |
+| Scroll (the window over the program's screen) | The window follows the cursor | Missing |
+| Position 1-9 (fixed places) | none | Missing |
+| Freeze, Hide, Put Aside | none | Missing |
+| Change Colors (text and background colour of the window) | DESQview's colours by window number, fixed | Missing:  the choice |
+| Video Options (VGA 25 / 30 / 50 / 60 rows) | none | Missing |
+| Tune Performance (this window:  share CPU and EGA in front, run in background, allow swapping; system:  foreground / background ticks, swapping; Revive Mouse) | MVRUN /T foreground and background slices (3:1 as DESQview's 6:2); every task runs in the background | Partial |
+
+### Mark, Transfer, Scissors, Auto Dialer
+
+| DESQview 2.80 | Open MaxView today | Status |
+|---|---|---|
+| Mark (Mark Begin, Mark More, Mark End) and Transfer:  copy screen text from one window into another's keyboard | none | Missing |
+| Scissors | none (not yet measured:  inactive in a plain DV setup) | Missing |
+| Auto Dialer (Mark Phone #, Dial, Talk) | none | Missing |
+
+### Programs and companions
+
+| DESQview 2.80 | Open MaxView today | Status |
+|---|---|---|
+| Add a Program, Delete a Program, Change a Program (all DVP options) | `MAXVAPP` (separate full-screen editor), `MAXVDVP` imports DVP files, `MAXVAUTO` finds programs | Partial:  not from the menu, not every option takes effect |
+| DOS Services | `MAXVFILE` | Partial |
+| Memory Status | `MAXVMEM` | Partial |
+| Learn (keyboard macros and scripts) | none | Missing |
+| Setup (DVSETUP) | `MAXVSET` | Partial |
+
+### Multitasking and programs
+
+| DESQview 2.80 | Open MaxView today | Status |
+|---|---|---|
+| Concurrent DOS programs, each with its own memory, DOS state, screen, keys, video mode, text pages, EMS mapping, current directory | The multitasking core on Open 386MAX (QPI), up to 15 programs in MAXVIEW | As DV |
+| Windows on one screen, numbered, titled, DESQview's colours | The windows view | As DV (titles, colours, own-window geometry) |
+| Background serial programs (BBS nodes):  each IRQ to the window that hooked it last | The core | As DV (`nodes`, `samecom`) |
+| Graphics programs in the background | Held in the background | Partial |
+| Swapping windows out to disk or EMS | none | Missing |
+| Program protection levels, writes-directly-to-screen virtualization | Text pages private per task; CRTC/DAC writes of background tasks trapped | Partial |
+
+### The DESQview API
+
+The API calls DESQview-aware programs use (scheduling, critical sections,
+tasks, subtasks, mailboxes, timers, windows, window streams, query streams,
+keyboard objects, field mode, pointers, object queues, `APP_START`) are
+implemented and compared with DESQview 2.80 call by call; the Quarterdeck
+API examples run as under DESQview. [The API reference](API.md) lists
+every call and its state. Panels and some rarely used objects are still
+missing.
 
 ## Meaning of the version lines
 
