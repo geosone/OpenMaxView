@@ -851,11 +851,16 @@ static void compose(int mode)
     set_cursor(crow, ccol, cursor);
 }
 
-/* MAXVIEW's menu, as DESQview 2.80's (measured):  a box at the right edge,
- * rows from 0, half blocks around it (left DEh, right DDh in 07h; top DFh,
- * bottom DCh in 17h), blue on grey (17h), the title and the bar 71h, a
- * line C4h between groups, an item's key at the right.  An item without a
- * key is not available (DESQview shows Transfer and Scissors so). */
+/* MAXVIEW's menu:  its items cover DESQview 2.80's menus (at the top right,
+ * about their size); the look is Open 386MAX's (QUILIB/MENU.C):  a single frame
+ * black on grey with the title in it and a shadow, the bar reversed and
+ * bright, an item's trigger letter red, items not available yet dark grey;
+ * the key also at the right. */
+#define MENU_ATTR      0x70     /* FG_BLACK | BG_GRAY */
+#define MENU_BAR       0x0f     /* REVATT, FG_BRIGHT */
+#define MENU_TRIGGER   0x74     /* FG_RED on the background */
+#define MENU_BAR_TRIG  0x0c
+#define MENU_DISABLED  0x78     /* FG_DKGRAY | BG_GRAY */
 enum { DV_ITEM, DV_LINE, DV_TEXT, DV_BLANK };
 typedef struct dv_item {
     unsigned char kind;
@@ -879,42 +884,72 @@ static int dv_usable(unsigned i)
 
 static void dv_menu_draw(void)
 {
-    unsigned left, inner, r, c, i, bottom;
+    unsigned left, right, r, c, i, bottom;
     unsigned char a;
 
     if (dv_title == NULL)
         return;
-    inner = dv_width;
-    left = SCREEN_COLS - inner - 2;
-    bottom = dv_count + 3;
-    for (r = 0; r <= bottom; ++r) {
-        sput(r, left, 0xde, 0x07);
-        sput(r, SCREEN_COLS - 1, 0xdd, 0x07);
-        for (c = left + 1; c < SCREEN_COLS - 1; ++c)
-            sput(r, c, r == 0 ? 0xdf : r == bottom ? 0xdc : ' ', 0x17);
+    right = SCREEN_COLS - 3;            /* (the shadow beside it) */
+    left = right - dv_width - 1;
+    bottom = dv_count + 1;
+    for (r = 0; r <= bottom; ++r)
+        for (c = left; c <= right; ++c)
+            sput(r, c, ' ', MENU_ATTR);
+    for (c = left + 1; c < right; ++c) {
+        sput(0, c, 0xc4, MENU_ATTR);
+        sput(bottom, c, 0xc4, MENU_ATTR);
     }
-    c = left + 1 + (inner - strlen(dv_title) - 2) / 2;
-    sput(1, c, ' ', 0x71);
-    swrite(1, c + 1, dv_title, 0x71);
-    sput(1, c + 1 + strlen(dv_title), ' ', 0x71);
+    for (r = 1; r < bottom; ++r) {
+        sput(r, left, 0xb3, MENU_ATTR);
+        sput(r, right, 0xb3, MENU_ATTR);
+    }
+    sput(0, left, 0xda, MENU_ATTR);
+    sput(0, right, 0xbf, MENU_ATTR);
+    sput(bottom, left, 0xc0, MENU_ATTR);
+    sput(bottom, right, 0xd9, MENU_ATTR);
+    sput(0, left + 2, ' ', MENU_ATTR);
+    swrite(0, left + 3, dv_title, MENU_ATTR);
+    sput(0, left + 3 + strlen(dv_title), ' ', MENU_ATTR);
+    for (r = 1; r <= bottom + 1 && r < SCREEN_ROWS; ++r)  /* the shadow */
+        for (c = right + 1; c <= right + 2; ++c)
+            sput(r, c, (unsigned char)scr[r * SCREEN_COLS + c], 0x08);
+    if (bottom + 1 < SCREEN_ROWS)
+        for (c = left + 2; c <= right; ++c)
+            sput(bottom + 1, c, (unsigned char)scr[(bottom + 1) * SCREEN_COLS + c],
+                 0x08);
     for (i = 0; i < dv_count; ++i) {
         const dv_item *it = &dv_items[i];
+        int bar = i == dv_sel && dv_usable(i);
+        const char *k = it->key;
 
-        r = 3 + i;
-        a = i == dv_sel && dv_usable(i) ? 0x71 : 0x17;
+        r = 1 + i;
         if (it->kind == DV_LINE) {
-            for (c = left + 1; c < SCREEN_COLS - 1; ++c)
-                sput(r, c, 0xc4, 0x17);
+            for (c = left + 2; c < right - 1; ++c)
+                sput(r, c, 0xc4, MENU_ATTR);
             continue;
         }
-        for (c = left + 1; c < SCREEN_COLS - 1; ++c)
+        if (it->kind == DV_TEXT) {
+            swrite(r, left + 1 + (dv_width - strlen(it->label)) / 2, it->label,
+                   MENU_ATTR);
+            continue;
+        }
+        if (it->kind != DV_ITEM)
+            continue;
+        a = bar ? MENU_BAR : dv_usable(i) ? MENU_ATTR : MENU_DISABLED;
+        for (c = left + 1; c < right; ++c)
             sput(r, c, ' ', a);
-        if (it->kind == DV_TEXT)
-            swrite(r, left + 1 + (inner - strlen(it->label)) / 2, it->label, a);
-        else if (it->kind == DV_ITEM) {
-            swrite(r, left + 2, it->label, a);
-            if (it->key != NULL && it->key[0] != '\0')
-                swrite(r, SCREEN_COLS - 2 - strlen(it->key), it->key, a);
+        swrite(r, left + 2, it->label, a);
+        if (k != NULL && k[0] > ' ') {
+            const char *p = NULL;
+
+            swrite(r, right - 1 - strlen(k), k, a);
+            if (k[1] == '\0') {         /* the trigger letter in its name */
+                for (p = it->label; *p != '\0' && toupper(*p) != k[0]; ++p)
+                    ;
+                if (*p != '\0')
+                    sput(r, left + 2 + (unsigned)(p - it->label),
+                         (unsigned char)*p, bar ? MENU_BAR_TRIG : MENU_TRIGGER);
+            }
         }
     }
 }

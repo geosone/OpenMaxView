@@ -56,7 +56,7 @@ own, with its own conventional memory, screen and keyboard, while the
 others go on in the background. A started program gets the full screen.
 
 * **Alt** pressed and released alone brings up MaxView's menu over the
-  windows (below), as DESQview's; **Ctrl+Alt+0** does the same. Once all
+  windows (below), as DESQview's key does; **Ctrl+Alt+0** does the same. Once all
   programs have ended, the launcher comes back.
 * **Ctrl+Alt+1** to **Ctrl+Alt+7** switch directly to task 1 to 7.
 * **T** in the launcher lists the running programs: Enter switches to one,
@@ -68,8 +68,9 @@ others go on in the background. A started program gets the full screen.
 * Leaving the launcher closes all running programs after a confirmation.
 
 Alt brings you to the **windows view**: every running program in a window
-of its own, all of them live on one screen, and MaxView's menu at the right
-edge, laid out and coloured as DESQview 2.80's. Choose an item by its key
+of its own, all of them live on one screen, and MaxView's menu at the top
+right in the Open 386MAX look; its items cover DESQview 2.80's menus.
+Choose an item by its key (the red letter, also shown at the right)
 or with the arrows and Enter; Esc goes back one menu, from the main menu
 into the front window (Alt returns).
 
@@ -82,7 +83,7 @@ into the front window (Alt returns).
 | Z | Zoom | the front window full screen (Alt returns) |
 | Q | Quit MaxView | "Are you sure?" Yes (Y) closes all programs and leaves MaxView |
 
-Mark, Transfer, Scissors and Help are shown without a key:  they are not
+Mark, Transfer, Scissors and Help are shown in dark grey:  they are not
 available yet. A message (a program that ended, for example) shows on the
 bottom row until the next key.
 

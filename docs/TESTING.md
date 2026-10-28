@@ -99,7 +99,7 @@ DESQview test:
 | `keys` | screen and keys only for the foreground; Ctrl+Alt+n; waiting tasks yield |
 | `kill` | killed tasks end through DOS, a new one starts in a freed slot |
 | `crit` | a background critical error comes to the front |
-| `desk` | MAXVIEW.EXE starts programs as tasks; Alt shows the windows and the menu where and as DESQview 2.80's (half blocks DEh/DDh in 07h, DFh/DCh in 17h, 17h, the bar 71h, lines C4h, keys at column 77); Open Window lists the programs by key, Switch Windows the windows by number (2 gives KEYPROBE the keys in its window), Quit MaxView asks "Are you sure?" and closes TICK |
+| `desk` | MAXVIEW.EXE starts programs as tasks; Alt shows the windows and the menu at the top right in Open 386MAX's look (single frame 70h, the bar 0Fh, red triggers, keys at the right, items not available yet 78h, a shadow), its items those of DESQview 2.80's main menu; Open Window lists the programs by key, Switch Windows the windows by number (2 gives KEYPROBE the keys in its window), Quit MaxView asks "Are you sure?" and closes TICK |
 | `deskmany` | MAXVIEW.EXE with 12 programs opened through Open Window:  Switch Windows lists all, numbered 1-9 then A-C as DESQview's; C gives KEYPROBE the keys; all TICKs count |
 | `win` | MAXVIEW windows: two tasks on one screen; Switch Windows 1 and typing into it; Rearrange (as DESQview's items) Move; Zoom; Close Window Yes; the title's blank a double line ("1══Probe═A", as DV's "1══DOS═(128K)") |
 | `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |

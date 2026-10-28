@@ -270,12 +270,12 @@ crit)
     check "TICK counts on" "[ $t1 -ge 20 ]"
     ;;
 desk)
-    echo "== desk:  MAXVIEW.EXE runs programs as tasks, its menu as DESQview's"
+    echo "== desk:  MAXVIEW.EXE runs programs as tasks, its menu covers DESQview's"
     cfg=$OUT/MAXVIEW.CFG
     printf 'T|Tick counter|C:\\TICK.EXE C:\\T1.TXT||64|640\r\nK|Key probe|C:\\KEYPROBE.COM C:\\K2.TXT D||64|640\r\n' > "$cfg"
     CMD="C:\\MAXVIEW" END="wait:desk_end:30" run desk 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" \
-        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Switch_Windows:20 text:desk1 mon:xp+/4000xb+0xb8000>menu key:o wait:Change_a_Program:20 text:open key:k wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Switch_Windows:20 key:s wait:Key_probe__________2:10 sleep:1 text:tasks key:2 sleep:2 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:q wait:Are_you_sure:10 text:confirm key:y gone:Switch_Windows:20 sleep:2 type:echo_desk_end"
+        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Switch_Windows:20 text:desk1 mon:xp+/4000xb+0xb8000>menu shot:menu key:o wait:Change_a_Program:20 text:open key:k wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Switch_Windows:20 key:s wait:Key_probe__________2:10 sleep:1 text:tasks key:2 sleep:2 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:q wait:Are_you_sure:10 text:confirm key:y gone:Switch_Windows:20 sleep:2 type:echo_desk_end"
     d=$OUT/desk
     k2=$(file desk K2.TXT); t1=$(last desk T1.TXT tick)
     echo "  K2 '$k2', T1 $t1"
@@ -284,7 +284,7 @@ desk)
     check "Alt:  the windows and the menu (Open Window O ... Quit MaxView Q)" "grep -q 'Open Window *O' '$d/desk1.txt' && grep -q 'Rearrange *R' '$d/desk1.txt' && grep -q 'Quit MaxView *Q' '$d/desk1.txt' && grep -q 'Tick' '$d/desk1.txt'"
     # cell (row, column) of the menu's dump:  character and attribute
     cell() { awk '/^[0-9a-f]+:/' "$d/menu.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
-    check "the menu where and as DESQview 2.80's:  half blocks DEh/DDh 07h, DFh/DCh 17h, 17h, the bar 71h, lines C4h" "[ '$(cell 0 56)' = '0xde 0x07' ] && [ '$(cell 0 57)' = '0xdf 0x17' ] && [ '$(cell 0 79)' = '0xdd 0x07' ] && [ '$(cell 16 57)' = '0xdc 0x17' ] && [ '$(cell 3 57)' = '0x20 0x71' ] && [ '$(cell 3 58)' = '0x4f 0x71' ] && [ '$(cell 4 58)' = '0x53 0x17' ] && [ '$(cell 4 77)' = '0x53 0x17' ] && [ '$(cell 6 57)' = '0xc4 0x17' ] && [ '$(cell 14 76)' = '0x20 0x17' ]"
+    check "the menu at the top right in Open 386MAX's look:  single frame 70h, the bar 0Fh with its red trigger 0Ch, triggers 74h, keys at the right, a line, Mark not available (78h), a shadow" "[ '$(cell 0 54)' = '0xda 0x70' ] && [ '$(cell 0 77)' = '0xbf 0x70' ] && [ '$(cell 14 54)' = '0xc0 0x70' ] && [ '$(cell 1 55)' = '0x20 0x0f' ] && [ '$(cell 1 56)' = '0x4f 0x0c' ] && [ '$(cell 2 56)' = '0x53 0x74' ] && [ '$(cell 2 75)' = '0x53 0x70' ] && [ '$(cell 4 56)' = '0xc4 0x70' ] && [ '$(cell 8 56)' = '0x4d 0x78' ] && [ '$(cell 1 78 | cut -c6-9)' = '0x08' ]"
     check "Open Window:  the programs by key, Add / Delete / Change a Program" "grep -q 'Tick counter *T' '$d/open.txt' && grep -q 'Key probe *K' '$d/open.txt' && grep -q 'Change a Program' '$d/open.txt'"
     check "Switch Windows:  the windows by number" "grep -q 'Tick counter *1' '$d/tasks.txt' && grep -q 'Key probe *2' '$d/tasks.txt'"
     check "KEYPROBE got its keys (also in its window)" "[ '$k2' = xyz ]"
@@ -338,7 +338,7 @@ win)
     check "both windows on one screen" "grep -q 'keyprobe D ready' '$d/two.txt' && grep -q 'keyprobe B ready' '$d/two.txt'"
     check "Switch Windows 1:  typing into its window" "grep -q 'ab' '$d/typed.txt' && ! grep -q 'Switch Windows' '$d/typed.txt'"
     check "window keys to its task" "[ '$w1' = ab ]"
-    check "Rearrange as DESQview's (Move M ... Tune Performance)" "grep -q 'Move *M' '$d/rearr.txt' && grep -q 'Resize *R' '$d/rearr.txt' && grep -q 'Tune Performance' '$d/rearr.txt'"
+    check "Rearrange with DESQview's items (Move M ... Tune Performance)" "grep -q 'Move *M' '$d/rearr.txt' && grep -q 'Resize *R' '$d/rearr.txt' && grep -q 'Tune Performance' '$d/rearr.txt'"
     check "Move:  the window moved (3 right, 1 down)" "[ -n '$c1' ] && [ \$(( ${c2:-0} - ${c1:-0} )) -eq 103 ]"
     check "title blank as the frame (Probe=A)" "echo '$t' | grep -q '0x50 0x72 0x6f 0x62 0x65 0xcd 0x41'"
     check "Zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Switch Windows' '$d/full.txt'"
