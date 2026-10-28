@@ -743,13 +743,13 @@ static unsigned char dv_attr(unsigned t, unsigned char a)
     return map[a & 15] | map[a >> 4] << 4;
 }
 
+static void dv_menu_draw(void);
+
+/* As DESQview's screen:  the windows on a black desk, no bars; a message
+ * (status_line) on the bottom row; MAXVIEW's menu over them while it has
+ * the keys (mode 0); mode 1, 2:  moving, resizing the front window */
 static void compose(int mode)
 {
-    static const char *help[3] = {
-        " Tab next  Enter type  Z full  M move  S size  C close  O open  Q quit ",
-        " Move: arrows, Enter done ",
-        " Size: arrows, Enter done "
-    };
     unsigned i, r, c, t, cur, vrow, vtop, hoff, gpos, gsize;
     unsigned focus = mvk_focused();
     unsigned crow = 0, ccol = 0;
@@ -757,18 +757,7 @@ static void compose(int mode)
     char line[SCREEN_COLS + 1];
 
     for (i = 0; i < SCREEN_ROWS * SCREEN_COLS; ++i)
-        scr[i] = ATTR_BACKGROUND << 8 | 219;
-    for (c = 0; c < SCREEN_COLS; ++c) {
-        sput(0, c, ' ', ATTR_MENU);
-        sput(SCREEN_ROWS - 1, c, ' ', ATTR_MENU);
-    }
-    swrite(0, 1, "Open MaxView windows", ATTR_MENU);
-    if (focus != 0) {
-        sprintf(line, "Typing into %.40s; Alt returns", task_title[focus]);
-        swrite(0, 24, line, ATTR_MENU_TRIGGER);
-    } else
-        swrite(0, 24, status_line, ATTR_MENU);
-    swrite(SCREEN_ROWS - 1, 1, help[mode], ATTR_MENU);
+        scr[i] = 0x0720;
     for (i = 0; i < nwin; ++i) {
         mv_window *w;
         int active = i + 1 == nwin;
@@ -851,17 +840,257 @@ static void compose(int mode)
             cursor = 1;
         }
     }
+    if (status_line[0] != '\0')
+        swrite(SCREEN_ROWS - 1, 0, status_line, 0x70);
+    if (mode == 1 || mode == 2)
+        swrite(SCREEN_ROWS - 1, 0, mode == 1 ? " Move:  arrows, Enter done "
+               : " Resize:  arrows, Enter done ", 0x70);
+    else if (focus == 0)
+        dv_menu_draw();
     _fmemcpy(video, scr, sizeof scr);
     set_cursor(crow, ccol, cursor);
 }
 
-/* the windows of the running programs.  Returns 0:  to the launcher,
- * 1:  quit asked */
-static int windows_view(char *status)
+/* MAXVIEW's menu, as DESQview 2.80's (measured):  a box at the right edge,
+ * rows from 0, half blocks around it (left DEh, right DDh in 07h; top DFh,
+ * bottom DCh in 17h), blue on grey (17h), the title and the bar 71h, a
+ * line C4h between groups, an item's key at the right.  An item without a
+ * key is not available (DESQview shows Transfer and Scissors so). */
+enum { DV_ITEM, DV_LINE, DV_TEXT, DV_BLANK };
+typedef struct dv_item {
+    unsigned char kind;
+    const char *label;
+    const char *key;            /* "" or NULL:  not available */
+    int act;
+} dv_item;
+
+#define DV_MAX 24
+static dv_item dv_items[DV_MAX];
+static unsigned dv_count, dv_sel, dv_width;
+static const char *dv_title;
+static char dv_keys[DV_MAX][4];  /* keys made up at run time */
+static char dv_labels[DV_MAX][ODQ_TITLE_LEN + 1];
+
+static int dv_usable(unsigned i)
+{
+    return dv_items[i].kind == DV_ITEM && dv_items[i].key != NULL &&
+           dv_items[i].key[0] != '\0';
+}
+
+static void dv_menu_draw(void)
+{
+    unsigned left, inner, r, c, i, bottom;
+    unsigned char a;
+
+    if (dv_title == NULL)
+        return;
+    inner = dv_width;
+    left = SCREEN_COLS - inner - 2;
+    bottom = dv_count + 3;
+    for (r = 0; r <= bottom; ++r) {
+        sput(r, left, 0xde, 0x07);
+        sput(r, SCREEN_COLS - 1, 0xdd, 0x07);
+        for (c = left + 1; c < SCREEN_COLS - 1; ++c)
+            sput(r, c, r == 0 ? 0xdf : r == bottom ? 0xdc : ' ', 0x17);
+    }
+    c = left + 1 + (inner - strlen(dv_title) - 2) / 2;
+    sput(1, c, ' ', 0x71);
+    swrite(1, c + 1, dv_title, 0x71);
+    sput(1, c + 1 + strlen(dv_title), ' ', 0x71);
+    for (i = 0; i < dv_count; ++i) {
+        const dv_item *it = &dv_items[i];
+
+        r = 3 + i;
+        a = i == dv_sel && dv_usable(i) ? 0x71 : 0x17;
+        if (it->kind == DV_LINE) {
+            for (c = left + 1; c < SCREEN_COLS - 1; ++c)
+                sput(r, c, 0xc4, 0x17);
+            continue;
+        }
+        for (c = left + 1; c < SCREEN_COLS - 1; ++c)
+            sput(r, c, ' ', a);
+        if (it->kind == DV_TEXT)
+            swrite(r, left + 1 + (inner - strlen(it->label)) / 2, it->label, a);
+        else if (it->kind == DV_ITEM) {
+            swrite(r, left + 2, it->label, a);
+            if (it->key != NULL && it->key[0] != '\0')
+                swrite(r, SCREEN_COLS - 2 - strlen(it->key), it->key, a);
+        }
+    }
+}
+
+static void dv_begin(const char *title, unsigned width)
+{
+    dv_title = title;
+    dv_width = width;
+    dv_count = 0;
+    dv_sel = 0;
+}
+
+static void dv_add(unsigned char kind, const char *label, const char *key,
+                   int act)
+{
+    if (dv_count < DV_MAX) {
+        dv_items[dv_count].kind = kind;
+        dv_items[dv_count].label = label;
+        dv_items[dv_count].key = key;
+        dv_items[dv_count].act = act;
+        ++dv_count;
+    }
+}
+
+/* the bar on the first available item; dir:  move it up (-1) or down */
+static void dv_bar(int dir)
+{
+    unsigned i, n = dv_count;
+
+    if (dir == 0) {
+        for (i = 0; i < n && !dv_usable(i); ++i)
+            ;
+        dv_sel = i < n ? i : 0;
+        return;
+    }
+    for (i = 1; i <= n; ++i) {
+        unsigned j = (dv_sel + n + (dir < 0 ? -(int)i : (int)i)) % n;
+
+        if (dv_usable(j)) {
+            dv_sel = j;
+            return;
+        }
+    }
+}
+
+/* the action of the item whose key is KEY (a letter, or "F1" for the
+ * scan code 59), -1:  none */
+static int dv_find(int key, int scan)
+{
+    unsigned i;
+
+    for (i = 0; i < dv_count; ++i) {
+        const char *k = dv_items[i].key;
+
+        if (!dv_usable(i))
+            continue;
+        if (scan == 59 && strcmp(k, "F1") == 0)
+            return dv_items[i].act;
+        if (scan == 0 && k[1] == '\0' && toupper(key) == k[0])
+            return dv_items[i].act;
+    }
+    return -1;
+}
+
+/* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
+enum {
+    DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT
+};
+enum {
+    A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
+    A_RESIZE, A_YES, A_NO, A_PROGRAM = 100, A_WINDOW = 200
+};
+
+static void dv_build(unsigned menu, const odq_catalog *catalog)
+{
+    unsigned i, t, n;
+
+    switch (menu) {
+    case DV_OPEN:
+        dv_begin("Open Window", 22);
+        n = catalog->count < 17 ? catalog->count : 17;
+        for (i = 0; i < n; ++i) {
+            const odq_program *p = &catalog->programs[i];
+
+            sprintf(dv_labels[i], "%.16s", p->title);
+            dv_keys[i][0] = (char)toupper(p->hotkey);
+            dv_keys[i][1] = '\0';
+            dv_add(DV_ITEM, dv_labels[i], p->hotkey > ' ' ? dv_keys[i] : "",
+                   A_PROGRAM + i);
+        }
+        /* without a hotkey:  Enter on it */
+        for (i = 0; i < n; ++i)
+            if (dv_keys[i][0] <= ' ')
+                dv_items[i].key = " ";
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Add a Program", "", 0);
+        dv_add(DV_ITEM, "Delete a Program", "", 0);
+        dv_add(DV_ITEM, "Change a Program", "", 0);
+        break;
+    case DV_SWITCH:
+        dv_begin("Switch Windows", 22);
+        n = 0;
+        for (t = 1; t < MVK_MAXTASK && n < 20; ++t)
+            if (task_live[t]) {
+                sprintf(dv_labels[n], "%.16s", task_title[t]);
+                dv_keys[n][0] = (char)(t < 10 ? '0' + t : 'A' + t - 10);
+                dv_keys[n][1] = '\0';
+                dv_add(DV_ITEM, dv_labels[n], dv_keys[n], A_WINDOW + t);
+                ++n;
+            }
+        break;
+    case DV_CLOSE:
+    case DV_QUIT:
+        dv_begin(menu == DV_CLOSE ? "Close Window" : "Quit MaxView", 22);
+        dv_add(DV_TEXT, "Are you sure ?", "", 0);
+        dv_add(DV_BLANK, "", "", 0);
+        dv_add(DV_ITEM, "Yes", "Y", A_YES);
+        dv_add(DV_ITEM, "No", "N", A_NO);
+        break;
+    case DV_REARRANGE:
+        dv_begin("Rearrange", 22);
+        dv_add(DV_ITEM, "Move", "M", A_MOVE);
+        dv_add(DV_ITEM, "Resize", "R", A_RESIZE);
+        dv_add(DV_ITEM, "Scroll", "", 0);
+        dv_add(DV_ITEM, "Position", "", 0);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Freeze", "", 0);
+        dv_add(DV_ITEM, "Hide", "", 0);
+        dv_add(DV_ITEM, "Put Aside", "", 0);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Change Colors", "", 0);
+        dv_add(DV_ITEM, "Video Options", "", 0);
+        dv_add(DV_ITEM, "Tune Performance", "", 0);
+        break;
+    default:
+        dv_begin("MaxView", 22);
+        dv_add(DV_ITEM, "Open Window", "O", A_OPEN);
+        dv_add(DV_ITEM, "Switch Windows", "S", A_SWITCH);
+        dv_add(DV_ITEM, "Close Window", "C", A_CLOSE);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Rearrange", "R", A_REARRANGE);
+        dv_add(DV_ITEM, "Zoom", "Z", A_ZOOM);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Mark", "", 0);
+        dv_add(DV_ITEM, "Transfer", "", 0);
+        dv_add(DV_ITEM, "Scissors", "", 0);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Help", "", 0);
+        dv_add(DV_ITEM, "Quit MaxView", "Q", A_QUIT);
+        break;
+    }
+}
+
+/* the front window (the last of zorder) gets the keys */
+static void to_window(unsigned t)
+{
+    unsigned i;
+
+    for (i = 0; i < nwin; ++i)
+        if (zorder[i] == t) {
+            memmove(zorder + i, zorder + i + 1, nwin - i - 1);
+            zorder[nwin - 1] = (unsigned char)t;
+            break;
+        }
+    mvk_focus(t);
+}
+
+/* the windows of the running programs, MAXVIEW's menu over them while it
+ * has the keys (Alt), as DESQview's.  Returns 0:  no windows (to the
+ * launcher), 2:  quit confirmed */
+static int windows_view(const odq_catalog *catalog, char *status)
 {
     unsigned long last = 0, now;
-    int key, mode = 0;
-    unsigned t;
+    int key, scan, act, mode = 0;
+    unsigned t, sel, menu = DV_MAIN, focus, last_focus = 0xffff;
+    int fresh = 1;
     mv_window *w;
 
     for (;;) {
@@ -871,61 +1100,124 @@ static int windows_view(char *status)
             return 0;
         t = zorder[nwin - 1];
         w = &win[t];
+        focus = mvk_focused();
+        if (focus == 0 && last_focus != 0) {    /* Alt:  the menu again */
+            menu = DV_MAIN;
+            fresh = 1;
+        }
+        last_focus = focus;
+        sel = dv_sel;
+        dv_build(menu, catalog);
+        if (fresh) {
+            dv_bar(0);
+            fresh = 0;
+        } else {
+            dv_sel = sel < dv_count ? sel : 0;
+            if (!dv_usable(dv_sel))
+                dv_bar(0);
+        }
         status_line = status;
         now = *(unsigned long far *)MK_FP(0x40, 0x6c);
         if (now - last >= 2) {
             compose(mode);
             last = now;
         }
-        if (mvk_focused() != 0 || !kbhit()) {
+        if (focus != 0 || !kbhit()) {
             mvk_yield();
             continue;
         }
         key = getch();
+        scan = 0;
         last = 0;
+        status[0] = '\0';
         if (key == 0 || key == 0xe0) {
-            key = getch();
+            scan = getch();
             if (mode == 1) {
-                if (key == 72 && w->top > 2) --w->top;
-                if (key == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->top;
-                if (key == 75 && w->left > 1) --w->left;
-                if (key == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->left;
+                if (scan == 72 && w->top > 2) --w->top;
+                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->top;
+                if (scan == 75 && w->left > 1) --w->left;
+                if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->left;
             } else if (mode == 2) {
-                if (key == 72 && w->rows > 3) --w->rows;
-                if (key == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->rows;
-                if (key == 75 && w->cols > 10) --w->cols;
-                if (key == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
+                if (scan == 72 && w->rows > 3) --w->rows;
+                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->rows;
+                if (scan == 75 && w->cols > 10) --w->cols;
+                if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
+            } else if (scan == 72)
+                dv_bar(-1);
+            else if (scan == 80)
+                dv_bar(1);
+            if (mode != 0 || scan != 59)
+                continue;
+        }
+        if (mode != 0) {
+            if (key == 13 || key == 27) {
+                mode = 0;
+                menu = DV_MAIN;
+                to_window(t);
             }
             continue;
         }
-        if (mode != 0) {
-            if (key == 13 || key == 27)
-                mode = 0;
+        if (key == 27) {                /* Esc:  back (the main menu:  to
+                                         * the window) */
+            if (menu == DV_MAIN)
+                to_window(t);
+            menu = DV_MAIN;
+            fresh = 1;
             continue;
         }
-        key = toupper(key);
-        if (key == 9 && nwin > 1) {     /* the bottom one to the top */
-            unsigned char first = zorder[0];
-            memmove(zorder, zorder + 1, nwin - 1);
-            zorder[nwin - 1] = first;
-        } else if (key == 13)
-            mvk_focus(t);
-        else if (key == 'Z') {
-            mvk_setfg(t);
-            while (mvk_fg() != 0 && mvk_state(t) == MVK_READY)
-                mvk_yield();
-        } else if (key == 'M')
-            mode = 1;
-        else if (key == 'S')
-            mode = 2;
-        else if (key == 'C') {
-            mvk_kill(t);
-            sprintf(status, "%.40s is being closed.", task_title[t]);
-        } else if (key == 'O') {
-            view_windows = 0;
-            return 0;
-        } else if (key == 'Q' || key == 27)
-            return 1;
+        if (key == 13 && dv_usable(dv_sel))
+            act = dv_items[dv_sel].act;
+        else
+            act = dv_find(key, scan);
+        if (act <= 0)
+            continue;
+        fresh = 1;
+        if (act >= A_WINDOW) {
+            to_window(act - A_WINDOW);
+            menu = DV_MAIN;
+        } else if (act >= A_PROGRAM) {
+            menu = DV_MAIN;
+            launch_task(&catalog->programs[act - A_PROGRAM], status);
+        } else
+            switch (act) {
+            case A_OPEN:
+                menu = DV_OPEN;
+                break;
+            case A_SWITCH:
+                menu = DV_SWITCH;
+                break;
+            case A_CLOSE:
+                menu = DV_CLOSE;
+                break;
+            case A_REARRANGE:
+                menu = DV_REARRANGE;
+                break;
+            case A_QUIT:
+                menu = DV_QUIT;
+                break;
+            case A_ZOOM:
+                mvk_setfg(t);
+                while (mvk_fg() != 0 && mvk_state(t) == MVK_READY)
+                    mvk_yield();
+                menu = DV_MAIN;
+                break;
+            case A_MOVE:
+                mode = 1;
+                break;
+            case A_RESIZE:
+                mode = 2;
+                break;
+            case A_YES:
+                if (menu == DV_QUIT)
+                    return 2;
+                mvk_kill(t);
+                sprintf(status, "%.40s is being closed.", task_title[t]);
+                menu = DV_MAIN;
+                break;
+            case A_NO:
+                menu = DV_MAIN;
+                break;
+            }
     }
 }
 
@@ -1021,10 +1313,9 @@ int main(void)
 
     for (;;) {
         if (mv_on && view_windows && tasks_open() != 0) {
-            if (windows_view(status) == 0)
-                continue;
-            if (confirm_exit())
+            if (windows_view(&catalog, status) == 2)
                 break;
+            view_windows = 0;
             continue;
         }
         view_windows = 0;

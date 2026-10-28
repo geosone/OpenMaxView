@@ -55,8 +55,9 @@ On Open 386MAX (or QEMM) the launcher runs each program as a task of its
 own, with its own conventional memory, screen and keyboard, while the
 others go on in the background. A started program gets the full screen.
 
-* **Alt** pressed and released alone returns to the launcher, as in
-  DESQview; **Ctrl+Alt+0** does the same.
+* **Alt** pressed and released alone brings up MaxView's menu over the
+  windows (below), as DESQview's; **Ctrl+Alt+0** does the same. Once all
+  programs have ended, the launcher comes back.
 * **Ctrl+Alt+1** to **Ctrl+Alt+7** switch directly to task 1 to 7.
 * **T** in the launcher lists the running programs: Enter switches to one,
   **C** closes it (DOS ends it as if it had exited).
@@ -67,17 +68,23 @@ others go on in the background. A started program gets the full screen.
 * Leaving the launcher closes all running programs after a confirmation.
 
 Alt brings you to the **windows view**: every running program in a window
-of its own, all of them live on one screen. Its keys:
+of its own, all of them live on one screen, and MaxView's menu at the right
+edge, laid out and coloured as DESQview 2.80's. Choose an item by its key
+or with the arrows and Enter; Esc goes back one menu, from the main menu
+into the front window (Alt returns).
 
-| Key | Action |
-|---|---|
-| Tab | next window to the front |
-| Enter | type into the front window (Alt returns) |
-| Z | front window full screen |
-| M, S | move, size the front window with the arrows (Enter ends) |
-| C | close the front program |
-| O | the launcher, to open another program (`W` there returns) |
-| Q, Esc | leave Open MaxView |
+| Key | Menu | Action |
+|---|---|---|
+| O | Open Window | the catalogue's programs by their keys (Add, Delete and Change a Program are not available here yet:  use `MAXVAPP`) |
+| S | Switch Windows | the windows by number (1-9, A, B, ...):  that one to the front, typing into it |
+| C | Close Window | "Are you sure?" Yes (Y) ends the front window's program |
+| R | Rearrange | Move (M), Resize (R):  the front window with the arrows, Enter ends; the other items are not available yet |
+| Z | Zoom | the front window full screen (Alt returns) |
+| Q | Quit MaxView | "Are you sure?" Yes (Y) closes all programs and leaves MaxView |
+
+Mark, Transfer, Scissors and Help are shown without a key:  they are not
+available yet. A message (a program that ended, for example) shows on the
+bottom row until the next key.
 
 A window shows the part of its program's 80x25 screen that holds the
 cursor; a DESQview program that sizes and places its own window gets a

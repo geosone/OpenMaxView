@@ -11,19 +11,19 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 
 | DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
-| The menu itself (Open Window O, Switch Windows S, Close Window C, Rearrange R, Zoom Z, Mark M, Transfer, Scissors, Help F1, Quit DESQview Q) | Alt opens MAXVIEW's own windows view (Tab, Enter, Z, M, S, C, O, Q) | Missing:  the DESQview menu |
-| Open Window:  the program menu by two-letter keys, then Add / Delete / Change a Program | The launcher's catalogue with hotkeys; programs run as tasks | Partial |
-| Switch Windows:  the windows by number | Tab in the windows view, Ctrl+Alt+1..9, the task list (T) | Partial |
-| Close Window:  "Are you sure?" Yes / No | C in the windows view and the task list | Partial |
-| Zoom | Z in the windows view | Partial |
+| The menu itself (Open Window O, Switch Windows S, Close Window C, Rearrange R, Zoom Z, Mark M, Transfer, Scissors, Help F1, Quit DESQview Q) | Alt shows MaxView's menu over the windows, laid out, coloured and keyed as DESQview's (title "MaxView"); items not yet available have no key | As DV (layout); its items as below |
+| Open Window:  the program menu by two-letter keys, then Add / Delete / Change a Program | Open Window lists the catalogue's programs by their (one-letter) keys; Add / Delete / Change a Program shown, not yet available | Partial |
+| Switch Windows:  the windows by number | Switch Windows lists the windows by number (1-9, A, ...); also Ctrl+Alt+1..9 | As DV |
+| Close Window:  "Are you sure?" Yes / No | Close Window:  "Are you sure?" Yes / No | As DV |
+| Zoom | Zoom:  full screen, Alt returns | As DV |
 | Help (F1):  a help index (commands, programs, companions) | none | Missing (own help text needed:  DESQview's is not copied) |
-| Quit DESQview:  "Are you sure?" Yes / No | Q in the launcher (confirmation per `MAXVSET`) | Partial |
+| Quit DESQview:  "Are you sure?" Yes / No | Quit MaxView:  "Are you sure?" Yes / No, closes all programs | As DV |
 
 ### Rearrange
 
 | DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
-| Move, Resize (with the arrows; Move / Resize / Scroll switch between each other) | M, S in the windows view | Partial |
+| Move, Resize (with the arrows; Move / Resize / Scroll switch between each other) | Rearrange:  Move, Resize with the arrows | Partial (DV's Move / Resize / Scroll box not shown) |
 | Scroll (the window over the program's screen) | The window follows the cursor | Missing |
 | Position 1-9 (fixed places) | none | Missing |
 | Freeze, Hide, Put Aside | none | Missing |

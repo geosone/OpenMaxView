@@ -99,9 +99,9 @@ DESQview test:
 | `keys` | screen and keys only for the foreground; Ctrl+Alt+n; waiting tasks yield |
 | `kill` | killed tasks end through DOS, a new one starts in a freed slot |
 | `crit` | a background critical error comes to the front |
-| `desk` | MAXVIEW.EXE starts programs as tasks, Alt, task list, exit |
-| `deskmany` | MAXVIEW.EXE with 12 programs:  the task list scrolls, IDs 1-9 then A-C, Ctrl+Alt only for 1-9, Enter on C gives KEYPROBE the keys, all TICKs count |
-| `win` | MAXVIEW windows: two tasks on one screen, typing, move, zoom, close; the title's blank a double line ("1══Probe═A", as DV's "1══DOS═(128K)") |
+| `desk` | MAXVIEW.EXE starts programs as tasks; Alt shows the windows and the menu where and as DESQview 2.80's (half blocks DEh/DDh in 07h, DFh/DCh in 17h, 17h, the bar 71h, lines C4h, keys at column 77); Open Window lists the programs by key, Switch Windows the windows by number (2 gives KEYPROBE the keys in its window), Quit MaxView asks "Are you sure?" and closes TICK |
+| `deskmany` | MAXVIEW.EXE with 12 programs opened through Open Window:  Switch Windows lists all, numbered 1-9 then A-C as DESQview's; C gives KEYPROBE the keys; all TICKs count |
+| `win` | MAXVIEW windows: two tasks on one screen; Switch Windows 1 and typing into it; Rearrange (as DESQview's items) Move; Zoom; Close Window Yes; the title's blank a double line ("1══Probe═A", as DV's "1══DOS═(128K)") |
 | `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |
 | `cwd` | current directory per task (CDS), MVRUN's unchanged |
 | `ems` | EMS page frame mapping per task, with 47h/48h save/restore |

@@ -270,24 +270,28 @@ crit)
     check "TICK counts on" "[ $t1 -ge 20 ]"
     ;;
 desk)
-    echo "== desk:  MAXVIEW.EXE runs programs as tasks"
+    echo "== desk:  MAXVIEW.EXE runs programs as tasks, its menu as DESQview's"
     cfg=$OUT/MAXVIEW.CFG
     printf 'T|Tick counter|C:\\TICK.EXE C:\\T1.TXT||64|640\r\nK|Key probe|C:\\KEYPROBE.COM C:\\K2.TXT D||64|640\r\n' > "$cfg"
     CMD="C:\\MAXVIEW" END="wait:desk_end:30" run desk 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" \
-        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Tab_next:20 text:desk1 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:t wait:Enter:_switch:10 text:tasks key:down key:ret wait:keyprobe_D_ready:20 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:esc wait:exit_to_DOS:10 text:confirm key:y gone:Open_Program:20 sleep:2 type:echo_desk_end"
+        "wait:Open_Program:60 text:desk0 key:ret sleep:3 text:tick key:alt wait:Switch_Windows:20 text:desk1 mon:xp+/4000xb+0xb8000>menu key:o wait:Change_a_Program:20 text:open key:k wait:keyprobe_D_ready:20 key:x,y sleep:1 key:alt wait:Switch_Windows:20 key:s wait:Key_probe__________2:10 sleep:1 text:tasks key:2 sleep:2 key:z key:dot wait:Key_probe_ended:20 text:ended sleep:3 key:q wait:Are_you_sure:10 text:confirm key:y gone:Switch_Windows:20 sleep:2 type:echo_desk_end"
     d=$OUT/desk
     k2=$(file desk K2.TXT); t1=$(last desk T1.TXT tick)
     echo "  K2 '$k2', T1 $t1"
     check "desktop up, multitasking" "grep -q 'Open Program' '$d/desk0.txt' && ! grep -q 'One program at a time' '$d/desk0.txt'"
     check "TICK on its own screen" "[ -f '$d/tick.txt' ] && ! grep -q 'Open Program' '$d/tick.txt'"
-    check "Alt back to MaxView (windows)" "grep -q 'Tick counter' '$d/desk1.txt' && grep -q 'Tab next' '$d/desk1.txt'"
-    check "task list" "grep -q 'Tick counter' '$d/tasks.txt' && grep -q 'Key probe' '$d/tasks.txt'"
-    check "KEYPROBE got its keys" "[ '$k2' = xyz ]"
+    check "Alt:  the windows and the menu (Open Window O ... Quit MaxView Q)" "grep -q 'Open Window *O' '$d/desk1.txt' && grep -q 'Rearrange *R' '$d/desk1.txt' && grep -q 'Quit MaxView *Q' '$d/desk1.txt' && grep -q 'Tick' '$d/desk1.txt'"
+    # cell (row, column) of the menu's dump:  character and attribute
+    cell() { awk '/^[0-9a-f]+:/' "$d/menu.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
+    check "the menu where and as DESQview 2.80's:  half blocks DEh/DDh 07h, DFh/DCh 17h, 17h, the bar 71h, lines C4h" "[ '$(cell 0 56)' = '0xde 0x07' ] && [ '$(cell 0 57)' = '0xdf 0x17' ] && [ '$(cell 0 79)' = '0xdd 0x07' ] && [ '$(cell 16 57)' = '0xdc 0x17' ] && [ '$(cell 3 57)' = '0x20 0x71' ] && [ '$(cell 3 58)' = '0x4f 0x71' ] && [ '$(cell 4 58)' = '0x53 0x17' ] && [ '$(cell 4 77)' = '0x53 0x17' ] && [ '$(cell 6 57)' = '0xc4 0x17' ] && [ '$(cell 14 76)' = '0x20 0x17' ]"
+    check "Open Window:  the programs by key, Add / Delete / Change a Program" "grep -q 'Tick counter *T' '$d/open.txt' && grep -q 'Key probe *K' '$d/open.txt' && grep -q 'Change a Program' '$d/open.txt'"
+    check "Switch Windows:  the windows by number" "grep -q 'Tick counter *1' '$d/tasks.txt' && grep -q 'Key probe *2' '$d/tasks.txt'"
+    check "KEYPROBE got its keys (also in its window)" "[ '$k2' = xyz ]"
     check "end reported" "grep -q 'Key probe ended' '$d/ended.txt' && grep -q 'code 0' '$d/ended.txt'"
-    check "exit closes TICK" "grep -q 'Close 1 running' '$d/confirm.txt'"
+    check "Quit MaxView:  Are you sure? Yes / No" "grep -q 'Are you sure' '$d/confirm.txt' && grep -q 'Yes *Y' '$d/confirm.txt'"
     check "TICK counted meanwhile" "[ $t1 -ge 10 ]"
-    check "DOS works afterwards" "grep -q '^desk end' '$d/end.txt'"
+    check "DOS works afterwards (TICK closed)" "grep -q '^desk end' '$d/end.txt'"
     ;;
 deskmany)
     echo "== deskmany:  MAXVIEW.EXE with 12 programs"
@@ -298,49 +302,47 @@ deskmany)
     done
     printf 'Z|Key probe|C:\\KEYPROBE.COM C:\\K12.TXT D||64|640\r\n' >> "$cfg"
     st="wait:Open_Program:60 key:ret sleep:3"
-    for i in $(seq 2 12); do
-        # (the menu keeps the last selection:  one down to the next)
-        st="$st key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret sleep:3"
+    for i in $(seq 2 12); do   # Open Window, the program's key
+        st="$st key:alt wait:Switch_Windows:20 key:o wait:Change_a_Program:20 key:$(echo 234567890xz | cut -c$((i - 1))) sleep:3"
     done
-    st="$st wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:t wait:Enter:_switch:10 text:list1"
-    for j in $(seq 1 11); do st="$st key:down"; done
-    st="$st sleep:1 text:list2 key:ret sleep:2 key:k key:dot wait:Key_probe_ended:20 text:ended sleep:2 key:esc wait:exit_to_DOS:10 text:confirm key:y gone:Open_Program:30 sleep:2 type:echo_deskmany_end"
+    st="$st wait:keyprobe_D_ready:20 key:alt wait:Switch_Windows:20 key:s wait:Key_probe__________C:10 sleep:1 text:list1"
+    st="$st key:c sleep:2 key:k key:dot wait:Key_probe_ended:20 text:ended sleep:2 key:q wait:Are_you_sure:10 text:confirm key:y gone:Switch_Windows:30 sleep:2 type:echo_deskmany_end"
     CMD="C:\\MAXVIEW" END="wait:deskmany_end:60" run deskmany 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" "$st"
     d=$OUT/deskmany
     k=$(file deskmany K12.TXT); n=0
     for i in $(seq 1 11); do [ $(last deskmany T$i.TXT tick) -ge 5 ] && n=$((n + 1)); done
     echo "  K12 '$k', TICKs counting $n of 11"
-    check "list:  the first 10 rows" "grep -q ' 1  Tick 1 ' '$d/list1.txt' && grep -q ' A  Tick 10 ' '$d/list1.txt' && ! grep -q 'Key probe' '$d/list1.txt'"
-    check "list scrolled:  B, C at the end" "grep -q ' B  Tick 11 ' '$d/list2.txt' && grep -q ' C  Key probe ' '$d/list2.txt' && ! grep -q ' 1  Tick 1 ' '$d/list2.txt'"
-    check "Ctrl+Alt only for 1-9" "grep -q 'Tick 9 .*Ctrl+Alt+9' '$d/list1.txt' && ! grep -q 'Tick 10 .*Ctrl+Alt' '$d/list1.txt'"
-    check "Enter on C:  KEYPROBE gets the keys" "[ '$k' = k ]"
+    check "Switch Windows:  all 12 numbered as DESQview's (1-9, A, B, C)" "grep -q 'Tick 1  *1 ' '$d/list1.txt' && grep -q 'Tick 9  *9 ' '$d/list1.txt' && grep -q 'Tick 10  *A ' '$d/list1.txt' && grep -q 'Tick 11  *B ' '$d/list1.txt' && grep -q 'Key probe  *C ' '$d/list1.txt'"
+    check "C:  KEYPROBE gets the keys" "[ '$k' = k ]"
     check "11 TICKs count" "[ $n -eq 11 ]"
-    check "exit closes 11" "grep -q 'Close 11 running' '$d/confirm.txt'"
-    check "DOS works afterwards" "grep -q '^deskmany end' '$d/end.txt'"
+    check "Quit MaxView asks" "grep -q 'Are you sure' '$d/confirm.txt'"
+    check "DOS works afterwards (11 closed)" "grep -q '^deskmany end' '$d/end.txt'"
     ;;
 win)
-    echo "== win:  windows of several tasks"
+    echo "== win:  windows of several tasks, rearranged through the menu"
     cfg=$OUT/MAXVIEW.CFG
     printf 'A|Probe A|C:\\KEYPROBE.COM C:\\W1.TXT D||64|640\r\nB|Probe B|C:\\KEYPROBE.COM C:\\W2.TXT B||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
     CMD="C:\\MAXVIEW" END="wait:win_end:30" run win 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg" \
-        "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 key:alt wait:Tab_next:20 key:o wait:Open_Program:20 key:down key:ret wait:keyprobe_B_ready:20 key:alt wait:Tab_next:20 sleep:1 text:two key:tab sleep:1 key:ret sleep:1 key:a,b sleep:2 text:typed key:alt sleep:1 key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved mon:xp+/4000xb+0xb8000>mvram key:z sleep:2 text:full key:alt wait:Tab_next:20 key:c wait:Probe_A_ended:20 text:closed key:q wait:exit_to_DOS:10 key:y gone:Tab_next:20 sleep:2 type:echo_win_end"
+        "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 $M key:o wait:Change_a_Program:20 key:b wait:keyprobe_B_ready:20 $M sleep:1 text:two key:s wait:Probe_B:10 key:1 sleep:1 key:a,b sleep:2 text:typed $M key:r wait:Tune_Performance:10 text:rearr key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved mon:xp+/4000xb+0xb8000>mvram $M key:z sleep:2 text:full $M key:c wait:Are_you_sure:10 key:y wait:Probe_A_ended:20 text:closed key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_win_end"
     d=$OUT/win
     w1=$(file win W1.TXT)
-    # the frame's title as DESQview's "1==Probe A" (not the status line)
-    c1=$(awk '/Probe A/ && !/Typing/ {print NR*100 + index($0, "Probe A"); exit}' "$d/typed.txt" 2>/dev/null)
-    c2=$(awk '/Probe A/ && !/Typing/ {print NR*100 + index($0, "Probe A"); exit}' "$d/moved.txt" 2>/dev/null)
+    # the frame's title as DESQview's "1==Probe A"
+    c1=$(awk '/Probe A/ {print NR*100 + index($0, "Probe A"); exit}' "$d/typed.txt" 2>/dev/null)
+    c2=$(awk '/Probe A/ {print NR*100 + index($0, "Probe A"); exit}' "$d/moved.txt" 2>/dev/null)
     # its blank a double line, as DV's "1==DOS=(128K)"
     t=$(awk '/^[0-9a-f]+:/' "$d/mvram.txt" 2>/dev/null | grep -o "0x[0-9a-f][0-9a-f]" | awk 'NR % 2' | tr '\n' ' ')
     echo "  W1 '$w1', title at $c1 -> $c2"
     check "both windows on one screen" "grep -q 'keyprobe D ready' '$d/two.txt' && grep -q 'keyprobe B ready' '$d/two.txt'"
-    check "typing into a window" "grep -q 'Typing into Probe A' '$d/typed.txt' && grep -q 'ab' '$d/typed.txt'"
+    check "Switch Windows 1:  typing into its window" "grep -q 'ab' '$d/typed.txt' && ! grep -q 'Switch Windows' '$d/typed.txt'"
     check "window keys to its task" "[ '$w1' = ab ]"
-    check "window moved (3 right, 1 down)" "[ -n '$c1' ] && [ \$(( ${c2:-0} - ${c1:-0} )) -eq 103 ]"
+    check "Rearrange as DESQview's (Move M ... Tune Performance)" "grep -q 'Move *M' '$d/rearr.txt' && grep -q 'Resize *R' '$d/rearr.txt' && grep -q 'Tune Performance' '$d/rearr.txt'"
+    check "Move:  the window moved (3 right, 1 down)" "[ -n '$c1' ] && [ \$(( ${c2:-0} - ${c1:-0} )) -eq 103 ]"
     check "title blank as the frame (Probe=A)" "echo '$t' | grep -q '0x50 0x72 0x6f 0x62 0x65 0xcd 0x41'"
-    check "zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Tab next' '$d/full.txt'"
-    check "close" "grep -q 'Probe A ended' '$d/closed.txt' && ! grep -q 'keyprobe D' '$d/closed.txt'"
+    check "Zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Switch Windows' '$d/full.txt'"
+    check "Close Window, Yes" "grep -q 'Probe A ended' '$d/closed.txt' && ! grep -q 'keyprobe D' '$d/closed.txt'"
     check "DOS works afterwards" "grep -q '^win end' '$d/end.txt'"
     ;;
 dvapi)
