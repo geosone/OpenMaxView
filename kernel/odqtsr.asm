@@ -4222,6 +4222,11 @@ own_make_new:
         jc      short own_make_none
         mov     word ptr cs:own_wobj,si
         add     word ptr cs:own_wobj,2
+        push    ax
+        call    sub_task_of           ; a subtask's:  a window of its own
+        or      ax,ax                 ; (own_make_sub)
+        jnz     short own_make_sub
+        pop     ax
         cmp     byte ptr cs:window_color,0 ; no colour set:  the window's
         jne     short own_make_enter  ; (the one at the cursor), as DV
         push    ax
@@ -4243,6 +4248,154 @@ own_make_enter:
 own_make_none:
         pop     si
 own_make_ret:
+        ret
+; A subtask's (AX its task's tag), as DESQview 2.80's:  a window beside
+; its task's, single framed, untitled, not on top, its colour (17h if
+; none is set) shown as it is, not through the window's colours (the
+; core's palette shows its task's:  the swapped value here).
+own_make_sub:
+        push    bx
+        mov     bx,ax
+        call    tag_wincol
+        mov     al,byte ptr cs:window_color
+        or      al,al
+        jnz     short own_make_sub_colour
+        mov     al,17h
+own_make_sub_colour:
+        call    dv_swap
+        mov     byte ptr cs:wobj_color[si],al
+        mov     ah,al
+        mov     al,' '
+        call    wobj_fill
+        pop     bx
+        pop     ax
+        call    wobj_enter
+        call    wobj_redraw
+        jmp     short own_make_none
+
+; AX = the tag (number + 1) of the caller's task if the caller is a
+; subtask, else 0.
+sub_task_of:
+        call    caller_tag
+        dec     ax
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     short sub_task_of_no
+        push    si
+        mov     si,ax
+        shl     si,1
+        mov     ax,word ptr cs:sub_parent[si]
+        pop     si
+        ret
+sub_task_of_no:
+        xor     ax,ax
+        ret
+
+; BX = a task's tag (number + 1):  a subtask's its task's (whose window
+; number and colours it shows in).
+tag_window:
+        push    bx
+        dec     bx
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short tag_window_own
+        shl     bx,1
+        mov     bx,word ptr cs:sub_parent[bx]
+        or      bx,bx
+        jz      short tag_window_own
+        add     sp,2
+        ret
+tag_window_own:
+        pop     bx
+        ret
+
+; AH = the window colour of the task with tag BX (DESQview's by number,
+; wobj_wincol; a subtask its task's), 0 for task 0 (none:  the standard
+; palette).
+tag_wincol:
+        push    bx
+        call    tag_window
+        xor     ah,ah
+        sub     bx,2
+        jb      short tag_wincol_ret
+        and     bx,3
+        mov     ah,byte ptr cs:wobj_wincol[bx]
+tag_wincol_ret:
+        pop     bx
+        ret
+
+; AL (an attribute) swapped as the core's palette swaps it for window
+; colour AH (0:  nothing):  0 <-> background, 8 <-> bright background,
+; and unless the foreground is 7, 7 <-> foreground, 15 <-> bright
+; foreground; its own inverse, so AL is what shows as AL.
+dv_swap:
+        or      ah,ah
+        jz      short dv_swap_ret
+        push    cx
+        mov     ch,al
+        and     al,0Fh
+        call    dv_swap_nibble
+        mov     cl,4
+        shr     ch,cl
+        xchg    al,ch
+        call    dv_swap_nibble
+        shl     al,cl
+        or      al,ch
+        pop     cx
+dv_swap_ret:
+        ret
+dv_swap_nibble:
+        push    bx
+        mov     bl,ah                 ; BL background, BH foreground
+        shr     bl,1
+        shr     bl,1
+        shr     bl,1
+        shr     bl,1
+        mov     bh,ah
+        and     bh,0Fh
+        cmp     al,0
+        jne     short dv_swap_not_0
+        mov     al,bl
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_0:
+        cmp     al,bl
+        jne     short dv_swap_not_bg
+        xor     al,al
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_bg:
+        cmp     al,8
+        jne     short dv_swap_not_8
+        mov     al,bl
+        or      al,8
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_8:
+        or      bl,8
+        cmp     al,bl
+        jne     short dv_swap_not_bg8
+        mov     al,8
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_bg8:
+        cmp     bh,7
+        je      short dv_swap_nibble_ret
+        cmp     al,7
+        jne     short dv_swap_not_7
+        mov     al,bh
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_7:
+        cmp     al,bh
+        jne     short dv_swap_not_fg
+        mov     al,7
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_fg:
+        or      bh,8
+        cmp     al,15
+        jne     short dv_swap_not_15
+        mov     al,bh
+        jmp     short dv_swap_nibble_ret
+dv_swap_not_15:
+        cmp     al,bh
+        jne     short dv_swap_nibble_ret
+        mov     al,15
+dv_swap_nibble_ret:
+        pop     bx
         ret
 
 ; The task's window object (the target) sized again (C3h/C5h, CH rows, CL
@@ -4329,7 +4482,13 @@ own_resize_put:
         mov     word ptr cs:wobj_bytes[si],cx
         mov     word ptr cs:wobj_size[si],bp
         mov     word ptr cs:wobj_cursor[si],0
-        call    wobj_top              ; (drawn again)
+        call    sub_task_of           ; (drawn again; a subtask's:  not on
+        or      ax,ax                 ; top)
+        jz      short own_resize_top
+        call    wobj_redraw
+        jmp     short own_resize_ret
+own_resize_top:
+        call    wobj_top
         call    own_geom_set
 own_resize_ret:
         pop     bp
@@ -4346,6 +4505,9 @@ own_resize_ret:
 own_geom_set:
         push    ax
         push    di
+        call    sub_task_of           ; (a subtask's:  not the task's window)
+        or      ax,ax
+        jnz     short own_geom_set_ret
         mov     di,word ptr cs:task_handle_segment
         sub     di,word ptr cs:task_objects_base
         shr     di,1
@@ -5338,6 +5500,7 @@ wobj_frame_char:
         xlat    byte ptr cs:[bx]
         mov     ah,07h
         mov     bx,word ptr cs:wobj_owner[si] ; (task + 1)
+        call    tag_window            ; (a subtask's:  its task's)
         sub     bx,2
         jb      short wobj_frame_char_ret
         and     bx,3

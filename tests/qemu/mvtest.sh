@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -558,6 +558,23 @@ ownwin)
     check "  its title (1==OWNPRB), the old frame gone (5,29 / 11,29 inside)" "[ '$(cell 2 10 | cut -c1-4) $(cell 2 11 | cut -c1-4)' = '0x31 0xcd' ] && [ \"$(text 2 13 19)\" = 'OWNPRB' ] && [ '$(cell 5 29 | cut -c1-4)' != '0xc9' ] && [ '$(cell 11 29 | cut -c1-4)' != '0xc8' ]"
     check "  the old contents at the top left (own window -> secondndow), the new part blank" "[ \"$(text 3 16 20)\" = 'ndow' ] && [ '$(cell 4 10 | cut -c1-4) $(cell 10 49 | cut -c1-4)' = '0x20 0x20' ]"
     unset O
+    ;;
+subown)
+    echo "== subown:  a subtask's own window sized and moved (C3h/C5h/C2h), as under DV"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\SOWPRB.COM\r\n' > "$OUT/SO.BAT"
+    CMD="C:\\SO.BAT" END="wait:MVRUN:_done:120 sleep:3" run subown 20 "" "$OUT/SO.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/SOWPRB.COM" \
+        "wait:made:60 sleep:2 mon:xp+/4000xb+0xb8000>o key:ret"
+    # cell (row, column):  character and attribute, as two hex bytes (raw:
+    # the core's palette shows task 1's 31h as 07h, 71h as 17h)
+    cell() { awk '/^[0-9a-f]+:/' "$OUT/subown/o.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
+    text() { local c s=""; for ((c = $2; c < $3; c++)); do s="$s$(printf "\\x$(cell $1 $c | cut -c3-4)")"; done; printf "$s"; }
+    echo "  row 15:  '$(text 15 40 50)'"
+    check "MVRUN ended, SOWPRB exit 0" "grep -q 'MVRUN: done' '$OUT/subown/end.txt' && grep -q 'task 1: done exit 0000' '$OUT/subown/end.txt'"
+    check "the subtask's text at row 15, column 40 (its window's contents, as DV)" "[ \"$(text 15 40 47)\" = 'sub own' ]"
+    check "a single frame around 4x20:  corners at 14,39 / 14,60 / 19,39 / 19,60" "[ '$(cell 14 39 | cut -c1-4) $(cell 14 60 | cut -c1-4) $(cell 19 39 | cut -c1-4) $(cell 19 60 | cut -c1-4)' = '0xda 0xbf 0xc0 0xd9' ]"
+    check "untitled (a line at 14,40), the frame shown 07h (raw 31h)" "[ '$(cell 14 40)' = '0xc4 0x31' ] && [ '$(cell 15 39)' = '0xb3 0x31' ]"
+    check "its contents shown 17h as DV's (raw 71h), not the window's colours" "[ '$(cell 15 40 | cut -c6-9)' = '0x71' ] && [ '$(cell 16 40)' = '0x20 0x71' ]"
+    check "the task's text in its window (main made)" "awk '/^[0-9a-f]+:/' '$OUT/subown/o.txt' | grep -o '0x[0-9a-f][0-9a-f]' | awk 'NR % 2' | tr -d '\\n' | grep -q '0x6d0x610x690x6e0x200x6d0x610x640x65'"
     ;;
 serve)
     echo "== serve:  demos/SERVE and ASK, two tasks over a named mailbox (as under DV)"

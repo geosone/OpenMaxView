@@ -138,7 +138,13 @@ and ignored.  Sized again, it keeps its place and takes the new size, as
 DESQview's (its contents at the top left as far as they fit, the rest
 blank, the cursor at 0,0; DV shows its task's screen there); output past
 the API (INT 10h, DOS)
-still goes to the screen, and a subtask's own window stays the screen.
+still goes to the screen.  A subtask's own window, sized so, becomes a
+window of its own beside its task's, as DESQview 2.80's:  single framed,
+untitled, not on top, its contents in 17h (or the colour set) shown as
+they are, not through the window's colours (MAXVTSR stores the value the
+core's palette shows so; the frame shows 07h).  Under DESQview it stays
+on the screen after its task's window has closed; in MaxView a task's
+subtasks end with it.
 
 The default API level is 1.00, automatic viewport justification starts
 enabled, C-style linefeeds start disabled, and error policy 0 is selected.
