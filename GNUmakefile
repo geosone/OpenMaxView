@@ -170,6 +170,12 @@ $(BUILD)/ownprb.obj: tests/ownprb.asm | $(BUILD)
 $(BUILD)/OWNPRB.COM: $(BUILD)/ownprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name OWNPRB.COM option quiet option map=OWNPRB.MAP file ownprb.obj
 
+$(BUILD)/serprb.obj: tests/serprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/SERPRB.COM: $(BUILD)/serprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name SERPRB.COM option quiet option map=SERPRB.MAP file serprb.obj
+
 $(BUILD)/sowprb.obj: tests/sowprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

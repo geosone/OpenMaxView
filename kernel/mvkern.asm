@@ -202,6 +202,9 @@ free_typ db     0               ; its MCB type ('M' or 'Z')
 root_pt  dw     0
 ntasks   dw     0
 cur      dw     0
+irqown   dw     8 dup (0)       ; IRQ0-7:  the TASK (offset) that hooked its
+                                ; vector last (0:  none), as under DESQview
+                                ; the window that hooked an IRQ last gets it
 scur     dw     0               ; whose screen cur has (its parent's for a
                                 ; subtask)
 running  dw     0
@@ -780,6 +783,13 @@ task_free proc near
         push    cx
         push    dx
         push    si
+        xor     si,si           ; its IRQs owned by none
+@@:     cmp     cs:irqown[si],di
+        jne     tf_irq
+        mov     cs:irqown[si],0
+tf_irq: add     si,2
+        cmp     si,16
+        jb      @B
         cmp     [di].T_PARENT,0 ; a subtask:  nothing of its own
         je      @F
         mov     [di].T_PARENT,0
@@ -821,6 +831,7 @@ save_ivtsda proc near
         mov     ax,ds
         mov     es,ax
         cld
+        call    irqhook
         push    di
         lea     di,[di].T_IVT
         xor     si,si
@@ -870,6 +881,35 @@ save_ivtsda proc near
         pop     cx
         ret
 save_ivtsda endp
+
+; The IRQ1-7 vectors the TASK at DI (DS = DGROUP, its IVT the one in
+; memory) has hooked since its IVT was loaded:  it owns those IRQs now
+; (irqown)
+irqhook proc near
+        push    eax
+        push    bx
+        push    es
+        xor     bx,bx
+        mov     es,bx
+        mov     bx,9*4
+ih_vec: mov     eax,es:[bx]
+        cmp     eax,dword ptr [bx+di].T_IVT
+        je      ih_next
+        cmp     eax,origivt[bx]
+        je      ih_next
+        push    bx
+        shr     bx,1            ; ((vector - 8) * 2)
+        mov     cs:irqown[bx-16],di
+        pop     bx
+ih_next:
+        add     bx,4
+        cmp     bx,10h*4
+        jb      ih_vec
+        pop     es
+        pop     bx
+        pop     eax
+        ret
+irqhook endp
 
 ; IVT, SDA, key buffer and cursor data from the TASK at DI (DS = DGROUP;
 ; its context active)
@@ -2930,7 +2970,10 @@ es_ret: pop     es
 escroll endp
 
 ; IRQ1-7:  to the task that hooked the vector (its IVT entry differs from
-; the one at mvk_start), the current task first; none:  the current IVT
+; the one at mvk_start) last, as DESQview 2.80 gives an IRQ to the window
+; that hooked it last, in front or not (irqown; the current task when it
+; hooked it while running); else the current task first; none:  the
+; current IVT
 irq1:   push    ax
         mov     al,09h
         jmp     short irqdisp
@@ -2971,6 +3014,30 @@ irqdisp:
         je      irqd_kbd
         xor     ax,ax
         mov     es,ax
+        ; the task that hooked it last
+        mov     bx,cs:cur
+        call    taskptr
+        mov     eax,es:[si]
+        cmp     eax,dword ptr [bx+si].T_IVT
+        je      @F
+        cmp     eax,origivt[si]
+        jne     irqd_here       ; the current one, while running
+@@:     mov     dx,bx
+        mov     bx,si
+        shr     bx,1
+        mov     di,cs:irqown[bx-16]
+        or      di,di
+        jz      irqd_cur
+        cmp     di,dx
+        je      irqd_cur
+        cmp     [di].T_STATE,TS_READY
+        jne     irqd_cur
+        movzx   edi,di
+        mov     eax,dword ptr [edi+esi].T_IVT
+        cmp     eax,origivt[si]
+        je      irqd_cur        ; (unhooked again)
+        jmp     irqd_other
+irqd_cur:
         ; the current task's vector (in the IVT now)
         mov     ax,es:[si]
         mov     dx,es:[si+2]
@@ -3135,6 +3202,11 @@ start_k proc near
         pop     si
         pop     es
         pop     ds
+        mov     cs:irqown,0
+        mov     word ptr cs:irqown+2,0
+        mov     dword ptr cs:irqown+4,0
+        mov     dword ptr cs:irqown+8,0
+        mov     dword ptr cs:irqown+12,0
         call    hook_install
         ; calldown table
         mov     word ptr cdtab,offset irq0

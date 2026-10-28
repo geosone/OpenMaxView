@@ -1,8 +1,36 @@
 # Serial and BBS design guide
 
 This guide defines the Open MaxView 1.x requirements for DOS bulletin-board
-systems and communications programs. The current 0.x launcher does not yet
-virtualize serial hardware.
+systems and communications programs.
+
+## What works today
+
+Measured side by side with DESQview 2.80 on Open 386MAX (QEMU, tests/SERPRB
+as an interrupt-driven node that echoes every byte):
+
+* **Several nodes at once.** Each task that hooks a COM port's IRQ vector
+  gets that IRQ in its own context, in front or in the background. Two
+  nodes on COM1 (IRQ4) and COM2 (IRQ3) with a third task running and the
+  foreground switched during the transfer lose no byte, at 100 bytes a
+  second and at 960 (9600 baud, an IRQ per byte, no FIFO), 30000 bytes each
+  (mvtest `nodes`); DESQview 2.80 gives the same result (local script
+  `build/dvdbg/dser.sh`).
+* **Two tasks on the same port.** DESQview 2.80 does not refuse it: the
+  window that hooked the IRQ last gets it, even while the other one is in
+  front (measured: after the second window started, the first received
+  nothing more, also when switched back to the front). The multitasking
+  core does the same (`irqown`: a task's newly hooked IRQ1-7 vectors are
+  noted when its IVT is saved; the current task wins while it hooks one
+  anew; a task's IRQs are forgotten when it ends) (mvtest `samecom`).
+* Programs using BIOS `INT 14h` polling need nothing special. A FOSSIL
+  driver loaded before MaxView is shared by all tasks, as under DESQview:
+  its IRQ handler stays in every task's IVT unless a task hooks the vector
+  itself.
+
+Not done yet: UART I/O trapping and per-port ownership (DESQview has none
+either), a FOSSIL test with a real driver, and shared-IRQ dispatch of two
+UARTs on one line to two tasks (QEMU's ISA bus cannot share an IRQ line,
+so this needs real hardware).
 
 ![BBS serial data path](images/bbs-serial.svg)
 
@@ -37,9 +65,11 @@ receiver is required.
 
 ## Ownership and shared IRQs
 
-One task owns a physical UART by default. A conflicting request fails clearly
-instead of exposing partial I/O. Sharing is allowed only through a provider
-that multiplexes complete logical connections.
+DESQview 2.80 has no port ownership: the window that hooked an IRQ last gets
+it, and MaxView behaves the same by default (see above). An optional check
+may later warn when a second task opens a port already in use; it must not
+change the DESQview-compatible default. Sharing a port between tasks is only
+safe through a provider that multiplexes complete logical connections.
 
 Two distinct UARTs may share an IRQ. The host dispatcher must poll every UART
 registered on that line until none reports pending work. Assigning two ports

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM || exit 2
+    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -184,6 +184,42 @@ serial)
     check "every byte echoed unchanged" "[ \"\${feed% ok}\" != \"\$feed\" ]"
     check "SERECHO counted 3000 bytes" "[ $rx -eq 3000 ]"
     check "task 2 counts" "[ $t2 -ge 100 ]"
+    ;;
+nodes)
+    echo "== nodes:  two BBS nodes (COM1 IRQ4, COM2 IRQ3) at once, the foreground switched"
+    s1=$OUT/nodes1.sock s2=$OUT/nodes2.sock; rm -f "$s1" "$s2" "$OUT"/nodes?.feed
+    for n in 1 2; do
+        ( sleep 5; python3 "$MAXROOT/linux/test/serfeed.py" "$OUT/nodes$n.sock" --count ${NCOUNT:-3000} \
+              --rate ${NRATE:-100} --wait 400 --out "$OUT/nodes$n.feed" > /dev/null ) &
+    done
+    SERIAL="-serial unix:$s1,server,nowait -serial unix:$s2,server,nowait" FG="/F3 " run nodes 120 \
+        "C:\\SERPRB.COM 1 C:\\S1.TXT ; C:\\SERPRB.COM 2 C:\\S2.TXT ; C:\\TICK.EXE C:\\T3.TXT" \
+        "$ROOT/build/SERPRB.COM $TICK" \
+        "sleep:20 key:ctrl-alt-1 sleep:8 key:ctrl-alt-2 sleep:8 key:ctrl-alt-3 sleep:8 key:ctrl-alt-1"
+    wait
+    f1=$(cat "$OUT/nodes1.feed" 2>/dev/null); f2=$(cat "$OUT/nodes2.feed" 2>/dev/null)
+    r1=$(last nodes S1.TXT rx); r2=$(last nodes S2.TXT rx); t3=$(last nodes T3.TXT tick)
+    echo "  COM1 ${f1:-no feed result}, COM2 ${f2:-no feed result}; counted $r1 $r2, TICK $t3"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/nodes/end.txt'"
+    check "COM1:  every byte echoed unchanged" "[ \"\${f1% ok}\" != \"\$f1\" ]"
+    check "COM2:  every byte echoed unchanged" "[ \"\${f2% ok}\" != \"\$f2\" ]"
+    check "both nodes counted ${NCOUNT:-3000} bytes" "[ $r1 -eq ${NCOUNT:-3000} ] && [ $r2 -eq ${NCOUNT:-3000} ]"
+    check "task 3 counts" "[ $t3 -ge 100 ]"
+    ;;
+samecom)
+    echo "== samecom:  two tasks hook COM1's IRQ4:  the last one gets it, in front or not (as DV)"
+    sock=$OUT/samecom.sock; rm -f "$sock" "$OUT/samecom.feed"
+    ( sleep 5; python3 "$MAXROOT/linux/test/serfeed.py" "$sock" --count 3000 \
+          --rate 100 --wait 400 --out "$OUT/samecom.feed" > /dev/null ) &
+    SERIAL="-serial unix:$sock,server,nowait" FG="/F1 " run samecom 90 \
+        "C:\\SERPRB.COM 1 C:\\S1.TXT ; C:\\TICK.EXE C:\\T2.TXT ; C:\\SERPRB.COM 1 C:\\S3.TXT" \
+        "$ROOT/build/SERPRB.COM $TICK"
+    wait
+    r1=$(last samecom S1.TXT rx); r3=$(last samecom S3.TXT rx)
+    echo "  $(cat "$OUT/samecom.feed" 2>/dev/null); task 1 counted $r1, task 3 $r3"
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/samecom/end.txt'"
+    check "task 3 (hooked IRQ4 last, in the background) got all 3000 bytes" "[ $r3 -eq 3000 ]"
+    check "task 1 (in front, hooked it first) none" "[ $r1 -eq 0 ]"
     ;;
 keys)
     echo "== keys:  foreground task gets screen and keys"

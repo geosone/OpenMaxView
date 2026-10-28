@@ -94,6 +94,8 @@ DESQview test:
 | `two` | two TICK tasks count side by side, COM1 output of one |
 | `mem` | each task its own conventional memory (same PSP, patterns kept) and text pages 1-7 |
 | `serial` | a background task receives COM1 by IRQ4 and echoes 3000 bytes |
+| `nodes` | tests/SERPRB as two BBS nodes, COM1 (IRQ4) and COM2 (IRQ3), and TICK; the foreground switched during the transfer:  every byte of 3000 on each line echoed unchanged, both count 3000, TICK counts (DESQview 2.80 the same; `NCOUNT=30000 NRATE=960` for 9600 baud, an IRQ per byte) |
+| `samecom` | two SERPRB tasks hook COM1's IRQ4, the first in front:  as under DESQview 2.80 the one that hooked it last (task 3, in the background) gets all 3000 bytes, task 1 none |
 | `keys` | screen and keys only for the foreground; Ctrl+Alt+n; waiting tasks yield |
 | `kill` | killed tasks end through DOS, a new one starts in a freed slot |
 | `crit` | a background critical error comes to the front |
