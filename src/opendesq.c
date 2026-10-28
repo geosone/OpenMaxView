@@ -717,37 +717,12 @@ static void set_cursor(unsigned row, unsigned col, int on)
 /* all windows onto the display; mode:  0 normal, 1 move, 2 size */
 static const char *status_line = "";
 
-/* A window's colour as DESQview 2.80 shows it (its default set-up):  by
- * window number 31h, 61h, 47h, 21h, then again; a cell's black, grey and
- * their bright ones swapped with the window's background and foreground
- * colours (07h shows as the window's colour). */
-static unsigned char dv_attr(unsigned t, unsigned char a)
-{
-    static const unsigned char wc[4] = { 0x31, 0x61, 0x47, 0x21 };
-    unsigned char map[16], b, f, i;
-
-    b = wc[(t - 1) & 3] >> 4;
-    f = wc[(t - 1) & 3] & 15;
-    for (i = 0; i < 16; ++i)
-        map[i] = i;
-    map[0] = b;
-    map[b] = 0;
-    map[8] = b | 8;
-    map[b | 8] = 8;
-    if (f != 7) {
-        map[7] = f;
-        map[f] = 7;
-        map[15] = f | 8;
-        map[f | 8] = 15;
-    }
-    return map[a & 15] | map[a >> 4] << 4;
-}
-
 static void dv_menu_draw(void);
 
-/* As DESQview's screen:  the windows on a black desk, no bars; a message
- * (status_line) on the bottom row; MAXVIEW's menu over them while it has
- * the keys (mode 0); mode 1, 2:  moving, resizing the front window */
+/* The windows on a black desk (each showing its program's own colours,
+ * framed in Open 386MAX's), a message (status_line) on the bottom row;
+ * MAXVIEW's menu over them while it has the keys (mode 0); mode 1, 2:
+ * moving, resizing the front window */
 static void compose(int mode)
 {
     unsigned i, r, c, t, cur, vrow, vtop, hoff, gpos, gsize;
@@ -828,8 +803,7 @@ static void compose(int mode)
                 unsigned short cell =
                     cells[(vtop + r) * SCREEN_COLS + hoff + c];
 
-                scr[(w->top + r) * SCREEN_COLS + w->left + c] =
-                    (unsigned short)dv_attr(t, cell >> 8) << 8 | (cell & 0xff);
+                scr[(w->top + r) * SCREEN_COLS + w->left + c] = cell;
             }
         }
         if (t == focus && (cur & 0xff) >= hoff &&

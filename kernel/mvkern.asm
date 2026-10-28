@@ -228,7 +228,8 @@ wantsw   dw     0               ; scheduler:  switch tasks
 yieldf   dw     0               ; scheduler:  the task waits
 altpend  dw     0               ; Alt pressed, no other key since
 dvkey    dw     0               ; Alt alone:  task 0
-dvcol    dw     1               ; DESQview's window colours (fgpal)
+dvcol    dw     0               ; DESQview's window colours (fgpal), off:
+                                ; programs show their own colours
 fgss     dw     0
 fgsp     dw     0
 old10    dd     0
@@ -1443,7 +1444,8 @@ fp_win  db      31h,61h,47h,21h ; DV 2.80's window colours, by number
 fp_std  db      0,1,2,3,4,5,14h,7,38h,39h,3Ah,3Bh,3Ch,3Dh,3Eh,3Fh
 
 ; void mvk_dvcolors(unsigned on):  DESQview's window colours (fgpal) on
-; the screen of the task in front (default on).
+; the screen of the task in front (default off:  Open MaxView shows a
+; program's own colours).
 mvk_dvcolors_ proc near
         mov     cs:dvcol,ax
         ret

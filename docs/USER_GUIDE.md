@@ -89,15 +89,11 @@ bottom row until the next key.
 
 A window shows the part of its program's 80x25 screen that holds the
 cursor; a DESQview program that sizes and places its own window gets a
-window of that size and place, showing it. As in DESQview the frame
-carries the window's number and title, its blanks drawn as the frame
-("1══Tick═counter"), and each window has DESQview's colours for its
-number (1 blue on cyan, 2 on brown, 3 on red, 4 on green, then again):
-a program's black, grey and their bright ones show in the window's
-colours, so plain DOS output (07h) is blue on cyan in window 1. A
-program in front, full screen, shows the same colours (through the VGA
-palette, in text modes; the launcher and graphics modes keep the
-standard ones). The switch keys come through the BIOS keyboard intercept
+window of that size and place, showing it. The frame carries the
+window's number and title, its blanks drawn as the frame
+("1══Tick═counter"), in Open 386MAX's colours (the front window white on
+cyan with a double frame, the others white on blue); inside, a window
+shows its program's own colours, in a window as full screen. The switch keys come through the BIOS keyboard intercept
 (INT 15h function 4Fh), so they do not reach a program that reads the
 keyboard hardware itself; Alt and Ctrl+Alt+n work again once it ends or
 another task has the keys.

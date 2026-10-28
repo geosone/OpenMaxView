@@ -498,16 +498,16 @@ wobj)
     hx() { grep -o "0x[0-9a-f][0-9a-f]" "$OUT/wobj/$1.txt" | tr '\n' ' ' | sed 's/ $//'; }
     w1=$(file wobj W1.TXT | tr '\n' '|')
     echo "  W1: $w1"
-    # the bytes before window 1's colours (the core's VGA palette swaps 0/3,
-    # 7/1, 8/B, F/9:  shown as DV shows them, frame 07h, blanks 71h)
-    l=$(printf '0xc4 0x31 %.0s' 1 2 3 4 5 6 7); b=$(printf '0x20 0x17 %.0s' 1 2 3 4 5 6 7 8)
+    # the screen bytes:  the frame in Open 386MAX's 1Fh (DV:  the window's
+    # colours), blanks 17h
+    l=$(printf '0xc4 0x1f %.0s' 1 2 3 4 5 6 7); b=$(printf '0x20 0x17 %.0s' 1 2 3 4 5 6 7 8)
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/wobj/end.txt'"
     check "E6h:  a handle as the WRITE's result" "echo '$w1' | grep -q '|new [0-9A-F]*:0000 4|'"
-    check "frame, title, contents as DV:  top" "[ \"$(hx top)\" = '0xda 0x31 0x70 0x31 0x72 0x31 0x6f 0x31 0x62 0x31 0x65 0x31 ${l}0xbf 0x31' ]"
-    check "  hello in 1Fh, blanks 17h (shown 71h; physical colours)" "[ \"$(hx hello)\" = '0xb3 0x31 0x68 0x1f 0x65 0x1f 0x6c 0x1f 0x6c 0x1f 0x6f 0x1f $(printf '0x20 0x17 %.0s' 1 2 3 4 5 6 7)0xb3 0x31' ]"
-    check "  00h 1Fh 70h 7Fh as they are (shown through the window's colours)" "[ \"$(hx colours)\" = '0xb3 0x31 0x41 0x00 0x42 0x1f 0x43 0x70 0x44 0x7f ${b}0xb3 0x31' ]"
-    check "  bottom" "[ \"$(hx bottom)\" = '0xc0 0x31 $(printf '0xc4 0x31 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)0xd9 0x31' ]"
-    check "C2h 17,50 + E4h:  moved, the old place restored" "hx moved | grep -q '^0xda 0x31 0x70 0x31' && ! hx old | grep -q '^0xda'"
+    check "frame (1Fh), title, contents:  top" "[ \"$(hx top)\" = '0xda 0x1f 0x70 0x1f 0x72 0x1f 0x6f 0x1f 0x62 0x1f 0x65 0x1f ${l}0xbf 0x1f' ]"
+    check "  hello in 1Fh, blanks 17h (physical colours)" "[ \"$(hx hello)\" = '0xb3 0x1f 0x68 0x1f 0x65 0x1f 0x6c 0x1f 0x6c 0x1f 0x6f 0x1f $(printf '0x20 0x17 %.0s' 1 2 3 4 5 6 7)0xb3 0x1f' ]"
+    check "  00h 1Fh 70h 7Fh as they are" "[ \"$(hx colours)\" = '0xb3 0x1f 0x41 0x00 0x42 0x1f 0x43 0x70 0x44 0x7f ${b}0xb3 0x1f' ]"
+    check "  bottom" "[ \"$(hx bottom)\" = '0xc0 0x1f $(printf '0xc4 0x1f %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)0xd9 0x1f' ]"
+    check "C2h 17,50 + E4h:  moved, the old place restored" "hx moved | grep -q '^0xda 0x1f 0x70 0x1f' && ! hx old | grep -q '^0xda'"
     check "FREE:  the screen restored" "! grep -q probe '$OUT/wobj/freed.txt'"
     ;;
 menu)
@@ -519,16 +519,16 @@ menu)
     rows() { for r in 8 9 10 11 12 13; do grep -o "0x[0-9a-f][0-9a-f]" "$OUT/menu/$1$r.txt"; done | tr '\n' ' '; }
     m=$(file menu M.TXT | tr '\n' '|')
     echo "  M: $m"
-    # the screen bytes of DV 2.80 (rows 8-13, columns 32-45):  a double
-    # frame (on top), "colours", the pointed at field 13h, the others 31h;
-    # the bytes before window 1's colours (the core's palette):  07h shows
-    # as 31h, 70h as 13h, the frame's 31h as 07h
-    fr() { printf '0xc9 0x31 0x63 0x31 0x6f 0x31 0x6c 0x31 0x6f 0x31 0x75 0x31 0x72 0x31 0x73 0x31 %s0xbb 0x31 ' "$(printf '0xcd 0x31 %.0s' 1 2 3 4 5)"; }
-    ln() { local t="$1" i; printf '0xba 0x31 '; for ((i = 0; i < ${#t}; i++)); do printf '0x%02x 0x%s ' "'${t:i:1}" "$2"; done; printf '0xba 0x31 '; }
-    bot() { printf '0xc8 0x31 %s0xbc 0x31 ' "$(printf '0xcd 0x31 %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)"; }
+    # the screen bytes (rows 8-13, columns 32-45), placed as under DV 2.80:
+    # a double frame (on top) in Open 386MAX's 1Fh, "colours", the pointed
+    # at field 70h, the others 07h (logical colours as they are; DV shows
+    # them through its window colours)
+    fr() { printf '0xc9 0x1f 0x63 0x1f 0x6f 0x1f 0x6c 0x1f 0x6f 0x1f 0x75 0x1f 0x72 0x1f 0x73 0x1f %s0xbb 0x1f ' "$(printf '0xcd 0x1f %.0s' 1 2 3 4 5)"; }
+    ln() { local t="$1" i; printf '0xba 0x1f '; for ((i = 0; i < ${#t}; i++)); do printf '0x%02x 0x%s ' "'${t:i:1}" "$2"; done; printf '0xba 0x1f '; }
+    bot() { printf '0xc8 0x1f %s0xbc 0x1f ' "$(printf '0xcd 0x1f %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)"; }
     want() { echo "$(fr)$(ln ' red      R ' $1)$(ln ' green    G ' $2)$(ln ' blue     B ' 07)$(ln ' quit     Q ' 07)$(bot)" | sed 's/ $//'; }
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/menu/end.txt'"
-    check "red pointed at (70h, shown 13h), a double frame, colours 07h (shown 31h)" "[ \"$(rows a | sed 's/ $//')\" = \"$(want 70 07)\" ]"
+    check "red pointed at (70h), a double frame (1Fh), the others 07h" "[ \"$(rows a | sed 's/ $//')\" = \"$(want 70 07)\" ]"
     check "Down:  green pointed at" "[ \"$(rows b | sed 's/ $//')\" = \"$(want 07 70)\" ]"
     check "Enter:  green stays pointed at" "[ \"$(rows c | sed 's/ $//')\" = \"$(want 07 70)\" ]"
     check "the records as DV's:  02/03/04, 'Y'" "[ '$m' = '02 04 02010059|03 04 03010059|04 04 04010059|' ]"
@@ -602,16 +602,15 @@ subown)
     printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 20 C:\\SOWPRB.COM\r\n' > "$OUT/SO.BAT"
     CMD="C:\\SO.BAT" END="wait:MVRUN:_done:120 sleep:3" run subown 20 "" "$OUT/SO.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/SOWPRB.COM" \
         "wait:made:60 sleep:2 mon:xp+/4000xb+0xb8000>o key:ret"
-    # cell (row, column):  character and attribute, as two hex bytes (raw:
-    # the core's palette shows task 1's 31h as 07h, 71h as 17h)
+    # cell (row, column):  character and attribute, as two hex bytes
     cell() { awk '/^[0-9a-f]+:/' "$OUT/subown/o.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
     text() { local c s=""; for ((c = $2; c < $3; c++)); do s="$s$(printf "\\x$(cell $1 $c | cut -c3-4)")"; done; printf "$s"; }
     echo "  row 15:  '$(text 15 40 50)'"
     check "MVRUN ended, SOWPRB exit 0" "grep -q 'MVRUN: done' '$OUT/subown/end.txt' && grep -q 'task 1: done exit 0000' '$OUT/subown/end.txt'"
     check "the subtask's text at row 15, column 40 (its window's contents, as DV)" "[ \"$(text 15 40 47)\" = 'sub own' ]"
     check "a single frame around 4x20:  corners at 14,39 / 14,60 / 19,39 / 19,60" "[ '$(cell 14 39 | cut -c1-4) $(cell 14 60 | cut -c1-4) $(cell 19 39 | cut -c1-4) $(cell 19 60 | cut -c1-4)' = '0xda 0xbf 0xc0 0xd9' ]"
-    check "untitled (a line at 14,40), the frame shown 07h (raw 31h)" "[ '$(cell 14 40)' = '0xc4 0x31' ] && [ '$(cell 15 39)' = '0xb3 0x31' ]"
-    check "its contents shown 17h as DV's (raw 71h), not the window's colours" "[ '$(cell 15 40 | cut -c6-9)' = '0x71' ] && [ '$(cell 16 40)' = '0x20 0x71' ]"
+    check "untitled (a line at 14,40), the frame 1Fh (Open 386MAX's)" "[ '$(cell 14 40)' = '0xc4 0x1f' ] && [ '$(cell 15 39)' = '0xb3 0x1f' ]"
+    check "its contents 17h, as DV shows them" "[ '$(cell 15 40 | cut -c6-9)' = '0x17' ] && [ '$(cell 16 40)' = '0x20 0x17' ]"
     check "the task's text in its window (main made)" "awk '/^[0-9a-f]+:/' '$OUT/subown/o.txt' | grep -o '0x[0-9a-f][0-9a-f]' | awk 'NR % 2' | tr -d '\\n' | grep -q '0x6d0x610x690x6e0x200x6d0x610x640x65'"
     ;;
 serve)

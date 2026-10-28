@@ -117,6 +117,7 @@ WF_FRAME equ 2
 WF_DRAWN equ 4
 WF_LOGICAL equ 8                      ; DAh:  colours 1-16 (wobj_logical)
 WF_TOP equ 16                         ; on top (C0h-C2h):  a double frame
+WOBJ_FATTR equ 1Fh                    ; window objects' frames (Open 386MAX's colours)
 SUB_COUNT equ 8                       ; subtasks (their stacks)
 SUB_SIZE equ 512
 WOBJ_COUNT equ 8                      ; window objects (stream E6h)
@@ -4249,25 +4250,18 @@ own_make_none:
         pop     si
 own_make_ret:
         ret
-; A subtask's (AX its task's tag), as DESQview 2.80's:  a window beside
-; its task's, single framed, untitled, not on top, its colour (17h if
-; none is set) shown as it is, not through the window's colours (the
-; core's palette shows its task's:  the swapped value here).
+; A subtask's (as DESQview 2.80's:  a window beside its task's, single
+; framed, untitled, not on top), in its colour (17h if none is set).
 own_make_sub:
-        push    bx
-        mov     bx,ax
-        call    tag_wincol
         mov     al,byte ptr cs:window_color
         or      al,al
         jnz     short own_make_sub_colour
         mov     al,17h
 own_make_sub_colour:
-        call    dv_swap
         mov     byte ptr cs:wobj_color[si],al
         mov     ah,al
         mov     al,' '
         call    wobj_fill
-        pop     bx
         pop     ax
         call    wobj_enter
         call    wobj_redraw
@@ -4288,114 +4282,6 @@ sub_task_of:
         ret
 sub_task_of_no:
         xor     ax,ax
-        ret
-
-; BX = a task's tag (number + 1):  a subtask's its task's (whose window
-; number and colours it shows in).
-tag_window:
-        push    bx
-        dec     bx
-        cmp     bx,TASK_OBJECT_COUNT
-        jae     short tag_window_own
-        shl     bx,1
-        mov     bx,word ptr cs:sub_parent[bx]
-        or      bx,bx
-        jz      short tag_window_own
-        add     sp,2
-        ret
-tag_window_own:
-        pop     bx
-        ret
-
-; AH = the window colour of the task with tag BX (DESQview's by number,
-; wobj_wincol; a subtask its task's), 0 for task 0 (none:  the standard
-; palette).
-tag_wincol:
-        push    bx
-        call    tag_window
-        xor     ah,ah
-        sub     bx,2
-        jb      short tag_wincol_ret
-        and     bx,3
-        mov     ah,byte ptr cs:wobj_wincol[bx]
-tag_wincol_ret:
-        pop     bx
-        ret
-
-; AL (an attribute) swapped as the core's palette swaps it for window
-; colour AH (0:  nothing):  0 <-> background, 8 <-> bright background,
-; and unless the foreground is 7, 7 <-> foreground, 15 <-> bright
-; foreground; its own inverse, so AL is what shows as AL.
-dv_swap:
-        or      ah,ah
-        jz      short dv_swap_ret
-        push    cx
-        mov     ch,al
-        and     al,0Fh
-        call    dv_swap_nibble
-        mov     cl,4
-        shr     ch,cl
-        xchg    al,ch
-        call    dv_swap_nibble
-        shl     al,cl
-        or      al,ch
-        pop     cx
-dv_swap_ret:
-        ret
-dv_swap_nibble:
-        push    bx
-        mov     bl,ah                 ; BL background, BH foreground
-        shr     bl,1
-        shr     bl,1
-        shr     bl,1
-        shr     bl,1
-        mov     bh,ah
-        and     bh,0Fh
-        cmp     al,0
-        jne     short dv_swap_not_0
-        mov     al,bl
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_0:
-        cmp     al,bl
-        jne     short dv_swap_not_bg
-        xor     al,al
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_bg:
-        cmp     al,8
-        jne     short dv_swap_not_8
-        mov     al,bl
-        or      al,8
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_8:
-        or      bl,8
-        cmp     al,bl
-        jne     short dv_swap_not_bg8
-        mov     al,8
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_bg8:
-        cmp     bh,7
-        je      short dv_swap_nibble_ret
-        cmp     al,7
-        jne     short dv_swap_not_7
-        mov     al,bh
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_7:
-        cmp     al,bh
-        jne     short dv_swap_not_fg
-        mov     al,7
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_fg:
-        or      bh,8
-        cmp     al,15
-        jne     short dv_swap_not_15
-        mov     al,bh
-        jmp     short dv_swap_nibble_ret
-dv_swap_not_15:
-        cmp     al,bh
-        jne     short dv_swap_nibble_ret
-        mov     al,15
-dv_swap_nibble_ret:
-        pop     bx
         ret
 
 ; The task's window object (the target) sized again (C3h/C5h, CH rows, CL
@@ -5492,20 +5378,12 @@ wobj_frame_bottom:
         pop     ax
         ret
 ; AX = the frame's character AL (0-5 of wobj_fchars) of window object SI
-; in 07h as DESQview shows it:  through its task's window colours (the
-; core's palette) the window's colour, 07h for task 0.
+; in the frame colour (Open 386MAX's white on blue, as QUILIB's data).
 wobj_frame_char:
         push    bx
         mov     bx,word ptr cs:wobj_fchars
         xlat    byte ptr cs:[bx]
-        mov     ah,07h
-        mov     bx,word ptr cs:wobj_owner[si] ; (task + 1)
-        call    tag_window            ; (a subtask's:  its task's)
-        sub     bx,2
-        jb      short wobj_frame_char_ret
-        and     bx,3
-        mov     ah,byte ptr cs:wobj_wincol[bx]
-wobj_frame_char_ret:
+        mov     ah,WOBJ_FATTR
         pop     bx
         ret
 wobj_frame_cell:
@@ -9759,13 +9637,12 @@ WOBJ_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      WOBJ_OBJECT_PAD dup (0) ; (segment:0000 handles)
 wobj_objects   db (WOBJ_COUNT * 32) dup(0)
 wobj_pool      db WOBJ_POOL_SIZE dup(0)
-; DESQview 2.80's logical colours 1-16 (DAh; the attribute's low nibble,
-; 0 for 16), before its window colours:  window 1 shows them as 31h 71h
-; 20h 12h 4Bh 50h 30h 60h 13h 17h 02h 21h 3Ch 05h 03h 06h, window 2 the
-; first as 61h (the core's palette, MAXVIEW's windows:  as DV)
+; The logical colours 1-16 (DAh; the attribute's low nibble, 0 for 16):
+; DESQview 2.80's before its window colours (DV shows them through those,
+; window 1 as 31h 71h 20h 12h 4Bh 50h 30h 60h 13h 17h 02h 21h 3Ch 05h 03h
+; 06h; Open MaxView shows them as they are)
 wobj_logical   db 07h,17h,23h,72h,48h,53h,03h,63h
                db 70h,71h,32h,27h,0Ch,35h,30h,36h
-wobj_wincol    db 31h,61h,47h,21h      ; DV 2.80's window colours, by number
 wobj_single    db 0DAh,0C4h,0BFh,0B3h,0C0h,0D9h ; the frame's characters
 wobj_double    db 0C9h,0CDh,0BBh,0BAh,0C8h,0BCh ;   (on top:  double)
 wobj_esize     dw WOBJ_COUNT dup(7)    ; its field table's entry size

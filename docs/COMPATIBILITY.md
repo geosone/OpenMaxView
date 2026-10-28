@@ -27,7 +27,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Scroll (the window over the program's screen) | The window follows the cursor | Missing |
 | Position 1-9 (fixed places) | none | Missing |
 | Freeze, Hide, Put Aside | none | Missing |
-| Change Colors (text and background colour of the window) | DESQview's colours by window number, fixed | Missing:  the choice |
+| Change Colors (text and background colour of the window) | Windows show their program's own colours, framed in Open 386MAX's | Missing:  the choice |
 | Video Options (VGA 25 / 30 / 50 / 60 rows) | none | Missing |
 | Tune Performance (this window:  share CPU and EGA in front, run in background, allow swapping; system:  foreground / background ticks, swapping; Revive Mouse) | MVRUN /T foreground and background slices (3:1 as DESQview's 6:2); every task runs in the background | Partial |
 
@@ -54,7 +54,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
 | Concurrent DOS programs, each with its own memory, DOS state, screen, keys, video mode, text pages, EMS mapping, current directory | The multitasking core on Open 386MAX (QPI), up to 15 programs in MAXVIEW | As DV |
-| Windows on one screen, numbered, titled, DESQview's colours | The windows view | As DV (titles, colours, own-window geometry) |
+| Windows on one screen, numbered, titled | The windows view, in Open 386MAX's colours | Covered (titles, own-window geometry) |
 | Background serial programs (BBS nodes):  each IRQ to the window that hooked it last | The core | As DV (`nodes`, `samecom`) |
 | Graphics programs in the background | Held in the background | Partial |
 | Swapping windows out to disk or EMS | none | Missing |
