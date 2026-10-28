@@ -79,7 +79,7 @@ into the front window (Alt returns).
 | O | Open Window | the catalogue's programs by their keys (Add, Delete and Change a Program are not available here yet:  use `MAXVAPP`) |
 | S | Switch Windows | the windows by number (1-9, A, B, ...):  that one to the front, typing into it |
 | C | Close Window | "Are you sure?" Yes (Y) ends the front window's program |
-| R | Rearrange | Move (M), Resize (R):  the front window with the arrows, Enter ends; the other items are not available yet |
+| R | Rearrange | Move (M), Resize (R), Scroll (S):  the front window, or its view over the program's screen, with the arrows, Enter ends; Position 1-9:  a fixed place (1, 2 the top and bottom half, 3 the middle, 4, 5 the left and right half, 6-9 the quarters); Freeze (F):  the program runs only while its window has the keys (F again:  Unfreeze); Hide (H):  off the screen, still running; Put Aside (P):  off the screen and stopped. Switch Windows brings a hidden or put aside window back. Change Colors, Video Options and Tune Performance are not available yet |
 | Z | Zoom | the front window full screen (Alt returns) |
 | Q | Quit MaxView | "Are you sure?" Yes (Y) closes all programs and leaves MaxView |
 

@@ -124,6 +124,7 @@ T_MODE  db      ?               ; video mode (40:49) and rows - 1 (40:84)
 T_ROWS  db      ?               ;   when it was last the foreground
 T_VESA  dw      ?               ; VESA mode set (4F02h), 0:  none
 T_HOLD  dw      ?               ; 1:  graphics in the background, held
+T_FRZ   dw      ?               ; 1:  frozen (runs only with the keys)
 T_PARENT dw     ?               ; a DESQview subtask (thread):  its task's
                                 ; number + 1 (its memory, page table and
                                 ; screen); 0:  a task of its own
@@ -182,6 +183,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_dvkey_
         public  mvk_focus_
         public  mvk_focused_
+        public  mvk_freeze_
         public  mvk_peek_
         public  mvk_datasize_
         public  mvk_tune_
@@ -276,6 +278,30 @@ taskptr proc near
         add     bx,offset tasks
         ret
 taskptr endp
+
+; CF:  task DX (TASK at BX, DS = kernel data) is frozen and has not the
+; keys (a subtask:  its task)
+frozen  proc near
+        push    ax
+        push    bx
+        mov     ax,dx
+        cmp     [bx].T_PARENT,0
+        je      @F
+        mov     ax,[bx].T_PARENT
+        dec     ax
+        mov     bx,ax
+        call    taskptr
+@@:     cmp     [bx].T_FRZ,0
+        je      fz_no
+        cmp     ax,cs:kfocus
+        je      fz_no
+        stc
+        jmp     short fz_ret
+fz_no:  clc
+fz_ret: pop     bx
+        pop     ax
+        ret
+frozen  endp
 
 ;----------------------------------------------------------------------------
 ; int mvk_init(unsigned base):  base = task base segment (4KB aligned, a free
@@ -419,6 +445,7 @@ mvk_init_ proc near
         pop     es
         mov     [bx].T_VESA,0
         mov     [bx].T_HOLD,0
+        mov     [bx].T_FRZ,0
         mov     [bx].T_STATE,TS_READY
         mov     ax,cs:root_pt
         mov     [bx].T_PT,ax
@@ -538,6 +565,7 @@ cr_have:
         mov     [di].T_VPG,0    ; (vpg_alloc fills them all)
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
+        mov     [di].T_FRZ,0
         mov     [di].T_PARENT,0
         mov     word ptr [di].T_XSAVE,0 ; behind its stub PSP
         mov     ax,cs:base_seg
@@ -1846,8 +1874,11 @@ irq0_chk:
         call    taskptr
         cmp     [bx].T_STATE,TS_READY
         jne     irq0_skip
-        cmp     [bx].T_HOLD,0   ; held:  only to end it
-        je      irq0_found
+        cmp     [bx].T_HOLD,0   ; held, frozen:  only to end it
+        jne     irq0_held
+        call    frozen
+        jnc     irq0_found
+irq0_held:
         cmp     [bx].T_KILL,0
         jne     irq0_found
 irq0_skip:
@@ -2223,6 +2254,7 @@ th_have:
         mov     [di].T_CRIT,0
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
+        mov     [di].T_FRZ,0
         mov     [di].T_EXIT,0FFFFh
         mov     [di].T_PROG,0
         mov     [di].T_TAIL,0
@@ -3474,6 +3506,27 @@ focus_k proc near
 fc_ret: pop     bx
         ret
 focus_k endp
+
+; int mvk_freeze(unsigned task, unsigned on):  task (1..) frozen:  it and
+; its subtasks run only while it has the keys (DESQview's Freeze, Put
+; Aside); 0 or MVE_STATE
+mvk_freeze_ proc near
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,ax
+        mov     ax,MVE_STATE
+        or      bx,bx
+        jz      frz_ret
+        cmp     bx,cs:ntasks
+        jae     frz_ret
+        call    taskptr
+        mov     [bx].T_FRZ,dx
+        xor     ax,ax
+frz_ret: pop    ds
+        pop     bx
+        ret
+mvk_freeze_ endp
 
 ; unsigned mvk_focused(void):  the task getting the keys
 mvk_focused_ proc near

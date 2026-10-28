@@ -50,6 +50,11 @@ static int view_windows;        /* Alt comes back to the windows */
 typedef struct mv_window {
     unsigned char top, left, rows, cols;
     unsigned gpos, gsize;       /* the task's own window (D70Dh), 0:  none */
+    unsigned char hidden;       /* Hide, Put Aside:  not on the screen */
+    unsigned char aside;        /* Put Aside:  held until switched to */
+    unsigned char frozen;       /* Freeze:  runs only with the keys */
+    unsigned char scrolled;     /* Scroll:  the view at vtop, hoff */
+    unsigned char vtop, hoff;
 } mv_window;
 static mv_window win[MVK_MAXTASK];
 static unsigned char zorder[MVK_MAXTASK];
@@ -496,6 +501,7 @@ static void win_add(unsigned t)
     win[t].rows = 10;
     win[t].cols = 50;
     win[t].gpos = win[t].gsize = 0;
+    win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -719,6 +725,17 @@ static const char *status_line = "";
 
 static void dv_menu_draw(void);
 
+/* the front window:  the last one shown in zorder, 0:  none */
+static unsigned front(void)
+{
+    unsigned i;
+
+    for (i = nwin; i-- > 0;)
+        if (!win[zorder[i]].hidden)
+            return zorder[i];
+    return 0;
+}
+
 /* The windows on a black desk (each showing its program's own colours,
  * framed in Open 386MAX's), a message (status_line) on the bottom row;
  * MAXVIEW's menu over them while it has the keys (mode 0); mode 1, 2:
@@ -735,12 +752,14 @@ static void compose(int mode)
         scr[i] = 0x0720;
     for (i = 0; i < nwin; ++i) {
         mv_window *w;
-        int active = i + 1 == nwin;
+        int active = zorder[i] == front();
         unsigned char fa = active ? ATTR_ACTIVE : ATTR_DATA;
         unsigned char h = active ? 205 : 196, v = active ? 186 : 179;
 
         t = zorder[i];
         w = &win[t];
+        if (w->hidden)
+            continue;
         cur = mvk_peek(t, cells);
         if (cur == 0xffff)
             continue;
@@ -781,6 +800,14 @@ static void compose(int mode)
             if (vtop + w->rows > SCREEN_ROWS)
                 vtop = SCREEN_ROWS - w->rows;
         }
+        if (w->scrolled) {              /* Scroll:  the view kept there */
+            if (w->vtop + w->rows > SCREEN_ROWS)
+                w->vtop = (unsigned char)(SCREEN_ROWS - w->rows);
+            if (w->hoff + w->cols > SCREEN_COLS)
+                w->hoff = (unsigned char)(SCREEN_COLS - w->cols);
+            vtop = w->vtop;
+            hoff = w->hoff;
+        }
         sput(w->top - 1, w->left - 1, active ? 201 : 218, fa);
         sput(w->top - 1, w->left + w->cols, active ? 187 : 191, fa);
         sput(w->top + w->rows, w->left - 1, active ? 200 : 192, fa);
@@ -816,10 +843,14 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(SCREEN_ROWS - 1, 0, status_line, 0x70);
-    if (mode == 1 || mode == 2)
-        swrite(SCREEN_ROWS - 1, 0, mode == 1 ? " Move:  arrows, Enter done "
-               : " Resize:  arrows, Enter done ", 0x70);
-    else if (focus == 0)
+    if (mode >= 1 && mode <= 4) {
+        static const char *const hint[] = {
+            " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
+            " Scroll:  arrows, Enter done ", " Position:  1-9 "
+        };
+
+        swrite(SCREEN_ROWS - 1, 0, hint[mode - 1], 0x70);
+    } else if (focus == 0)
         dv_menu_draw();
     _fmemcpy(video, scr, sizeof scr);
     set_cursor(crow, ccol, cursor);
@@ -994,7 +1025,8 @@ enum {
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
-    A_RESIZE, A_YES, A_NO, A_PROGRAM = 100, A_WINDOW = 200
+    A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
+    A_PLACE = 50, A_PROGRAM = 100, A_WINDOW = 200
 };
 
 static void dv_build(unsigned menu, const odq_catalog *catalog)
@@ -1047,12 +1079,14 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_begin("Rearrange", 22);
         dv_add(DV_ITEM, "Move", "M", A_MOVE);
         dv_add(DV_ITEM, "Resize", "R", A_RESIZE);
-        dv_add(DV_ITEM, "Scroll", "", 0);
-        dv_add(DV_ITEM, "Position", "", 0);
+        dv_add(DV_ITEM, "Scroll", "S", A_SCROLL);
+        dv_add(DV_ITEM, "Position", "1-9", A_POSITION);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Freeze", "", 0);
-        dv_add(DV_ITEM, "Hide", "", 0);
-        dv_add(DV_ITEM, "Put Aside", "", 0);
+        t = front();
+        dv_add(DV_ITEM, t != 0 && win[t].frozen ? "Unfreeze" : "Freeze", "F",
+               A_FREEZE);
+        dv_add(DV_ITEM, "Hide", "H", A_HIDE);
+        dv_add(DV_ITEM, "Put Aside", "P", A_ASIDE);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Change Colors", "", 0);
         dv_add(DV_ITEM, "Video Options", "", 0);
@@ -1077,10 +1111,54 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
     }
 }
 
-/* the front window (the last of zorder) gets the keys */
+/* Position 1-9:  the frame's top, left, bottom, right (DESQview 2.80's
+ * places:  the halves, the middle, the quarters) */
+static const unsigned char places[9][4] = {
+    { 0, 0, 11, 79 }, { 13, 0, 24, 79 }, { 4, 15, 20, 64 },
+    { 0, 0, 24, 39 }, { 0, 41, 24, 79 }, { 0, 0, 11, 39 },
+    { 0, 41, 11, 79 }, { 13, 0, 24, 39 }, { 13, 41, 24, 79 }
+};
+
+static void place(mv_window *w, unsigned n)
+{
+    const unsigned char *p = places[n];
+
+    w->top = (unsigned char)(p[0] + 1);
+    w->left = (unsigned char)(p[1] + 1);
+    w->rows = (unsigned char)(p[2] - p[0] - 1);
+    w->cols = (unsigned char)(p[3] - p[1] - 1);
+}
+
+/* Hide, Put Aside:  window t off the screen (put aside:  held), under the
+ * others; the next one shown is the front */
+static void win_hide(unsigned t, int aside)
+{
+    unsigned i;
+
+    win[t].hidden = 1;
+    if (aside) {
+        win[t].aside = 1;
+        mvk_freeze(t, 1);
+    }
+    for (i = 0; i < nwin; ++i)
+        if (zorder[i] == t) {
+            memmove(zorder + 1, zorder, i);
+            zorder[0] = (unsigned char)t;
+            break;
+        }
+}
+
+/* the front window (the last of zorder) gets the keys; hidden, put aside:
+ * shown again (running) */
 static void to_window(unsigned t)
 {
     unsigned i;
+
+    win[t].hidden = 0;
+    if (win[t].aside) {
+        win[t].aside = 0;
+        mvk_freeze(t, win[t].frozen);
+    }
 
     for (i = 0; i < nwin; ++i)
         if (zorder[i] == t) {
@@ -1107,7 +1185,7 @@ static int windows_view(const odq_catalog *catalog, char *status)
             return 0;
         if (nwin == 0)
             return 0;
-        t = zorder[nwin - 1];
+        t = front();
         w = &win[t];
         focus = mvk_focused();
         if (focus == 0 && last_focus != 0) {    /* Alt:  the menu again */
@@ -1142,21 +1220,35 @@ static int windows_view(const odq_catalog *catalog, char *status)
         if (key == 0 || key == 0xe0) {
             scan = getch();
             if (mode == 1) {
-                if (scan == 72 && w->top > 2) --w->top;
-                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->top;
+                if (scan == 72 && w->top > 1) --w->top;
+                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 1) ++w->top;
                 if (scan == 75 && w->left > 1) --w->left;
                 if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->left;
             } else if (mode == 2) {
                 if (scan == 72 && w->rows > 3) --w->rows;
-                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 2) ++w->rows;
+                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 1) ++w->rows;
                 if (scan == 75 && w->cols > 10) --w->cols;
                 if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
+            } else if (mode == 3) {     /* the view over its 80x25 screen */
+                if (!w->scrolled) {
+                    w->scrolled = 1;
+                    w->vtop = w->hoff = 0;
+                }
+                if (scan == 72 && w->vtop > 0) --w->vtop;
+                if (scan == 80 && w->vtop + w->rows < SCREEN_ROWS) ++w->vtop;
+                if (scan == 75 && w->hoff > 0) --w->hoff;
+                if (scan == 77 && w->hoff + w->cols < SCREEN_COLS) ++w->hoff;
             } else if (scan == 72)
                 dv_bar(-1);
             else if (scan == 80)
                 dv_bar(1);
             if (mode != 0 || scan != 59)
                 continue;
+        }
+        if (mode == 4 && key >= '1' && key <= '9') {
+            place(w, key - '1');
+            w->scrolled = 0;
+            key = 13;
         }
         if (mode != 0) {
             if (key == 13 || key == 27) {
@@ -1168,7 +1260,7 @@ static int windows_view(const odq_catalog *catalog, char *status)
         }
         if (key == 27) {                /* Esc:  back (the main menu:  to
                                          * the window) */
-            if (menu == DV_MAIN)
+            if (menu == DV_MAIN && t != 0)
                 to_window(t);
             menu = DV_MAIN;
             fresh = 1;
@@ -1176,10 +1268,17 @@ static int windows_view(const odq_catalog *catalog, char *status)
         }
         if (key == 13 && dv_usable(dv_sel))
             act = dv_items[dv_sel].act;
+        else if (menu == DV_REARRANGE && key >= '1' && key <= '9' && scan == 0)
+            act = A_PLACE + key - '1';
         else
             act = dv_find(key, scan);
         if (act <= 0)
             continue;
+        if (t == 0 && act != A_OPEN && act != A_SWITCH && act != A_QUIT &&
+            act < A_PROGRAM && menu != DV_QUIT) {
+            strcpy(status, "No window in front.");
+            continue;
+        }
         fresh = 1;
         if (act >= A_WINDOW) {
             to_window(act - A_WINDOW);
@@ -1216,6 +1315,26 @@ static int windows_view(const odq_catalog *catalog, char *status)
             case A_RESIZE:
                 mode = 2;
                 break;
+            case A_SCROLL:
+                mode = 3;
+                break;
+            case A_POSITION:
+                mode = 4;
+                break;
+            case A_FREEZE:
+                w->frozen = (unsigned char)!w->frozen;
+                mvk_freeze(t, w->frozen);
+                menu = DV_MAIN;
+                to_window(t);
+                break;
+            case A_HIDE:
+            case A_ASIDE:                   /* the next window in front; none:
+                                             * the menu stays */
+                win_hide(t, act == A_ASIDE);
+                menu = DV_MAIN;
+                if (front() != 0)
+                    to_window(front());
+                break;
             case A_YES:
                 if (menu == DV_QUIT)
                     return 2;
@@ -1225,6 +1344,14 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 break;
             case A_NO:
                 menu = DV_MAIN;
+                break;
+            default:
+                if (act >= A_PLACE && act < A_PLACE + 9) {
+                    place(w, act - A_PLACE);
+                    w->scrolled = 0;
+                    menu = DV_MAIN;
+                    to_window(t);
+                }
                 break;
             }
     }

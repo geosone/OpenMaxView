@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -344,6 +344,28 @@ win)
     check "Zoom:  full screen" "grep -q 'keyprobe D ready' '$d/full.txt' && ! grep -q 'Switch Windows' '$d/full.txt'"
     check "Close Window, Yes" "grep -q 'Probe A ended' '$d/closed.txt' && ! grep -q 'keyprobe D' '$d/closed.txt'"
     check "DOS works afterwards" "grep -q '^win end' '$d/end.txt'"
+    ;;
+rearr)
+    echo "== rearr:  Rearrange's Position, Scroll, Freeze, Hide, Put Aside"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\nB|TickB|C:\\TICK.EXE C:\\TB.TXT||64|640\r\nC|TickC|C:\\TICK.EXE C:\\TC.TXT||64|640\r\nD|TickD|C:\\TICK.EXE C:\\TD.TXT||64|640\r\nK|Probe|C:\\KEYPROBE.COM C:\\K.TXT D||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    O() { echo "$M key:o wait:Change_a_Program:20 key:$1 sleep:3"; }
+    CMD="C:\\MAXVIEW" END="wait:rearr_end:30" run rearr 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" \
+        "wait:Open_Program:60 key:ret sleep:3 $R text:menu key:f sleep:1 $(O b) $R key:h sleep:1 $(O c) $(O d) $R key:p sleep:1 $(O k) wait:keyprobe_D_ready:20 $R key:9 sleep:2 text:placed mon:xp+/4000xb+0xb8000>pos $R key:s key:right,right,right sleep:1 key:ret sleep:1 text:scrolled $M key:s wait:TickD:10 text:list key:esc sleep:20 key:alt wait:Switch_Windows:20 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_rearr_end"
+    d=$OUT/rearr
+    a=$(last rearr TA.TXT tick); b=$(last rearr TB.TXT tick); c=$(last rearr TC.TXT tick); e=$(last rearr TD.TXT tick)
+    pc() { awk '/^[0-9a-f]+:/' "$d/pos.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1))p"; }
+    echo "  ticks:  frozen $a, hidden $b, front $c, put aside $e"
+    check "Rearrange:  Scroll S, Position 1-9, Freeze F, Hide H, Put Aside P" "grep -q 'Scroll *S' '$d/menu.txt' && grep -q 'Position *1-9' '$d/menu.txt' && grep -q 'Freeze *F' '$d/menu.txt' && grep -q 'Hide *H' '$d/menu.txt' && grep -q 'Put Aside *P' '$d/menu.txt'"
+    check "Position 9:  the window in the bottom right quarter (13,41 / 24,79)" "[ '$(pc 13 41) $(pc 13 79) $(pc 24 41) $(pc 24 79)' = '0xc9 0xbb 0xc8 0xbc' ]"
+    check "hidden and put aside:  not on the screen, the others are" "grep -q 'TickA' '$d/placed.txt' && grep -q 'TickC' '$d/placed.txt' && ! grep -q 'TickB' '$d/placed.txt' && ! grep -q 'TickD' '$d/placed.txt'"
+    check "Scroll 3 right:  the view moved" "grep -q 'probe D ready' '$d/scrolled.txt' && ! grep -q 'keyprobe D ready' '$d/scrolled.txt'"
+    check "Switch Windows lists the hidden and put aside ones" "grep -q 'TickB' '$d/list.txt' && grep -q 'TickD' '$d/list.txt'"
+    check "Freeze:  the frozen window stopped, Put Aside too, Hide runs on" "[ -n '$c' ] && [ $((${a:-99} * 3)) -lt ${c:-0} ] && [ $((${e:-99} * 3)) -lt ${c:-0} ] && [ $((${b:-0} * 3)) -gt $((${c:-0} * 2)) ]"
+    check "DOS works afterwards" "grep -q '^rearr end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

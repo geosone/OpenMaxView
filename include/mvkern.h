@@ -63,6 +63,9 @@ void mvk_dvcolors(unsigned on);
  * task 0).  0 or MVE_x. */
 int mvk_focus(unsigned task);
 unsigned mvk_focused(void);
+/* on:  task (1..) and its subtasks run only while it has the keys
+ * (DESQview's Freeze, Put Aside).  0 or MVE_x. */
+int mvk_freeze(unsigned task, unsigned on);
 /* The task's 80x25 text screen into buf (2000 cells, DGROUP); its cursor
  * (row << 8 | column) or 0xffff.  From task 0. */
 unsigned mvk_peek(unsigned task, unsigned short *buf);
