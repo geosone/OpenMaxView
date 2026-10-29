@@ -125,6 +125,7 @@ T_ROWS  db      ?               ;   when it was last the foreground
 T_VESA  dw      ?               ; VESA mode set (4F02h), 0:  none
 T_HOLD  dw      ?               ; 1:  graphics in the background, held
 T_FRZ   dw      ?               ; 1:  frozen (runs only with the keys)
+T_EXCL  dw      ?               ; 1:  with the keys the others wait
 T_PARENT dw     ?               ; a DESQview subtask (thread):  its task's
                                 ; number + 1 (its memory, page table and
                                 ; screen); 0:  a task of its own
@@ -184,6 +185,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_focus_
         public  mvk_focused_
         public  mvk_freeze_
+        public  mvk_share_
         public  mvk_peek_
         public  mvk_datasize_
         public  mvk_tune_
@@ -279,8 +281,8 @@ taskptr proc near
         ret
 taskptr endp
 
-; CF:  task DX (TASK at BX, DS = kernel data) is frozen and has not the
-; keys (a subtask:  its task)
+; CF:  task DX (TASK at BX, DS = kernel data) has not the keys (a subtask:
+; its task) and is frozen, or the task with them does not share the CPU
 frozen  proc near
         push    ax
         push    bx
@@ -291,11 +293,17 @@ frozen  proc near
         dec     ax
         mov     bx,ax
         call    taskptr
-@@:     cmp     [bx].T_FRZ,0
+@@:     cmp     ax,cs:kfocus
         je      fz_no
-        cmp     ax,cs:kfocus
+        cmp     [bx].T_FRZ,0
+        jne     fz_yes
+        mov     bx,cs:kfocus
+        call    taskptr
+        cmp     [bx].T_EXCL,0
         je      fz_no
-        stc
+        cmp     [bx].T_STATE,TS_READY
+        jne     fz_no
+fz_yes: stc
         jmp     short fz_ret
 fz_no:  clc
 fz_ret: pop     bx
@@ -446,6 +454,7 @@ mvk_init_ proc near
         mov     [bx].T_VESA,0
         mov     [bx].T_HOLD,0
         mov     [bx].T_FRZ,0
+        mov     [bx].T_EXCL,0
         mov     [bx].T_STATE,TS_READY
         mov     ax,cs:root_pt
         mov     [bx].T_PT,ax
@@ -566,6 +575,7 @@ cr_have:
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
         mov     [di].T_FRZ,0
+        mov     [di].T_EXCL,0
         mov     [di].T_PARENT,0
         mov     word ptr [di].T_XSAVE,0 ; behind its stub PSP
         mov     ax,cs:base_seg
@@ -2255,6 +2265,7 @@ th_have:
         mov     [di].T_VESA,0
         mov     [di].T_HOLD,0
         mov     [di].T_FRZ,0
+        mov     [di].T_EXCL,0
         mov     [di].T_EXIT,0FFFFh
         mov     [di].T_PROG,0
         mov     [di].T_TAIL,0
@@ -3527,6 +3538,29 @@ frz_ret: pop    ds
         pop     bx
         ret
 mvk_freeze_ endp
+
+; int mvk_share(unsigned task, unsigned on):  off:  while task (1..) has
+; the keys the others wait (DESQview's "Share CPU when in foreground");
+; 0 or MVE_STATE
+mvk_share_ proc near
+        push    bx
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,ax
+        mov     ax,MVE_STATE
+        or      bx,bx
+        jz      shr_ret
+        cmp     bx,cs:ntasks
+        jae     shr_ret
+        call    taskptr
+        xor     dx,1
+        and     dx,1
+        mov     [bx].T_EXCL,dx
+        xor     ax,ax
+shr_ret: pop    ds
+        pop     bx
+        ret
+mvk_share_ endp
 
 ; unsigned mvk_focused(void):  the task getting the keys
 mvk_focused_ proc near

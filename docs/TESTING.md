@@ -103,6 +103,7 @@ DESQview test:
 | `deskmany` | MAXVIEW.EXE with 12 programs opened through Open Window:  Switch Windows lists all, numbered 1-9 then A-C as DESQview's; C gives KEYPROBE the keys; all TICKs count |
 | `win` | MAXVIEW windows: two tasks on one screen; Switch Windows 1 and typing into it; Rearrange (as DESQview's items) Move; Zoom; Close Window Yes; the title's blank a double line ("1══Probe═A", as DV's "1══DOS═(128K)") |
 | `rearr` | MAXVIEW's Rearrange menu (behaviour measured under DESQview 2.80 with TICK):  Scroll S, Position 1-9, Freeze F, Hide H, Put Aside P offered; TickA frozen, TickB hidden, TickD put aside, TickC in front, KEYPROBE put at 9 (frame corners 13,41 / 24,79); B and D not on the screen but in Switch Windows; Scroll 3 right shows "probe D ready" without "key"; after ~20 s the frozen and put aside TICKs stopped (under a third of the front one's count, DV 8 / 8 of 45), the hidden one ran on (DV 50) |
+| `tune` | MAXVIEW's Tune Performance and Change Colors:  the dialog shows Run in background [Y], Share CPU in front [Y], Foreground ticks [ 6], Background ticks [ 2]; S and F make them [N] and [ 7]; TickB in front not sharing for ~20 s:  TickA behind waited (its count over 10 below B's although it started first); Change Colors Down, Right:  KEYPROBE's 07h text shown 18h |
 | `dvapi` | DESQview PAUSE, BEGINC/ENDC, APPNUM per task (with MAXVTSR) |
 | `cwd` | current directory per task (CDS), MVRUN's unchanged |
 | `ems` | EMS page frame mapping per task, with 47h/48h save/restore |

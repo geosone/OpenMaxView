@@ -55,7 +55,12 @@ typedef struct mv_window {
     unsigned char frozen;       /* Freeze:  runs only with the keys */
     unsigned char scrolled;     /* Scroll:  the view at vtop, hoff */
     unsigned char vtop, hoff;
+    unsigned char exclusive;    /* Tune:  not sharing the CPU in front */
+    unsigned char colors;       /* Change Colors:  the program's 07h shown
+                                 * in fg on bg (0:  its own colours) */
+    unsigned char fg, bg;
 } mv_window;
+static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
 static mv_window win[MVK_MAXTASK];
 static unsigned char zorder[MVK_MAXTASK];
 static unsigned nwin;
@@ -502,6 +507,7 @@ static void win_add(unsigned t)
     win[t].cols = 50;
     win[t].gpos = win[t].gsize = 0;
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
+    win[t].exclusive = win[t].colors = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -725,6 +731,19 @@ static const char *status_line = "";
 
 static void dv_menu_draw(void);
 
+/* Change Colors:  a colour (nibble) of the program as its window shows it,
+ * black and grey (and their bright ones) the window's colours */
+static unsigned win_color(const mv_window *w, unsigned n)
+{
+    switch (n) {
+    case 0:  return w->bg;
+    case 8:  return w->bg | 8;
+    case 7:  return w->fg;
+    case 15: return w->fg | 8;
+    }
+    return n;
+}
+
 /* the front window:  the last one shown in zorder, 0:  none */
 static unsigned front(void)
 {
@@ -830,6 +849,10 @@ static void compose(int mode)
                 unsigned short cell =
                     cells[(vtop + r) * SCREEN_COLS + hoff + c];
 
+                if (w->colors)
+                    cell = (unsigned short)(win_color(w, cell >> 12) << 12 |
+                                            win_color(w, cell >> 8 & 15) << 8 |
+                                            (cell & 0xff));
                 scr[(w->top + r) * SCREEN_COLS + w->left + c] = cell;
             }
         }
@@ -843,10 +866,11 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(SCREEN_ROWS - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 4) {
+    if (mode >= 1 && mode <= 5) {
         static const char *const hint[] = {
             " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
-            " Scroll:  arrows, Enter done ", " Position:  1-9 "
+            " Scroll:  arrows, Enter done ", " Position:  1-9 ",
+            " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back "
         };
 
         swrite(SCREEN_ROWS - 1, 0, hint[mode - 1], 0x70);
@@ -1021,11 +1045,12 @@ static int dv_find(int key, int scan)
 
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
-    DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT
+    DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
     A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
+    A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
     A_PLACE = 50, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -1088,9 +1113,26 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Hide", "H", A_HIDE);
         dv_add(DV_ITEM, "Put Aside", "P", A_ASIDE);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Change Colors", "", 0);
+        dv_add(DV_ITEM, "Change Colors", "C", A_COLORS);
         dv_add(DV_ITEM, "Video Options", "", 0);
-        dv_add(DV_ITEM, "Tune Performance", "", 0);
+        dv_add(DV_ITEM, "Tune Performance", "T", A_TUNE);
+        break;
+    case DV_TUNE:                       /* a key or Enter changes the value */
+        t = front();
+        dv_begin("Tune Performance", 28);
+        dv_add(DV_TEXT, "This Window", "", 0);
+        sprintf(dv_labels[0], "Run in background   [%c]",
+                win[t].frozen ? 'N' : 'Y');
+        dv_add(DV_ITEM, dv_labels[0], "B", A_BACKGROUND);
+        sprintf(dv_labels[1], "Share CPU in front  [%c]",
+                win[t].exclusive ? 'N' : 'Y');
+        dv_add(DV_ITEM, dv_labels[1], "S", A_SHARE);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_TEXT, "System", "", 0);
+        sprintf(dv_labels[2], "Foreground ticks  [%2u]", tune_fg);
+        dv_add(DV_ITEM, dv_labels[2], "F", A_FGTICKS);
+        sprintf(dv_labels[3], "Background ticks  [%2u]", tune_bg);
+        dv_add(DV_ITEM, dv_labels[3], "K", A_BGTICKS);
         break;
     default:
         dv_begin("MaxView", 22);
@@ -1178,7 +1220,7 @@ static int windows_view(const odq_catalog *catalog, char *status)
     int key, scan, act, mode = 0;
     unsigned t, sel, menu = DV_MAIN, focus, last_focus = 0xffff;
     int fresh = 1;
-    mv_window *w;
+    mv_window *w, saved;
 
     for (;;) {
         if (poll_tasks(status) && nwin == 0)
@@ -1229,6 +1271,14 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 1) ++w->rows;
                 if (scan == 75 && w->cols > 10) --w->cols;
                 if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
+            } else if (mode == 5) {     /* Change Colors */
+                w->colors = 1;
+                if (scan == 75) w->fg = (unsigned char)((w->fg + 15) & 15);
+                if (scan == 77) w->fg = (unsigned char)((w->fg + 1) & 15);
+                if (scan == 72) w->bg = (unsigned char)((w->bg + 7) & 7);
+                if (scan == 80) w->bg = (unsigned char)((w->bg + 1) & 7);
+                if (w->fg == 7 && w->bg == 0)
+                    w->colors = 0;
             } else if (mode == 3) {     /* the view over its 80x25 screen */
                 if (!w->scrolled) {
                     w->scrolled = 1;
@@ -1249,6 +1299,11 @@ static int windows_view(const odq_catalog *catalog, char *status)
             place(w, key - '1');
             w->scrolled = 0;
             key = 13;
+        }
+        if (mode == 5 && key == 27) {   /* Esc:  the colours as they were */
+            w->colors = saved.colors;
+            w->fg = saved.fg;
+            w->bg = saved.bg;
         }
         if (mode != 0) {
             if (key == 13 || key == 27) {
@@ -1317,6 +1372,36 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 break;
             case A_SCROLL:
                 mode = 3;
+                break;
+            case A_COLORS:
+                saved = *w;
+                if (!w->colors) {
+                    w->fg = 7;
+                    w->bg = 0;
+                }
+                mode = 5;
+                break;
+            case A_TUNE:
+                menu = DV_TUNE;
+                break;
+            case A_BACKGROUND:
+                w->frozen = (unsigned char)!w->frozen;
+                mvk_freeze(t, w->frozen);
+                fresh = 0;
+                break;
+            case A_SHARE:
+                w->exclusive = (unsigned char)!w->exclusive;
+                mvk_share(t, !w->exclusive);
+                fresh = 0;
+                break;
+            case A_FGTICKS:
+            case A_BGTICKS:             /* 1-15 and around */
+                if (act == A_FGTICKS)
+                    tune_fg = tune_fg % 15 + 1;
+                else
+                    tune_bg = tune_bg % 15 + 1;
+                mvk_tune(tune_fg, tune_bg);
+                fresh = 0;
                 break;
             case A_POSITION:
                 mode = 4;
