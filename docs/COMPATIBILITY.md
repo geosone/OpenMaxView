@@ -28,7 +28,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Position 1-9 (fixed places) | Rearrange:  1-9, the same places (halves, middle, quarters) | Covered |
 | Freeze, Hide, Put Aside | Rearrange:  Freeze (F, again:  Unfreeze) runs the window only while it has the keys; Hide (H) takes it off the screen, running; Put Aside (P) off the screen and held; Switch Windows brings either back | Covered (Put Aside holds the program in memory; DV swaps it out) |
 | Change Colors (text and background colour of the window) | Rearrange:  Change Colors (C), Left/Right the text, Up/Down the background colour:  the program's black and grey shown in them (otherwise its own colours), live; Esc back | Covered |
-| Video Options (VGA 25 / 30 / 50 / 60 rows) | none | Missing |
+| Video Options (VGA 25 / 30 / 50 / 60 rows) | Rearrange:  Video Options (V), 80 x 25 / 43 / 50 / 60 as Open 386MAX's MAXTEXT offers them; the windows view in that many rows, a program's own screen 80x25, the launcher 25 rows | Covered with MAXTEXT loaded (without it:  25 rows only) |
 | Tune Performance (this window:  share CPU and EGA in front, run in background, allow swapping; system:  foreground / background ticks, swapping; Revive Mouse) | MAXVIEW's Tune Performance:  Run in background, Share CPU in front per window, Foreground / Background ticks (6:2 at start); MVRUN /T the slices | Partial (Share EGA, swapping and Revive Mouse:  not offered; MaxView does not swap) |
 
 ### Mark, Transfer, Scissors, Auto Dialer

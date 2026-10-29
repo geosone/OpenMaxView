@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -117,7 +117,7 @@ fail=0
 run() {     # case, seconds, MVRUN task list, more files, steps before the end
     local dir=$OUT/$1
     rm -rf "$dir"; mkdir -p "$dir"
-    KEEP=1 ACCEL="-accel tcg" XFILES="$ROOT/build/MVRUN.EXE ${4:-}" \
+    KEEP=1 CONFIG="${CONFIG:-}" ACCEL="-accel tcg" XFILES="$ROOT/build/MVRUN.EXE ${4:-}" \
         QEMU_EXTRA="-debugcon file:$OUT/$1.e9 ${SERIAL:--serial file:$OUT/$1.com1}" \
         AUTO="${CMD:-C:\\MVRUN ${FG:-}$2 $3}" \
         STEPS="${5:-} ${END:-wait:MVRUN:_done:$(($2 * 3 + 120))} text:end" TESTDIR="$dir" \
@@ -385,6 +385,28 @@ tune)
     check "not sharing:  the window behind waited (A + 10 < B)" "[ -n '$a' ] && [ -n '$b' ] && [ $((a + 10)) -lt $b ]"
     check "Change Colors:  the program's 07h shown 18h (Down:  blue, Right:  dark grey)" "echo '$hb' | grep -q '0x6b 0x18 0x65 0x18 0x79 0x18 0x70 0x18'"
     check "DOS works afterwards" "grep -q '^tune end' '$d/end.txt'"
+    ;;
+video)
+    echo "== video:  Video Options through MAXTEXT (Open 386MAX):  the windows in 50 rows"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    rows() { echo "mon:xp+/1xb+0x484>$1"; }
+    CONFIG="DOS=HIGH,UMB|DEVICE=C:\\MAX\\386MAX.SYS|DEVICE=C:\\MAXTEXT.SYS|FILES=40|BUFFERS=20|SHELL=C:\\COMMAND.COM C:\\ /E:1024 /P" \
+    CMD="C:\\MAXVIEW" END="wait:video_end:30" run video 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg $MAXROOT/build/bin/MAXTEXT.SYS" \
+        "wait:Open_Program:60 key:ret sleep:3 $R key:v wait:Text_rows:10 text:vid $(rows r0) key:3 sleep:3 $(rows r1) $R key:2 sleep:2 mon:xp+/8000xb+0xb8000>half $M key:z sleep:3 $(rows rz) key:alt wait:Switch_Windows:20 sleep:2 $(rows r2) key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:3 $(rows r3) type:echo_video_end"
+    d=$OUT/video
+    rv() { awk -F': ' '/^[0-9a-f]+:/ {print $2; exit}' "$d/$1.txt" 2>/dev/null | tr -dc '0-9a-fx'; }
+    hc() { awk '/^[0-9a-f]+:/' "$d/half.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1))p"; }
+    echo "  rows (40:84):  $(rv r0) $(rv r1) zoomed $(rv rz) $(rv r2) launcher $(rv r3)"
+    check "Video Options:  MAXTEXT's modes, 80 x 25 in use" "grep -q 'Text rows (MAXTEXT)' '$d/vid.txt' && grep -q '80 x 25  \*' '$d/vid.txt' && grep -q '80 x 50 *3' '$d/vid.txt'"
+    check "3:  the windows in 50 rows" "[ '$(rv r0) $(rv r1)' = '0x18 0x31' ]"
+    check "Position 2 on 50 rows:  the bottom half (frame rows 26 / 49)" "[ '$(hc 26 0) $(hc 49 0) $(hc 49 79)' = '0xc9 0xc8 0xbc' ]"
+    check "Zoom:  the program in its 25 rows, back:  50 again" "[ '$(rv rz) $(rv r2)' = '0x18 0x31' ]"
+    check "the launcher in 25 rows again" "[ '$(rv r3)' = '0x18' ]"
+    check "DOS works afterwards" "grep -q '^video end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

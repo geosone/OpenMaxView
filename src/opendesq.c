@@ -67,6 +67,11 @@ static unsigned nwin;
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
 
+/* the windows view:  desk_rows of 80 columns (Video Options:  25, 43, 50
+ * or 60 through MAXTEXT); a task's screen stays 80x25 */
+#define DESK_MAX_ROWS 60
+static unsigned desk_rows = SCREEN_ROWS, video_rows = SCREEN_ROWS;
+
 static void put_cell(unsigned row, unsigned col, unsigned char ch,
                      unsigned char attr)
 {
@@ -208,6 +213,128 @@ static int vcpi_present(unsigned *version)
     int86(0x67, &inregs, &outregs);
     *version = outregs.x.bx;
     return outregs.h.ah == 0;
+}
+
+/* MAXTEXT, Open 386MAX's text mode driver, through its public handle
+ * IOCTL API (1.x, device MAXTEXT$):  the modes it offers, a switch */
+#pragma pack(push, 1)
+typedef struct mt_status {
+    char signature[4];                  /* MXT1 */
+    unsigned short version, size, flags;
+    unsigned char bios_mode, page;
+    unsigned short columns, rows, font_height;
+    unsigned short resident_segment, resident_bytes, modes;
+} mt_status;
+typedef struct mt_control {
+    char signature[4];                  /* MXTC */
+    unsigned short command, columns, rows;
+    unsigned short scratch_segment, scratch_paragraphs, result;
+} mt_control;
+#pragma pack(pop)
+#define MT_SCRATCH_PARAS 0x1a00         /* 104 KiB for one switch */
+static int mt_handle = -1;
+static unsigned mt_modes;               /* 80x25 1, 80x43 2, 80x50 4, 80x60 8 */
+static const unsigned mt_rows[4] = { 25, 43, 50, 60 };
+
+static int mt_query(mt_status *st)
+{
+    union REGS r;
+    struct SREGS sr;
+
+    segread(&sr);
+    r.x.ax = 0x4402;
+    r.x.bx = (unsigned)mt_handle;
+    r.x.cx = sizeof *st;
+    r.x.dx = (unsigned)st;
+    intdosx(&r, &r, &sr);
+    return !r.x.cflag && r.x.ax == sizeof *st &&
+           memcmp(st->signature, "MXT1", 4) == 0 &&
+           st->version >> 8 == 1 && st->version >= 0x0101 &&
+           st->size == sizeof *st;
+}
+
+static void mt_open(void)
+{
+    union REGS r;
+    mt_status st;
+    int h;
+
+    if (_dos_open("MAXTEXT$", 2, &h) != 0)
+        return;
+    r.x.ax = 0x4400;                    /* a device */
+    r.x.bx = (unsigned)h;
+    intdos(&r, &r);
+    mt_handle = h;
+    if (r.x.cflag || !(r.x.dx & 0x80) || !mt_query(&st)) {
+        _dos_close(h);
+        mt_handle = -1;
+        return;
+    }
+    mt_modes = st.modes & 15;
+}
+
+/* 80 x rows through MAXTEXT, in a critical section (no task switch while
+ * it changes the hardware); 0 or its result (-1:  no MAXTEXT, memory) */
+static int mt_set(unsigned rows)
+{
+    union REGS r;
+    struct SREGS sr;
+    mt_control c;
+    mt_status st;
+    unsigned seg, i, err;
+
+    for (i = 0; i < 4 && mt_rows[i] != rows; ++i)
+        ;
+    if (mt_handle < 0 || i == 4 || !(mt_modes & 1u << i))
+        return -1;
+    if (_dos_allocmem(MT_SCRATCH_PARAS, &seg) != 0)
+        return -1;
+    memset(&c, 0, sizeof c);
+    memcpy(c.signature, "MXTC", 4);
+    c.command = 1;
+    c.columns = SCREEN_COLS;
+    c.rows = rows;
+    c.scratch_segment = seg;
+    c.scratch_paragraphs = MT_SCRATCH_PARAS;
+    r.x.ax = 0x101b;                    /* BEGINC */
+    int86(0x15, &r, &r);
+    segread(&sr);
+    r.x.ax = 0x4403;
+    r.x.bx = (unsigned)mt_handle;
+    r.x.cx = sizeof c;
+    r.x.dx = (unsigned)&c;
+    intdosx(&r, &r, &sr);
+    err = r.x.cflag || r.x.ax != sizeof c;
+    r.x.ax = 0x101c;                    /* ENDC */
+    int86(0x15, &r, &r);
+    _dos_freemem(seg);
+    if (err)
+        return c.result != 0 ? (int)c.result : -1;
+    if (c.result != 0)
+        return (int)c.result;
+    if (!mt_query(&st) || st.rows != rows || st.columns != SCREEN_COLS)
+        return -1;
+    return 0;
+}
+
+/* the display's text rows (the BIOS's) */
+static unsigned bios_rows(void)
+{
+    return *(unsigned char far *)MK_FP(0x40, 0x84) + 1u;
+}
+
+/* the windows view in rows (from the display as it is); 0 or MAXTEXT's
+ * result */
+static int desk_set(unsigned rows)
+{
+    int rc = 0;
+
+    if (bios_rows() != rows)
+        rc = mt_set(rows);
+    desk_rows = bios_rows();
+    if (desk_rows > DESK_MAX_ROWS || desk_rows < SCREEN_ROWS)
+        desk_rows = SCREEN_ROWS;
+    return rc;
 }
 
 static void initialise_video(void)
@@ -695,13 +822,13 @@ static void show_tasks(char *status)
     }
 }
 
-static unsigned short scr[SCREEN_ROWS * SCREEN_COLS];
+static unsigned short scr[DESK_MAX_ROWS * SCREEN_COLS];
 static unsigned short cells[SCREEN_ROWS * SCREEN_COLS];
 
 static void sput(unsigned row, unsigned col, unsigned char ch,
                  unsigned char attr)
 {
-    if (row < SCREEN_ROWS && col < SCREEN_COLS)
+    if (row < desk_rows && col < SCREEN_COLS)
         scr[row * SCREEN_COLS + col] = (unsigned short)(attr << 8 | ch);
 }
 
@@ -767,7 +894,7 @@ static void compose(int mode)
     int cursor = 0;
     char line[SCREEN_COLS + 1];
 
-    for (i = 0; i < SCREEN_ROWS * SCREEN_COLS; ++i)
+    for (i = 0; i < desk_rows * SCREEN_COLS; ++i)
         scr[i] = 0x0720;
     for (i = 0; i < nwin; ++i) {
         mv_window *w;
@@ -792,16 +919,18 @@ static void compose(int mode)
                 w->gsize = gsize;
                 w->rows = (unsigned char)(gsize >> 8);
                 w->cols = (unsigned char)gsize;
-                if (w->rows > SCREEN_ROWS - 4)
-                    w->rows = SCREEN_ROWS - 4;
+                if (w->rows > SCREEN_ROWS)
+                    w->rows = SCREEN_ROWS;
+                if (w->rows > desk_rows - 4)
+                    w->rows = (unsigned char)(desk_rows - 4);
                 if (w->cols > SCREEN_COLS - 2)
                     w->cols = SCREEN_COLS - 2;
                 w->top = (unsigned char)(gpos >> 8);
                 w->left = (unsigned char)gpos;
                 if (w->top < 2)
                     w->top = 2;
-                if (w->top + w->rows > SCREEN_ROWS - 2)
-                    w->top = (unsigned char)(SCREEN_ROWS - 2 - w->rows);
+                if (w->top + w->rows > desk_rows - 2)
+                    w->top = (unsigned char)(desk_rows - 2 - w->rows);
                 if (w->left < 1)
                     w->left = 1;
                 if (w->left + w->cols > SCREEN_COLS - 1)
@@ -865,7 +994,7 @@ static void compose(int mode)
         }
     }
     if (status_line[0] != '\0')
-        swrite(SCREEN_ROWS - 1, 0, status_line, 0x70);
+        swrite(desk_rows - 1, 0, status_line, 0x70);
     if (mode >= 1 && mode <= 5) {
         static const char *const hint[] = {
             " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
@@ -873,10 +1002,10 @@ static void compose(int mode)
             " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back "
         };
 
-        swrite(SCREEN_ROWS - 1, 0, hint[mode - 1], 0x70);
+        swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
     } else if (focus == 0)
         dv_menu_draw();
-    _fmemcpy(video, scr, sizeof scr);
+    _fmemcpy(video, scr, desk_rows * SCREEN_COLS * sizeof scr[0]);
     set_cursor(crow, ccol, cursor);
 }
 
@@ -939,10 +1068,10 @@ static void dv_menu_draw(void)
     sput(0, left + 2, ' ', MENU_ATTR);
     swrite(0, left + 3, dv_title, MENU_ATTR);
     sput(0, left + 3 + strlen(dv_title), ' ', MENU_ATTR);
-    for (r = 1; r <= bottom + 1 && r < SCREEN_ROWS; ++r)  /* the shadow */
+    for (r = 1; r <= bottom + 1 && r < desk_rows; ++r)    /* the shadow */
         for (c = right + 1; c <= right + 2; ++c)
             sput(r, c, (unsigned char)scr[r * SCREEN_COLS + c], 0x08);
-    if (bottom + 1 < SCREEN_ROWS)
+    if (bottom + 1 < desk_rows)
         for (c = left + 2; c <= right; ++c)
             sput(bottom + 1, c, (unsigned char)scr[(bottom + 1) * SCREEN_COLS + c],
                  0x08);
@@ -1045,13 +1174,14 @@ static int dv_find(int key, int scan)
 
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
-    DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE
+    DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
+    DV_VIDEO
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
     A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
-    A_PLACE = 50, A_PROGRAM = 100, A_WINDOW = 200
+    A_VIDEO, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
 static void dv_build(unsigned menu, const odq_catalog *catalog)
@@ -1114,8 +1244,21 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Put Aside", "P", A_ASIDE);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Change Colors", "C", A_COLORS);
-        dv_add(DV_ITEM, "Video Options", "", 0);
+        dv_add(DV_ITEM, "Video Options", "V", A_VIDEO);
         dv_add(DV_ITEM, "Tune Performance", "T", A_TUNE);
+        break;
+    case DV_VIDEO:                      /* what MAXTEXT offers */
+        dv_begin("Video Options", 22);
+        dv_add(DV_TEXT, mt_handle < 0 ? "(MAXTEXT not loaded)"
+               : "Text rows (MAXTEXT)", "", 0);
+        for (i = 0; i < 4; ++i) {
+            sprintf(dv_labels[i], "80 x %u%s", mt_rows[i],
+                    mt_rows[i] == desk_rows ? "  *" : "");
+            dv_keys[i][0] = (char)('1' + i);
+            dv_keys[i][1] = '\0';
+            dv_add(DV_ITEM, dv_labels[i], mt_modes & 1u << i ? dv_keys[i] : "",
+                   A_ROWS + i);
+        }
         break;
     case DV_TUNE:                       /* a key or Enter changes the value */
         t = front();
@@ -1161,13 +1304,28 @@ static const unsigned char places[9][4] = {
     { 0, 41, 11, 79 }, { 13, 0, 24, 39 }, { 13, 41, 24, 79 }
 };
 
+/* a row of places on a desk of desk_rows (the halves meet in the middle) */
+static unsigned place_row(unsigned r)
+{
+    unsigned half = desk_rows / 2;
+
+    if (r == 11)
+        return half - 1;
+    if (r == 13)
+        return half + 1;
+    return r * (desk_rows - 1) / 24;
+}
+
 static void place(mv_window *w, unsigned n)
 {
     const unsigned char *p = places[n];
+    unsigned top = place_row(p[0]), bottom = place_row(p[2]);
 
-    w->top = (unsigned char)(p[0] + 1);
+    w->top = (unsigned char)(top + 1);
     w->left = (unsigned char)(p[1] + 1);
-    w->rows = (unsigned char)(p[2] - p[0] - 1);
+    w->rows = (unsigned char)(bottom - top - 1);
+    if (w->rows > SCREEN_ROWS)          /* (a task's screen:  25 rows) */
+        w->rows = SCREEN_ROWS;
     w->cols = (unsigned char)(p[3] - p[1] - 1);
 }
 
@@ -1246,6 +1404,9 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 dv_bar(0);
         }
         status_line = status;
+        if (mvk_fg() == 0 && bios_rows() != desk_rows &&
+            bios_rows() >= SCREEN_ROWS && bios_rows() <= DESK_MAX_ROWS)
+            desk_set(video_rows);       /* (back from a program full screen) */
         now = *(unsigned long far *)MK_FP(0x40, 0x6c);
         if (now - last >= 2) {
             compose(mode);
@@ -1263,12 +1424,13 @@ static int windows_view(const odq_catalog *catalog, char *status)
             scan = getch();
             if (mode == 1) {
                 if (scan == 72 && w->top > 1) --w->top;
-                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 1) ++w->top;
+                if (scan == 80 && w->top + w->rows < desk_rows - 1) ++w->top;
                 if (scan == 75 && w->left > 1) --w->left;
                 if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->left;
             } else if (mode == 2) {
                 if (scan == 72 && w->rows > 3) --w->rows;
-                if (scan == 80 && w->top + w->rows < SCREEN_ROWS - 1) ++w->rows;
+                if (scan == 80 && w->top + w->rows < desk_rows - 1 &&
+                    w->rows < SCREEN_ROWS) ++w->rows;
                 if (scan == 75 && w->cols > 10) --w->cols;
                 if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
             } else if (mode == 5) {     /* Change Colors */
@@ -1384,6 +1546,9 @@ static int windows_view(const odq_catalog *catalog, char *status)
             case A_TUNE:
                 menu = DV_TUNE;
                 break;
+            case A_VIDEO:
+                menu = DV_VIDEO;
+                break;
             case A_BACKGROUND:
                 w->frozen = (unsigned char)!w->frozen;
                 mvk_freeze(t, w->frozen);
@@ -1431,7 +1596,16 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 menu = DV_MAIN;
                 break;
             default:
-                if (act >= A_PLACE && act < A_PLACE + 9) {
+                if (act >= A_ROWS && act < A_ROWS + 4) {
+                    int rc = desk_set(mt_rows[act - A_ROWS]);
+
+                    if (rc == 0)
+                        video_rows = desk_rows;
+                    else
+                        sprintf(status, "MAXTEXT:  80x%u not set (%d).",
+                                mt_rows[act - A_ROWS], rc);
+                    menu = DV_MAIN;
+                } else if (act >= A_PLACE && act < A_PLACE + 9) {
                     place(w, act - A_PLACE);
                     w->scrolled = 0;
                     menu = DV_MAIN;
@@ -1529,12 +1703,21 @@ int main(void)
     reload_settings(&settings);
 
     apply_resident_services(&settings, status);
+    mt_open();
     start_multitasking(status);
     initialise_video();
 
     for (;;) {
         if (mv_on && view_windows && tasks_open() != 0) {
-            if (windows_view(&catalog, status) == 2)
+            int rc;
+
+            desk_set(video_rows);
+            rc = windows_view(&catalog, status);
+            if (desk_rows != SCREEN_ROWS) { /* the launcher:  25 rows */
+                desk_set(SCREEN_ROWS);
+                desk_rows = SCREEN_ROWS;
+            }
+            if (rc == 2)
                 break;
             view_windows = 0;
             continue;
