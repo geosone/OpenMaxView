@@ -1640,11 +1640,13 @@ static int scripts_load(void)
 
 /* Add a Program, Change a Program:  a form over the windows; Enter keeps
  * it in MAXVIEW.CFG */
-#define FORM_FIELDS 5
+#define FORM_FIELDS 6
+#define FORM_ROWS 16
 static odq_program form;
 static int form_index;                  /* -1:  a new one */
 static unsigned form_field;
 static char form_mem[6];                /* its memory (KB) as typed */
+static char form_swap[2];               /* Can be swapped out:  Y, N, "" */
 static const char *form_msg = "";
 
 static char *form_text(unsigned f, unsigned *cap)
@@ -1660,6 +1662,7 @@ static char *form_text(unsigned f, unsigned *cap)
     case 1:  *cap = ODQ_TITLE_LEN;   return form.title;
     case 2:  *cap = ODQ_COMMAND_LEN; return form.command;
     case 3:  *cap = ODQ_DIR_LEN;     return form.directory;
+    case 5:  *cap = 1;               return form_swap;
     }
     *cap = sizeof form_mem - 1;
     return form_mem;
@@ -1668,19 +1671,21 @@ static char *form_text(unsigned f, unsigned *cap)
 static void form_draw(unsigned *crow, unsigned *ccol)
 {
     static const char *const label[FORM_FIELDS] = {
-        "Key", "Title", "Program", "Directory", "Memory (KB)"
+        "Key", "Title", "Program", "Directory", "Memory (KB)",
+        "Swap (Y,N)"
     };
     const char *title = form_index < 0 ? "Add a Program" : "Change a Program";
-    unsigned top = (desk_rows - 14) / 2, left = (desk_cols - 72) / 2, r, c, f;
+    unsigned top = (desk_rows - FORM_ROWS) / 2, left = (desk_cols - 72) / 2;
+    unsigned r, c, f;
 
-    for (r = top; r < top + 14; ++r)
+    for (r = top; r < top + FORM_ROWS; ++r)
         for (c = left; c < left + 72; ++c)
-            sput(r, c, r == top || r == top + 13 ? 205 :
+            sput(r, c, r == top || r == top + FORM_ROWS - 1 ? 205 :
                  c == left || c == left + 71 ? 186 : ' ', ATTR_ACTIVE);
     sput(top, left, 201, ATTR_ACTIVE);
     sput(top, left + 71, 187, ATTR_ACTIVE);
-    sput(top + 13, left, 200, ATTR_ACTIVE);
-    sput(top + 13, left + 71, 188, ATTR_ACTIVE);
+    sput(top + FORM_ROWS - 1, left, 200, ATTR_ACTIVE);
+    sput(top + FORM_ROWS - 1, left + 71, 188, ATTR_ACTIVE);
     sput(top, left + 2, ' ', ATTR_ACTIVE);
     swrite(top, left + 3, title, ATTR_ACTIVE);
     sput(top, left + 3 + strlen(title), ' ', ATTR_ACTIVE);
@@ -1700,7 +1705,41 @@ static void form_draw(unsigned *crow, unsigned *ccol)
             *ccol = left + 17 + len - from;
         }
     }
-    swrite(top + 12, left + 3, form_msg, ATTR_ACTIVE);
+    swrite(top + FORM_ROWS - 2, left + 3, form_msg, ATTR_ACTIVE);
+}
+
+/* the program's Can be swapped out into form_swap, and back (N:  a DVP 2.x
+ * profile saying so, as DESQview 2.80 writes it; Y and blank:  as without
+ * a profile, swapped out when need be) */
+static void form_swap_get(void)
+{
+    const odq_process_profile *p = &form.profile;
+
+    form_swap[0] = '\0';
+    form_swap[1] = '\0';
+    if (p->version != 0 && p->source_version >= 2 && !(p->flags4 & 0x40))
+        form_swap[0] = (char)(p->flags1 & 0x01 ? 'Y' : 'N');
+}
+
+static void form_swap_put(void)
+{
+    odq_process_profile *p = &form.profile;
+
+    if (form_swap[0] == 'N') {
+        if (p->version == 0) {
+            p->version = ODQ_PROFILE_VERSION;
+            p->source_version = 2;
+        } else if (p->source_version < 2)
+            p->source_version = 2;
+        p->flags4 &= ~0x40u;
+        p->flags1 &= ~0x01u;
+    } else if (p->version != 0 && p->source_version >= 2) {
+        if (form_swap[0] == 'Y') {
+            p->flags4 &= ~0x40u;
+            p->flags1 |= 0x01u;
+        } else
+            p->flags4 |= 0x40u;
+    }
 }
 
 /* Enter:  the form into the catalogue and MAXVIEW.CFG; 0:  form_msg says
@@ -1721,6 +1760,7 @@ static int form_save(odq_catalog *catalog)
         return 0;
     }
     form.max_kb = (unsigned)kb;
+    form_swap_put();
     if (form.max_kb != 0 && form.min_kb > form.max_kb)
         form.min_kb = form.max_kb;
     for (i = 0; i < catalog->count; ++i)
@@ -2709,7 +2749,12 @@ static int windows_view(odq_catalog *catalog, char *status)
                 form_msg = "";
                 if (form_field == 0)
                     form.hotkey = (char)toupper(key);
-                else if (form_field == 4 ? isdigit(key) && len < cap : len < cap) {
+                else if (form_field == 5) {
+                    if (toupper(key) == 'Y' || toupper(key) == 'N')
+                        form_swap[0] = (char)toupper(key);
+                    else if (key == ' ')
+                        form_swap[0] = '\0';
+                } else if (form_field == 4 ? isdigit(key) && len < cap : len < cap) {
                     text[len] = (char)key;
                     text[len + 1] = '\0';
                 }
@@ -2873,6 +2918,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                 sprintf(form_mem, "%u", form.max_kb);
                 if (form.max_kb == 0)
                     form_mem[0] = '\0';
+                form_swap_get();
                 form_field = 1;
                 form_msg = "";
                 mode = 8;
@@ -3077,6 +3123,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                 form.hotkey = ' ';
                 form.min_kb = 64;
                 form_mem[0] = '\0';
+                form_swap[0] = '\0';
                 form_index = -1;
                 form_field = 0;
                 form_msg = "";
