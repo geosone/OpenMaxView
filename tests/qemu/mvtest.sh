@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf swap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -592,6 +592,23 @@ ntf)
     check "Close Yes:  46h (8 bytes), the program told, its window kept" "[ \"\$(l 46)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^46 $h 00 00 00' && grep -q 'is told to close' '$d/closed.txt' && grep -q 'ntfprb ready' '$d/closed.txt'"
     check "the program ended itself (x):  its notifications gone, Quit Q again" "grep -q 'Quit MaxView *Q' '$d/menuq2.txt' && ! grep -q 'Help for Program' '$d/menuq2.txt'"
     check "DOS works afterwards" "grep -q '^ntf end' '$d/end.txt'"
+    ;;
+swap)
+    echo "== swap:  a window put aside swapped out when memory runs out, back when switched to"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    O="$M key:o wait:Change_a_Program:20 key:d sleep:6"
+    MEMSIZE=${SWAPMEM:-4} CMD="C:\\MAXVIEW" END="wait:swap_end:60" run swap 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:cd_DOS sleep:1 $R key:p sleep:2 $O $O $O $O $O $O text:w7 type:cls sleep:1 type:dir_C:\\MVSWAP*.TMP sleep:3 text:dir7 $R key:p sleep:2 $M key:s sleep:1 key:1 sleep:8 text:back1 type:cls sleep:1 type:cd>C:\\S.TXT sleep:2 type:dir_C:\\MVSWAP*.TMP sleep:3 text:dir1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:90 sleep:2 type:echo_swap_end"
+    d=$OUT/swap
+    echo "  S.TXT:  $(file swap S.TXT | tr -d '\r' | tr '\n' ' ')"
+    check "7 windows in 4 MB:  window 1 (put aside) swapped out for them" "grep -q 'MVSWAP01 TMP' '$d/dir7.txt' && ! grep -q 'QPI\\|memory' '$d/w7.txt'"
+    check "window 7 put aside, window 1 switched to:  7 out, 1 back" "grep -q 'MVSWAP07 TMP' '$d/dir1.txt' && ! grep -q 'MVSWAP01 TMP' '$d/dir1.txt' && ! grep -q 'Not enough memory' '$d/back1.txt'"
+    check "window 1's memory came back:  its directory (C:\\DOS)" "file swap S.TXT | grep -q '^C:.DOS'"
+    check "Quit:  all closed, the swapped out one too, no swap file left" "grep -q '^swap end' '$d/end.txt' && ! mdir -b -i '$d/test.img@@32256' '::/MVSWAP*.TMP' >/dev/null 2>&1"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

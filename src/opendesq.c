@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <direct.h>
 #include <dos.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,8 @@ typedef struct mv_window {
     unsigned char colors;       /* Change Colors:  the program's 07h shown
                                  * in fg on bg (0:  its own colours) */
     unsigned char fg, bg;
+    unsigned char swapped;      /* put aside and swapped out (MVSWAPnn.TMP) */
+    unsigned char npages;       /*   its private pages */
 } mv_window;
 static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
 static mv_window win[MVK_MAXTASK];
@@ -680,7 +683,7 @@ static void win_add(unsigned t)
     win[t].cols = 50;
     win[t].gpos = win[t].gsize = 0;
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
-    win[t].exclusive = win[t].colors = 0;
+    win[t].exclusive = win[t].colors = win[t].swapped = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -709,23 +712,119 @@ static void start_multitasking(char *status)
     mv_on = 1;
 }
 
-/* ask the tasks to end, wait for them (5 s at most), stop the core */
-static void stop_multitasking(void)
+/* Swapping, as DESQview's:  when memory runs out (a window to open), the
+ * private memory of a window put aside goes to MVSWAPnn.TMP and its pages
+ * are freed; switched to again it comes back (another put aside window out
+ * if need be).  (The page goes through swap_buf:  below the task base.) */
+static unsigned char __far swap_buf[4096];
+static const char *swap_msg;            /* for the status line */
+
+static void swap_name(unsigned t, char *name)
 {
-    unsigned long start = *(unsigned long far *)MK_FP(0x40, 0x6c);
+    sprintf(name, "MVSWAP%02u.TMP", t);
+}
+
+static int swap_out(unsigned t)
+{
+    unsigned n = mvk_swapcheck(t), i, done;
+    int fd, ok = 1;
+    char name[16];
+
+    if (n == 0 || win[t].swapped)
+        return 0;
+    swap_name(t, name);
+    if (_dos_creat(name, _A_NORMAL, &fd) != 0)
+        return 0;
+    for (i = 0; i < n && ok; ++i)
+        ok = mvk_pageio(t, i, FP_SEG(swap_buf), FP_OFF(swap_buf)) == 0 &&
+             _dos_write(fd, swap_buf, sizeof swap_buf, &done) == 0 &&
+             done == sizeof swap_buf;
+    if (_dos_close(fd) != 0 || !ok || mvk_release(t) != 0) {
+        remove(name);
+        return 0;
+    }
+    win[t].swapped = 1;
+    win[t].npages = (unsigned char)n;
+    return 1;
+}
+
+/* a window put aside (not except) swapped out to make room:  1 */
+static int swap_some(unsigned except)
+{
     unsigned t;
 
     for (t = 1; t < MVK_MAXTASK; ++t)
-        if (task_live[t])
-            mvk_kill(t);
-    while (*(unsigned long far *)MK_FP(0x40, 0x6c) - start < 91) {
-        for (t = 1; t < MVK_MAXTASK; ++t)
-            if (task_live[t] && mvk_state(t) == MVK_READY)
-                break;
-        if (t == MVK_MAXTASK)
-            break;
-        mvk_yield();
+        if (task_live[t] && t != except && win[t].aside && swap_out(t))
+            return 1;
+    return 0;
+}
+
+/* window t back in memory:  1 (0:  no memory, or its file unreadable:  it
+ * stays swapped out) */
+static int swap_in(unsigned t)
+{
+    unsigned i, done;
+    int fd, rc, ok = 1;
+    char name[16];
+
+    if (!win[t].swapped)
+        return 1;
+    while ((rc = mvk_reclaim(t)) == MVE_MEM && swap_some(t))
+        ;
+    if (rc != 0) {
+        swap_msg = "Not enough memory to bring that window back.";
+        return 0;
     }
+    swap_name(t, name);
+    if (_dos_open(name, O_RDONLY, &fd) != 0)
+        ok = 0;
+    else {
+        for (i = 0; i < win[t].npages && ok; ++i)
+            ok = _dos_read(fd, swap_buf, sizeof swap_buf, &done) == 0 &&
+                 done == sizeof swap_buf &&
+                 mvk_pageio(t, i | 0x8000u, FP_SEG(swap_buf),
+                            FP_OFF(swap_buf)) == 0;
+        _dos_close(fd);
+    }
+    if (!ok) {                          /* (its pages freed again) */
+        mvk_release(t);
+        swap_msg = "That window's swap file could not be read.";
+        return 0;
+    }
+    remove(name);
+    win[t].swapped = 0;
+    return 1;
+}
+
+/* ask the tasks to end, wait for them (5 s at most), stop the core; the
+ * swapped out ones afterwards (memory then) */
+static void stop_multitasking(void)
+{
+    unsigned long start;
+    unsigned t, pass;
+    char name[16];
+
+    for (pass = 0; pass < 2; ++pass) {
+        for (t = 1; t < MVK_MAXTASK; ++t)
+            if (task_live[t] && win[t].swapped == pass &&
+                (pass == 0 || swap_in(t)))
+                mvk_kill(t);
+        start = *(unsigned long far *)MK_FP(0x40, 0x6c);
+        while (*(unsigned long far *)MK_FP(0x40, 0x6c) - start < 91) {
+            for (t = 1; t < MVK_MAXTASK; ++t)
+                if (task_live[t] && !win[t].swapped &&
+                    mvk_state(t) == MVK_READY)
+                    break;
+            if (t == MVK_MAXTASK)
+                break;
+            mvk_yield();
+        }
+    }
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t] && win[t].swapped) {
+            swap_name(t, name);
+            remove(name);
+        }
     mvk_stop();
     mv_on = 0;
 }
@@ -785,6 +884,8 @@ static int launch_task(const odq_program *program, char *status)
     int t;
 
     t = mvhost_launch(program->directory, program->command, 0);
+    while (t == -MVE_MEM && swap_some(0))       /* room:  swapping */
+        t = mvhost_launch(program->directory, program->command, 0);
     if (t == -MVE_DIR) {
         sprintf(status, "Cannot change to %.52s", program->directory);
         return -1;
@@ -2283,6 +2384,8 @@ static void to_window(unsigned t)
 {
     unsigned i;
 
+    if (win[t].swapped && !swap_in(t))  /* (it stays put aside) */
+        return;
     win[t].hidden = 0;
     if (win[t].aside) {
         win[t].aside = 0;
@@ -2338,6 +2441,10 @@ static int windows_view(odq_catalog *catalog, char *status)
                     learn_req = 1;
         }
         xfer_feed();
+        if (swap_msg != NULL) {         /* (swapping could not) */
+            strcpy(status, swap_msg);
+            swap_msg = NULL;
+        }
         t = front();
         w = &win[t];
         if (mode == 6 && t != mark_task) {      /* its window has gone */

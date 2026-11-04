@@ -26,10 +26,10 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Move, Resize (with the arrows; Move / Resize / Scroll switch between each other) | Rearrange:  Move, Resize, Scroll with the arrows, a box with Move M, Resize R, Scroll S (the bar on the one going on) and Done Enter; M, R, S switch between them | Covered |
 | Scroll (the window over the program's screen) | Rearrange:  Scroll (S) with the arrows; the view stays there (otherwise it follows the cursor) | Covered |
 | Position 1-9 (fixed places) | Rearrange:  1-9, the same places (halves, middle, quarters) | Covered |
-| Freeze, Hide, Put Aside | Rearrange:  Freeze (F, again:  Unfreeze) runs the window only while it has the keys; Hide (H) takes it off the screen, running; Put Aside (P) off the screen and held; Switch Windows brings either back | Covered (Put Aside holds the program in memory; DV swaps it out) |
+| Freeze, Hide, Put Aside | Rearrange:  Freeze (F, again:  Unfreeze) runs the window only while it has the keys; Hide (H) takes it off the screen, running; Put Aside (P) off the screen and held; Switch Windows brings either back | Covered (a put aside window is swapped out when memory runs out) |
 | Change Colors (text and background colour of the window) | Rearrange:  Change Colors (C), Left/Right the text, Up/Down the background colour:  the program's black and grey shown in them (otherwise its own colours), live; Esc back | Covered |
 | Video Options (VGA 25 / 30 / 50 / 60 rows) | Rearrange:  Video Options (V), 80 x 25 / 43 / 50 / 60 and 132 x 25 / 43 / 50 / 60 as Open 386MAX's MAXTEXT offers them (132 columns through the card's VBE text modes); the windows view in that geometry, a program's own screen 80x25, the launcher 80x25 | Covered with MAXTEXT loaded (without it:  80x25 only), starting in the higher mode MAXTEXT can set; more than DV (132 columns) |
-| Tune Performance (this window:  share CPU and EGA in front, run in background, allow swapping; system:  foreground / background ticks, swapping; Revive Mouse) | MAXVIEW's Tune Performance:  Run in background, Share CPU in front per window, Foreground / Background ticks (6:2 at start); MVRUN /T the slices | Partial (Share EGA, swapping and Revive Mouse:  not offered; MaxView does not swap) |
+| Tune Performance (this window:  share CPU and EGA in front, run in background, allow swapping; system:  foreground / background ticks, swapping; Revive Mouse) | MAXVIEW's Tune Performance:  Run in background, Share CPU in front per window, Foreground / Background ticks (6:2 at start); MVRUN /T the slices | Partial (Share EGA, the swapping settings and Revive Mouse:  not offered; MaxView swaps put aside windows by itself, see below) |
 
 ### Mark, Transfer, Scissors, Auto Dialer
 
@@ -58,7 +58,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Windows on one screen, numbered, titled | The windows view, in Open 386MAX's colours | Covered (titles, own-window geometry) |
 | Background serial programs (BBS nodes):  each IRQ to the window that hooked it last | The core | As DV (`nodes`, `samecom`) |
 | Graphics programs in the background | Held in the background | Partial |
-| Swapping windows out to disk or EMS | none | Missing |
+| Swapping windows out to disk or EMS | MAXVIEW:  when a window cannot open for want of memory, a put aside window (no subtask, no hardware interrupt of its own) goes page by page to `MVSWAPnn.TMP` in the current directory and its memory is freed; switched to again it comes back (another put aside window out if need be); Quit ends the swapped out ones too and removes the files | Partial (disk only, no EMS; only put aside windows, not by Tune Performance's settings; needs Open 386MAX with the QPI context fix for small memory, see TESTING) |
 | Program protection levels, writes-directly-to-screen virtualization | Text pages private per task; CRTC/DAC writes of background tasks trapped | Partial |
 
 ### The DESQview API

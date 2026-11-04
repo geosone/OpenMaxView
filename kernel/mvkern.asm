@@ -100,6 +100,7 @@ endif
 TS_FREE         equ 0
 TS_READY        equ 1
 TS_DONE         equ 2
+SWAPPED         equ 8000h       ; T_HOLD:  swapped out
 
 ; errors (mvk_init, mvk_create, mvk_start)
 MVE_NOQPI       equ 1           ; no QPI entry point
@@ -123,7 +124,10 @@ T_CRIT  dw      ?               ; DESQview critical sections open
 T_MODE  db      ?               ; video mode (40:49) and rows - 1 (40:84)
 T_ROWS  db      ?               ;   when it was last the foreground
 T_VESA  dw      ?               ; VESA mode set (4F02h), 0:  none
-T_HOLD  dw      ?               ; 1:  graphics in the background, held
+T_HOLD  dw      ?               ; 1:  graphics in the background, held;
+                                ; bit 15 (SWAPPED):  swapped out (its
+                                ; private pages freed, their contents the
+                                ; host's):  it never runs
 T_FRZ   dw      ?               ; 1:  frozen (runs only with the keys)
 T_EXCL  dw      ?               ; 1:  with the keys the others wait
 T_PARENT dw     ?               ; a DESQview subtask (thread):  its task's
@@ -189,6 +193,10 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_peek_
         public  mvk_putkey_
         public  mvk_keytap_
+        public  mvk_swapcheck_
+        public  mvk_pageio_
+        public  mvk_release_
+        public  mvk_reclaim_
         public  mvk_keyget_
         public  mvk_datasize_
         public  mvk_tune_
@@ -852,8 +860,11 @@ tf_irq: add     si,2
         lea     si,[di].T_FRAME
         jcxz    tf_pt
 @@:     mov     dx,[si]
+        or      dx,dx           ; (swapped out:  freed already)
+        jz      tf_next
         mov     ax,0500h
         qpi
+tf_next:
         add     si,2
         loop    @B
 tf_pt:  mov     [di].T_NPG,0
@@ -1897,6 +1908,8 @@ irq0_chk:
         call    taskptr
         cmp     [bx].T_STATE,TS_READY
         jne     irq0_skip
+        test    [bx].T_HOLD,SWAPPED ; swapped out:  never
+        jnz     irq0_skip
         cmp     [bx].T_HOLD,0   ; held, frozen:  only to end it
         jne     irq0_held
         call    frozen
@@ -1919,7 +1932,7 @@ irq0_nodos:
         jmp     irq0_no
 irq0_nopic:
         dbg     'p'
-        jmp     short irq0_no
+        jmp     irq0_no
 irq0_found:
         cmp     dx,cs:cur
         je      irq0_no
@@ -3794,6 +3807,273 @@ pu_ret: pop     ds
         pop     bx
         ret
 mvk_putkey_ endp
+
+; Swapping (DESQview's swapping of windows out, by the host):
+; int mvk_swapcheck(unsigned task):  the number of its private pages when it
+; may be swapped out now:  a task of its own (no subtask, none of its
+; own), held (frozen) and neither the foreground nor the one with the keys,
+; no IRQ handler of its own, not swapped out already; else 0.  From task 0.
+mvk_swapcheck_ proc near
+        push    bx
+        push    cx
+        push    si
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,ax
+        xor     ax,ax
+        cmp     cs:cur,0
+        jne     swc_ret
+        or      bx,bx
+        jz      swc_ret
+        cmp     bx,cs:ntasks
+        jae     swc_ret
+        cmp     bx,cs:fg
+        je      swc_ret
+        cmp     bx,cs:kfocus
+        je      swc_ret
+        mov     cx,bx           ; (its number + 1:  a subtask's T_PARENT)
+        inc     cx
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     swc_ret
+        test    [bx].T_HOLD,SWAPPED
+        jnz     swc_ret
+        cmp     [bx].T_FRZ,0
+        je      swc_ret
+        cmp     [bx].T_KILL,0
+        jne     swc_ret
+        cmp     [bx].T_PARENT,0
+        jne     swc_ret
+        xor     si,si           ; an IRQ of its own
+@@:     cmp     cs:irqown[si],bx
+        je      swc_ret
+        add     si,2
+        cmp     si,16
+        jb      @B
+        push    bx              ; a subtask of its own
+        xor     si,si
+swc_next:
+        push    bx
+        mov     bx,si
+        call    taskptr
+        cmp     [bx].T_STATE,TS_FREE
+        je      swc_nosub
+        cmp     [bx].T_PARENT,cx
+        jne     swc_nosub
+        pop     bx              ; one:  not now
+        pop     bx
+        jmp     short swc_ret
+swc_nosub:
+        pop     bx
+        inc     si
+        cmp     si,cs:ntasks
+        jb      swc_next
+        pop     bx
+        mov     ax,[bx].T_NPG
+swc_ret:
+        pop     ds
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+mvk_swapcheck_ endp
+
+; int mvk_pageio(unsigned task, unsigned page, unsigned seg, unsigned off):
+; its private page (0..) to the 4KB at seg:off (shared memory, below the
+; task base), page | 8000h:  from it into the page; 0, MVE_STATE (no such
+; page, swapped out).  From task 0.
+mvk_pageio_ proc near
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        push    ds
+        push    cx              ; off
+        push    bx              ; seg
+        mov     ds,cs:kseg
+        mov     bx,ax
+        mov     ax,MVE_STATE
+        cmp     cs:cur,0
+        jne     pio_drop
+        or      bx,bx
+        jz      pio_drop
+        cmp     bx,cs:ntasks
+        jae     pio_drop
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     pio_drop
+        test    [bx].T_HOLD,SWAPPED
+        jnz     pio_drop
+        mov     si,dx
+        and     si,7FFFh
+        cmp     si,[bx].T_NPG
+        jae     pio_drop
+        shl     si,8            ; its segment
+        add     si,cs:base_seg
+        pop     es              ; seg
+        pop     di              ; off
+        pushf
+        cli
+        push    cs:actpt
+        push    dx
+        mov     dx,[bx].T_PT
+        call    setctx
+        pop     dx
+        push    ds
+        mov     ds,si
+        xor     si,si
+        test    dx,8000h
+        jz      @F
+        push    es              ; into the page:  swapped
+        push    ds
+        pop     es
+        pop     ds
+        xchg    si,di
+@@:     mov     cx,1024
+        cld
+        rep     movsd
+        pop     ds
+        pop     dx
+        call    setctx
+        popf
+        xor     ax,ax
+        jmp     short pio_ret
+pio_drop:
+        add     sp,4
+pio_ret:
+        pop     ds
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+mvk_pageio_ endp
+
+; int mvk_release(unsigned task):  swapped out (mvk_swapcheck's, its pages'
+; contents kept by the caller):  its private pages freed; 0, MVE_STATE
+mvk_release_ proc near
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    ds
+        push    ax
+        call    mvk_swapcheck_
+        or      ax,ax
+        pop     bx
+        mov     ax,MVE_STATE
+        jz      rls_ret
+        mov     ds,cs:kseg
+        call    taskptr
+        or      [bx].T_HOLD,SWAPPED
+        mov     cx,[bx].T_NPG
+        lea     si,[bx].T_FRAME
+@@:     mov     dx,[si]
+        mov     word ptr [si],0
+        or      dx,dx
+        jz      rls_next
+        push    bx
+        mov     ax,0500h
+        qpi
+        pop     bx
+rls_next:
+        add     si,2
+        loop    @B
+        xor     ax,ax
+rls_ret:
+        pop     ds
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+mvk_release_ endp
+
+; int mvk_reclaim(unsigned task):  swapped out:  private pages again
+; (installed in its page table, their contents the caller's to put back
+; with mvk_pageio); then not swapped out.  0, MVE_STATE, MVE_MEM (none
+; free:  it stays swapped out).  From task 0.
+mvk_reclaim_ proc near
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,ax
+        mov     ax,MVE_STATE
+        cmp     cs:cur,0
+        jne     rcl_ret
+        or      bx,bx
+        jz      rcl_ret
+        cmp     bx,cs:ntasks
+        jae     rcl_ret
+        call    taskptr
+        test    [bx].T_HOLD,SWAPPED
+        jz      rcl_ret
+        mov     cx,[bx].T_NPG   ; the pages
+        lea     si,[bx].T_FRAME
+@@:     push    bx
+        mov     ax,0400h
+        qpi
+        pop     bx
+        jc      rcl_none
+        mov     [si],dx
+        add     si,2
+        loop    @B
+        pushf                   ; installed, in its context
+        cli
+        push    cs:actpt
+        mov     dx,[bx].T_PT
+        call    setctx
+        mov     cx,[bx].T_NPG
+        lea     si,[bx].T_FRAME
+        mov     di,cs:base_seg
+        shr     di,8            ; first linear page
+@@:     push    cx
+        push    bx
+        mov     cx,di
+        mov     dx,[si]
+        mov     ax,0A00h
+        qpi
+        pop     bx
+        pop     cx
+        inc     di
+        add     si,2
+        loop    @B
+        pop     dx
+        call    setctx
+        popf
+        and     [bx].T_HOLD,not SWAPPED
+        xor     ax,ax
+        jmp     short rcl_ret
+rcl_none:                       ; the ones it got back
+        lea     di,[bx].T_FRAME
+@@:     cmp     di,si
+        jae     @F
+        mov     dx,[di]
+        mov     word ptr [di],0
+        push    bx
+        mov     ax,0500h
+        qpi
+        pop     bx
+        add     di,2
+        jmp     @B
+@@:     mov     ax,MVE_MEM
+rcl_ret:
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+mvk_reclaim_ endp
 
 ; void mvk_keytap(const unsigned *keys, unsigned n, unsigned rec):  the
 ; script keys (up to 16, DGROUP) taken from the keys of the task with them,

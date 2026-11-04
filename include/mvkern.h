@@ -80,6 +80,16 @@ int mvk_putkey(unsigned task, unsigned key);
  * a key recorded, 2 a script key pressed, 3 the Learn key Shift+Alt), its
  * key (scan code << 8 | char) in *key */
 void mvk_keytap(const unsigned *keys, unsigned n, unsigned rec);
+/* Swapping out (by the host, from task 0):  mvk_swapcheck gives the number
+ * of task's private pages (4KB) when it may be swapped out now (held,
+ * neither the foreground nor the keys', no IRQ or subtask of its own),
+ * else 0; mvk_pageio copies page (| 0x8000:  back into it) to the 4KB at
+ * seg:off (memory below the task base); mvk_release frees its pages (it
+ * never runs then), mvk_reclaim gets pages again (MVE_MEM:  none free) */
+unsigned mvk_swapcheck(unsigned task);
+int mvk_pageio(unsigned task, unsigned page, unsigned seg, unsigned off);
+int mvk_release(unsigned task);
+int mvk_reclaim(unsigned task);
 unsigned mvk_keyget(unsigned *key);
 
 #endif
