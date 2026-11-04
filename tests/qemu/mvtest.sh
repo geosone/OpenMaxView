@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -485,6 +485,7 @@ learn)
     cfg=$OUT/MAXVIEW.CFG
     printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
     L="key:shift-alt wait:Display_Scripts:10"
+    M="key:alt wait:Switch_Windows:20"
     CMD="C:\\MAXVIEW" END="wait:learn_end:30" run learn 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
         "wait:Open_Program:60 key:ret sleep:4 $L text:l0 key:equal wait:press_the_key:10 key:f6 wait:its_name:10 key:h,i sleep:1 text:l1 key:ret sleep:2 type:echo_learned>>C:\\L.TXT sleep:2 $L text:l2 key:minus sleep:2 text:l3 key:f6 sleep:4 key:f6 sleep:4 text:l4 $L key:d wait:Scripts:10 text:list key:esc sleep:1 $L key:s sleep:2 text:saved key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_learn_end"
@@ -498,6 +499,28 @@ learn)
     check "Display Scripts:  hi on F6" "grep -q 'hi *F6' '$d/list.txt'"
     check "Save Scripts:  MAXVIEW.SCR" "grep -q '1 script(s) saved in MAXVIEW.SCR' '$d/saved.txt' && mtype -i '$d/test.img@@32256' ::/MAXVIEW.SCR | grep -q MVSCR1"
     check "DOS works afterwards" "grep -q '^learn end' '$d/end.txt'"
+    ;;
+lpause)
+    echo "== lpause:  Learn's Fixed-Size Pause, Variable Pause and Time Delay"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    L="key:shift-alt wait:Display_Scripts:10"
+    M="key:alt wait:Switch_Windows:20"
+    S="$L key:equal wait:press_the_key:10"
+    CMD="C:\\MAXVIEW" END="wait:lpause_end:30" run lpause 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:cls sleep:1 $S key:f7 wait:its_name:10 key:ret sleep:2 key:e,c,h,o,spc sleep:1 $L key:f sleep:2 key:a,b sleep:1 $L text:fixed key:f sleep:2 type:_>>C:\\P.TXT sleep:2 $L key:minus sleep:2 $S key:f8 wait:its_name:10 key:ret sleep:2 key:e,c,h,o,spc sleep:1 $L key:v sleep:2 key:q sleep:1 $L text:var key:v sleep:2 $L key:t wait:Time_Delay:10 key:backspace,3 sleep:1 text:delay key:ret sleep:2 type:_>>C:\\P.TXT sleep:2 $L key:minus sleep:2 type:cls sleep:2 key:f7 sleep:3 text:f1 key:z,y sleep:3 text:f2 type:cls sleep:2 key:f8 sleep:3 key:u,v sleep:1 key:ret sleep:1 text:v1 sleep:6 text:v2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_lpause_end"
+    d=$OUT/lpause
+    echo "  P.TXT:  $(file lpause P.TXT | tr '\r\n' '| ')"
+    check "Fixed-Size Pause:  in fixed pause, F ends it, Finish not offered" "grep -q 'In fixed pause' '$d/fixed.txt' && grep -q 'Fixed-Size Pause *F' '$d/fixed.txt' && ! grep -q 'Finish Script *-' '$d/fixed.txt' && ! grep -q 'Variable Pause *V' '$d/fixed.txt'"
+    check "Variable Pause:  in variable pause, V ends it" "grep -q 'In variable pause' '$d/var.txt' && grep -q 'Variable Pause *V' '$d/var.txt' && ! grep -q 'Fixed-Size Pause *F' '$d/var.txt'"
+    check "Time Delay:  the seconds asked for" "grep -q 'Time Delay, in seconds (1-255):  3_' '$d/delay.txt'"
+    check "F7:  the script stops at the fixed pause" "grep -q '^ *C:.>echo *$' '$d/f1.txt'"
+    check "F7:  two keys of the user's, then on" "grep -q '^ *C:.>echo zy >>C:.P.TXT' '$d/f2.txt'"
+    check "F8:  the user's keys until Enter, Enter taken, then the delay" "grep -q '^ *C:.>echo uv *$' '$d/v1.txt'"
+    check "F8:  after the delay on" "grep -q '^ *C:.>echo uv >>C:.P.TXT' '$d/v2.txt'"
+    check "P.TXT:  ab, q (learning), zy, uv (playing)" "[ \"$(file lpause P.TXT | tr -d '\r ' | tr '\n' ,)\" = 'ab,q,zy,uv,' ]"
+    check "DOS works afterwards" "grep -q '^lpause end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

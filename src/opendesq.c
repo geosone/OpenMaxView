@@ -964,6 +964,19 @@ static unsigned mark_len, mark_task, mark_row, mark_col, mark_brow, mark_bcol;
 static int mark_on, mark_more;          /* begun (B, M:  added) */
 static unsigned short __far xfer[MARK_MAX + 1];
 static unsigned xfer_n, xfer_i, xfer_task;
+/* in a script:  a fixed-size pause (that many keys of the user's), a
+ * variable pause (the user's keys until Enter), a time delay (seconds) */
+#define SK_FIXED 0xfe00u
+#define SK_VAR   0xfd00u
+#define SK_DELAY 0xfc00u
+#define SK_MARK(w) ((w) >= SK_DELAY)
+static int learn_pause;                 /* learning:  1 fixed, 2 variable */
+static unsigned learn_count;            /* keys in the fixed pause */
+static char learn_delay[4] = "5";       /* Time Delay's seconds */
+static int play_wait;                   /* playing:  1 fixed, 2 variable,
+                                           3 a delay */
+static unsigned play_left;
+static unsigned long play_until;
 
 /* cell r, c of mark_task's screen is marked */
 static int mark_in(unsigned r, unsigned c)
@@ -1042,6 +1055,7 @@ static void xfer_start(unsigned t, int how, unsigned k)
 
     xfer_n = xfer_i = 0;
     xfer_task = t;
+    play_wait = 0;
     if (how == 2) {
         while (p < e && !isdigit((unsigned char)*p))
             ++p;
@@ -1068,10 +1082,38 @@ static void xfer_start(unsigned t, int how, unsigned k)
 }
 
 /* the transfer's next keys, as far as the program's buffer takes them */
+static void scripts_tap(void);
+
 static void xfer_feed(void)
 {
+    unsigned long now = *(unsigned long far *)MK_FP(0x40, 0x6c);
+
+    if (play_wait == 3 && (long)(now - play_until) >= 0)
+        play_wait = 0;
+    if (play_wait != 0)
+        return;
     while (xfer_i < xfer_n) {
-        int rc = mvk_putkey(xfer_task, xfer[xfer_i]);
+        unsigned w = xfer[xfer_i];
+        int rc;
+
+        if (SK_MARK(w)) {               /* a script's pause:  wait */
+            ++xfer_i;
+            if ((w & 0xff00u) == SK_FIXED && (w & 0xff) != 0) {
+                play_wait = 1;
+                play_left = w & 0xff;
+            } else if ((w & 0xff00u) == SK_VAR)
+                play_wait = 2;
+            else if ((w & 0xff00u) == SK_DELAY) {
+                play_wait = 3;
+                play_until = now + (w & 0xff) * 182ul / 10;
+            }
+            if (play_wait == 1 || play_wait == 2)
+                scripts_tap();
+            if (play_wait != 0)
+                break;
+            continue;
+        }
+        rc = mvk_putkey(xfer_task, w);
 
         if (rc == 1)
             break;
@@ -1280,7 +1322,11 @@ static void scripts_tap(void)
 
     for (i = 0; i < nscripts; ++i)
         keys[i] = scripts[i].key;
-    mvk_keytap(keys, nscripts, learning);
+    if (play_wait == 2 && i + 2 <= SCRIPTS) {   /* Enter ends the pause */
+        keys[i++] = 0x1c0d;
+        keys[i++] = 0xe00d;
+    }
+    mvk_keytap(keys, i, learning || play_wait == 1);
 }
 
 static int script_find(unsigned key)
@@ -1299,7 +1345,7 @@ static void script_finish(void)
 {
     int i = script_find(learn.key);
 
-    learning = 0;
+    learning = learn_pause = 0;
     if (i < 0 && nscripts < SCRIPTS)
         i = (int)nscripts++;
     if (i >= 0) {
@@ -1310,6 +1356,13 @@ static void script_finish(void)
     scripts_tap();
 }
 
+/* a key, or a pause's mark, into the script being learned */
+static void learn_put(unsigned w)
+{
+    if (learn.len < SCRIPT_LEN)
+        script_keys[SCRIPTS][learn.len++] = (unsigned short)w;
+}
+
 /* script i typed into the program with the keys */
 static void script_play(unsigned i)
 {
@@ -1317,6 +1370,10 @@ static void script_play(unsigned i)
 
     xfer_task = mvk_focused();
     xfer_n = xfer_i = 0;
+    if (play_wait != 0) {
+        play_wait = 0;
+        scripts_tap();
+    }
     for (n = 0; n < scripts[i].len && n < MARK_MAX; ++n)
         xfer[xfer_n++] = script_keys[i][n];
 }
@@ -1606,7 +1663,7 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(desk_rows - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 10 && !(mode == 6 && status_line[0] != '\0')) {
+    if (mode >= 1 && mode <= 11 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
             " Move:  arrows; R resize, S scroll; Enter done ",
             " Resize:  arrows; M move, S scroll; Enter done ",
@@ -1616,11 +1673,15 @@ static void compose(int mode)
             " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics ",
             " Program:  type; Up/Down, Tab the field; Enter keeps it, Esc cancels ",
             " Start Script:  press the key it is to have (Esc:  back) ",
-            learn_hint
+            learn_hint, learn_hint
         };
 
-        sprintf(learn_hint, " Script on %s, its name:  %s_  (Enter:  learn, Esc:  back) ",
-                key_name(learn.key), learn.name);
+        if (mode == 11)
+            sprintf(learn_hint, " Time Delay, in seconds (1-255):  %s_  (Enter:  keep, Esc:  back) ",
+                    learn_delay);
+        else
+            sprintf(learn_hint, " Script on %s, its name:  %s_  (Enter:  learn, Esc:  back) ",
+                    key_name(learn.key), learn.name);
 
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
     }
@@ -1812,6 +1873,7 @@ enum {
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
     A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
+    A_LFIXED, A_LVAR, A_LDELAY,
     A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -1938,19 +2000,26 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         break;
     case DV_LEARN:
         dv_begin("Learn", 22);
-        if (learning)
+        if (learn_pause)
+            strcpy(dv_labels[0], learn_pause == 1 ? "In fixed pause"
+                                                  : "In variable pause");
+        else if (learning)
             sprintf(dv_labels[0], "Learning:  %s", key_name(learn.key));
         else
             strcpy(dv_labels[0], "Not learning");
         dv_add(DV_TEXT, dv_labels[0], "", 0);
         dv_add(DV_BLANK, "", "", 0);
         dv_add(DV_ITEM, "Start Script", learning ? "" : "=", A_LSTART);
-        dv_add(DV_ITEM, "Finish Script", learning ? "-" : "", A_LFINISH);
+        dv_add(DV_ITEM, "Finish Script", learning && !learn_pause ? "-" : "",
+               A_LFINISH);
         dv_add(DV_ITEM, "Cancel Script", learning ? "C" : "", A_LCANCEL);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Fixed-Size Pause", "", 0);
-        dv_add(DV_ITEM, "Variable Pause", "", 0);
-        dv_add(DV_ITEM, "Time Delay", "", 0);
+        dv_add(DV_ITEM, "Fixed-Size Pause",
+               learning && learn_pause != 2 ? "F" : "", A_LFIXED);
+        dv_add(DV_ITEM, "Variable Pause",
+               learning && learn_pause != 1 ? "V" : "", A_LVAR);
+        dv_add(DV_ITEM, "Time Delay", learning && !learn_pause ? "T" : "",
+               A_LDELAY);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Display Scripts", "D", A_LDISPLAY);
         dv_add(DV_ITEM, "Save Scripts", nscripts ? "S" : "", A_LSAVE);
@@ -2120,9 +2189,20 @@ static int windows_view(odq_catalog *catalog, char *status)
             unsigned ev, k;
 
             while ((ev = mvk_keyget(&k)) != 0)
-                if (ev == 1 && learning && learn.len < SCRIPT_LEN)
-                    script_keys[SCRIPTS][learn.len++] = (unsigned short)k;
-                else if (ev == 2 && script_find(k) >= 0)
+                if (ev == 1 && play_wait == 1) {
+                    if (--play_left == 0) {     /* the fixed pause over */
+                        play_wait = 0;
+                        scripts_tap();
+                    }
+                } else if (ev == 1 && learning && learn_pause == 1)
+                    ++learn_count;
+                else if (ev == 1 && learning && learn_pause == 0)
+                    learn_put(k);
+                else if (ev == 2 && play_wait == 2 &&
+                         (k == 0x1c0d || k == 0xe00d)) {
+                    play_wait = 0;              /* the variable pause over */
+                    scripts_tap();
+                } else if (ev == 2 && script_find(k) >= 0)
                     script_play((unsigned)script_find(k));
                 else if (ev == 3 && mode == 0)
                     learn_req = 1;
@@ -2285,6 +2365,30 @@ static int windows_view(odq_catalog *catalog, char *status)
             w->colors = saved.colors;
             w->fg = saved.fg;
             w->bg = saved.bg;
+        }
+        if (mode == 11) {               /* Time Delay:  the seconds */
+            unsigned len = strlen(learn_delay);
+
+            if (key == 27) {
+                mode = 0;
+                menu = DV_LEARN;
+                fresh = 1;
+            } else if (key == 13) {
+                unsigned n = (unsigned)atoi(learn_delay);
+
+                if (n > 0)
+                    learn_put(SK_DELAY | (n > 255 ? 255 : n));
+                mode = 0;
+                menu = DV_MAIN;
+                if (t != 0)
+                    to_window(t);
+            } else if (key == 8 && len > 0)
+                learn_delay[len - 1] = '\0';
+            else if (key >= '0' && key <= '9' && len < 3) {
+                learn_delay[len] = (char)key;
+                learn_delay[len + 1] = '\0';
+            }
+            continue;
         }
         if (mode == 10) {               /* its name; Enter:  learning */
             unsigned len = strlen(learn.name);
@@ -2496,8 +2600,26 @@ static int windows_view(odq_catalog *catalog, char *status)
                 if (t != 0)
                     to_window(t);
                 break;
+            case A_LFIXED:              /* on:  the keys counted; off:  kept */
+            case A_LVAR:
+                if (learn_pause == 0) {
+                    learn_pause = act == A_LFIXED ? 1 : 2;
+                    learn_count = 0;
+                } else {
+                    learn_put(learn_pause == 1
+                              ? SK_FIXED | (learn_count > 255 ? 255 : learn_count)
+                              : SK_VAR);
+                    learn_pause = 0;
+                }
+                menu = DV_MAIN;
+                if (t != 0)
+                    to_window(t);
+                break;
+            case A_LDELAY:
+                mode = 11;
+                break;
             case A_LCANCEL:
-                learning = 0;
+                learning = learn_pause = 0;
                 scripts_tap();
                 menu = DV_MAIN;
                 if (t != 0)
