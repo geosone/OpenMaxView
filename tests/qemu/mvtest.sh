@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf swap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -609,6 +609,20 @@ swap)
     check "window 7 put aside, window 1 switched to:  7 out, 1 back" "grep -q 'MVSWAP07 TMP' '$d/dir1.txt' && ! grep -q 'MVSWAP01 TMP' '$d/dir1.txt' && ! grep -q 'Not enough memory' '$d/back1.txt'"
     check "window 1's memory came back:  its directory (C:\\DOS)" "file swap S.TXT | grep -q '^C:.DOS'"
     check "Quit:  all closed, the swapped out one too, no swap file left" "grep -q '^swap end' '$d/end.txt' && ! mdir -b -i '$d/test.img@@32256' '::/MVSWAP*.TMP' >/dev/null 2>&1"
+    ;;
+noswap)
+    echo "== noswap:  a program whose DVP says Can be swapped out N is not swapped out"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'N|NoSwap|C:\\COMMAND.COM||64|640|1|2|0|0|0|0|0|0|0|0|0|0|0|0|0|0|0\r\nD|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    OPN="$M key:o wait:Change_a_Program:20 key:d sleep:6"
+    MEMSIZE=${SWAPMEM:-4} CMD="C:\\MAXVIEW" END="wait:noswap_end:60" run noswap 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 $R key:p sleep:2 $OPN $OPN $OPN $OPN $OPN $OPN text:w7 key:esc sleep:2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:90 sleep:2 type:echo_noswap_end"
+    d=$OUT/noswap
+    check "window 1 (NoSwap) put aside stays in memory:  the 7th window refused for want of memory (swap:  the same steps open it)" "grep -q 'QPI memory' '$d/w7.txt'"
+    check "Quit:  all closed" "grep -q '^noswap end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

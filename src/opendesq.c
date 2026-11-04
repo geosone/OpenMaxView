@@ -62,6 +62,7 @@ typedef struct mv_window {
     unsigned char fg, bg;
     unsigned char swapped;      /* put aside and swapped out (MVSWAPnn.TMP) */
     unsigned char npages;       /*   its private pages */
+    unsigned char noswap;       /* its program:  Can be swapped out N */
 } mv_window;
 static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
 static mv_window win[MVK_MAXTASK];
@@ -683,7 +684,7 @@ static void win_add(unsigned t)
     win[t].cols = 50;
     win[t].gpos = win[t].gsize = 0;
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
-    win[t].exclusive = win[t].colors = win[t].swapped = 0;
+    win[t].exclusive = win[t].colors = win[t].swapped = win[t].noswap = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -748,13 +749,15 @@ static int swap_out(unsigned t)
     return 1;
 }
 
-/* a window put aside (not except) swapped out to make room:  1 */
+/* a window put aside (not except) swapped out to make room:  1; not one
+ * whose program says Can be swapped out N */
 static int swap_some(unsigned except)
 {
     unsigned t;
 
     for (t = 1; t < MVK_MAXTASK; ++t)
-        if (task_live[t] && t != except && win[t].aside && swap_out(t))
+        if (task_live[t] && t != except && win[t].aside && !win[t].noswap &&
+            swap_out(t))
             return 1;
     return 0;
 }
@@ -898,6 +901,7 @@ static int launch_task(const odq_program *program, char *status)
     mvhost_title(t, program->title);
     task_live[t] = 1;
     win_add(t);
+    win[t].noswap = (unsigned char)!odq_program_swappable(program);
     view_windows = 1;
     sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
     mvk_setfg(t);

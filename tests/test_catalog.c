@@ -98,6 +98,27 @@ int main(void)
         ODQ_CATALOG_SYNTAX)
         fail("duplicate hotkey was saved");
 
+    /* Can be swapped out, as DESQview 2.80 writes it in a DVP 2.x:  blank
+     * flags4 bit 6, Y flags1 bit 0 (the shipped DVPs:  16Fh 01h, 18Bh C3h) */
+    memset(&catalog.programs[0].profile, 0, sizeof(odq_process_profile));
+    if (!odq_program_swappable(&catalog.programs[0]))
+        fail("a program without a profile not swappable");
+    catalog.programs[0].profile.version = ODQ_PROFILE_VERSION;
+    catalog.programs[0].profile.source_version = 2;
+    if (odq_program_swappable(&catalog.programs[0]))
+        fail("Can be swapped out N swappable");
+    catalog.programs[0].profile.flags4 = 0xcf;
+    if (!odq_program_swappable(&catalog.programs[0]))
+        fail("Can be swapped out blank not swappable");
+    catalog.programs[0].profile.flags4 = 0x8f;
+    catalog.programs[0].profile.flags1 = 0xe1;
+    if (!odq_program_swappable(&catalog.programs[0]))
+        fail("Can be swapped out Y not swappable");
+    catalog.programs[0].profile.flags1 = 0;
+    catalog.programs[0].profile.source_version = 1;
+    if (!odq_program_swappable(&catalog.programs[0]))
+        fail("a DVP 1.x profile not swappable");
+
     puts("catalog tests passed");
     return 0;
 }

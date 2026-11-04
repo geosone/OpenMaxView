@@ -54,6 +54,10 @@ int odq_catalog_load(const char *path, odq_catalog *catalog,
                      unsigned *error_line);
 int odq_catalog_save(const char *path, const odq_catalog *catalog);
 int odq_program_valid(const odq_program *program);
+/* Can be swapped out (DVP 2.x):  0 when the profile says N (flags4 bit 6
+ * clear, flags1 bit 0 clear, as DESQview 2.80 writes it), else 1 (Y, the
+ * field blank, no DVP profile) */
+int odq_program_swappable(const odq_program *program);
 
 #endif
 

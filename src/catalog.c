@@ -73,6 +73,14 @@ static int profile_valid(const odq_process_profile *profile)
            profile->flags3 <= 0xff && profile->flags4 <= 0xff;
 }
 
+int odq_program_swappable(const odq_program *program)
+{
+    const odq_process_profile *profile = &program->profile;
+
+    return profile->version == 0 || profile->source_version < 2 ||
+           (profile->flags4 & 0x40) != 0 || (profile->flags1 & 0x01) != 0;
+}
+
 int odq_program_valid(const odq_program *program)
 {
     return isprint((unsigned char)program->hotkey) && program->hotkey != '|' &&
