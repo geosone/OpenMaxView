@@ -16,7 +16,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Switch Windows:  the windows by number | Switch Windows lists the windows by number (1-9, A, ...); also Ctrl+Alt+1..9 | As DV |
 | Close Window:  "Are you sure?" Yes / No | Close Window:  "Are you sure?" Yes / No | As DV |
 | Zoom | Zoom:  full screen, Alt returns | As DV |
-| Help (F1):  a help index (commands, programs, companions) | none | Missing (own help text needed:  DESQview's is not copied) |
+| Help (F1):  a help index (commands, programs, companions) | Help (F1, from every menu):  MaxView's own pages by topic (Keys and Menus, Windows, Rearrange, Mark and Transfer, Video, About MaxView) in a box, Esc back to the topics | Covered (own text; DESQview's is not copied) |
 | Quit DESQview:  "Are you sure?" Yes / No | Quit MaxView:  "Are you sure?" Yes / No, closes all programs | As DV |
 
 ### Rearrange

@@ -1082,6 +1082,155 @@ static void xfer_feed(void)
     }
 }
 
+/* Help (F1):  MaxView's own pages, an index of topics in the menu */
+static const char *const help_keys[] = {
+    "Alt (pressed and released alone) brings up this menu over the",
+    "windows; Alt again, or Esc in the main menu, returns to the window",
+    "in front.  In a menu, the red letter or the key at the right picks",
+    "an item, as do the arrows and Enter; Esc goes one menu back.",
+    "",
+    "The window in front gets the keys.  The others go on running",
+    "unless they are frozen or put aside (Rearrange), with less time",
+    "than the one in front (Rearrange, Tune Performance).",
+    "",
+    "Ctrl+Alt+1 to 9 bring the program of that window to the full",
+    "screen, Ctrl+Alt+0 back to MaxView.",
+    "",
+    "F1 shows this help from every menu.",
+    NULL
+};
+static const char *const help_windows[] = {
+    "Open Window (O) starts a program of the catalogue (MAXVIEW.CFG,",
+    "kept with MAXVAPP) in a new window, by its key.",
+    "",
+    "Switch Windows (S) lists the windows by number; the number brings",
+    "that window to the front, a hidden or put aside one too.",
+    "",
+    "Close Window (C) ends the program in front after Yes.",
+    "",
+    "Zoom (Z) gives the program in front the whole screen in its own",
+    "video mode; Alt returns to the windows.",
+    "",
+    "Quit MaxView (Q) ends all programs after Yes.",
+    NULL
+};
+static const char *const help_rearrange[] = {
+    "Rearrange (R) changes the window in front:",
+    "",
+    "  Move M, Resize R   the arrows move it or change its size",
+    "  Scroll S           the arrows move its view over the program's",
+    "                     80x25 screen (it stays there until Position)",
+    "  Position 1-9       halves (1 2 top/bottom, 4 5 left/right),",
+    "                     the middle (3), the quarters (6-9)",
+    "  Freeze F           the program runs only while it has the keys",
+    "  Hide H             off the screen, still running",
+    "  Put Aside P        off the screen and stopped",
+    "  Change Colors C    black and grey of the program in other",
+    "                     colours (arrows; Enter keeps, Esc undoes)",
+    "  Video Options V    the screen's text mode (see Video)",
+    "  Tune Performance T running in the background, sharing the CPU",
+    "                     while in front, the time slices",
+    NULL
+};
+static const char *const help_mark[] = {
+    "Mark (M) takes text from the screen of the window in front.  The",
+    "arrows move the mark; B begins there, then the arrows extend the",
+    "marked text (row by row, shown reversed) and E ends it.  M instead",
+    "of B adds the new text to what was marked before.  Enter is done.",
+    "",
+    "Transfer (T) types the marked text into the program of the window",
+    "in front, as if typed on the keyboard:",
+    "",
+    "  T              the first line only",
+    "  N              the first number only",
+    "  any other key  every line, each followed by that key (Enter:",
+    "                 each line as a command)",
+    "",
+    "A long text arrives complete:  MaxView waits while the program's",
+    "key buffer is full.",
+    NULL
+};
+static const char *const help_video[] = {
+    "With Open 386MAX's MAXTEXT.SYS loaded, the windows use more of the",
+    "screen:  MaxView starts in the largest text mode MAXTEXT can set",
+    "(132 columns when the graphics card has them, else 50 or 43 rows).",
+    "Rearrange, Video Options (V) lists the modes:  80 or 132 columns",
+    "of 25, 43, 50 or 60 rows; dark grey ones the card does not offer.",
+    "Without MAXTEXT the screen stays at 80x25.",
+    "",
+    "A program's own screen is always 80x25:  a window shows up to 80",
+    "columns of it.  Zoom shows it in its own mode; the menu brings",
+    "the chosen mode back.",
+    NULL
+};
+static const char *const help_about[] = {
+    "Open MaxView runs several DOS programs at once, each in a window",
+    "of its own with its own memory, screen, keys and DOS state.  It",
+    "needs Open 386MAX:  MaxView uses its memory management to give",
+    "each program the memory below 640K for itself.",
+    "",
+    "Programs written for DESQview's API (INT 15h) run as they did",
+    "there:  MAXVTSR.COM answers it.  MAXVIEW.CFG lists the programs;",
+    "MAXVAPP edits it, MAXVDVP imports DESQview .DVP files and",
+    "MAXVAUTO finds programs on the disks.",
+    "",
+    "Open MaxView is free software (GNU GPL 3), not DESQview:  it",
+    "covers DESQview's functions in Open 386MAX's look.",
+    NULL
+};
+static const struct { const char *title; const char *const *lines; } help[] = {
+    { "Keys and Menus", help_keys }, { "Windows", help_windows },
+    { "Rearrange", help_rearrange }, { "Mark and Transfer", help_mark },
+    { "Video", help_video }, { "About MaxView", help_about }
+};
+#define HELP_PAGES (sizeof help / sizeof help[0])
+static unsigned help_page, help_top;
+
+static unsigned help_count(void)
+{
+    unsigned n = 0;
+
+    while (help[help_page].lines[n] != NULL)
+        ++n;
+    return n;
+}
+
+static void sput(unsigned row, unsigned col, unsigned char ch,
+                 unsigned char attr);
+static void swrite(unsigned row, unsigned col, const char *text,
+                   unsigned char attr);
+
+/* the page in a box in the middle of the desk */
+static void help_draw(void)
+{
+    unsigned n = help_count(), rows = n, top, left, r, c;
+
+    if (rows > desk_rows - 6)
+        rows = desk_rows - 6;
+    if (help_top + rows > n)
+        help_top = n - rows;
+    top = (desk_rows - rows - 2) / 2;
+    left = (desk_cols - 72) / 2;
+    for (r = top; r < top + rows + 2; ++r)
+        for (c = left; c < left + 72; ++c)
+            sput(r, c, r == top || r == top + rows + 1 ? 205 :
+                 c == left || c == left + 71 ? 186 : ' ', ATTR_ACTIVE);
+    sput(top, left, 201, ATTR_ACTIVE);
+    sput(top, left + 71, 187, ATTR_ACTIVE);
+    sput(top + rows + 1, left, 200, ATTR_ACTIVE);
+    sput(top + rows + 1, left + 71, 188, ATTR_ACTIVE);
+    sput(top, left + 2, ' ', ATTR_ACTIVE);
+    swrite(top, left + 3, help[help_page].title, ATTR_ACTIVE);
+    sput(top, left + 3 + strlen(help[help_page].title), ' ', ATTR_ACTIVE);
+    for (r = 0; r < rows; ++r)
+        swrite(top + 1 + r, left + 3, help[help_page].lines[help_top + r],
+               ATTR_ACTIVE);
+    if (help_top > 0)
+        sput(top + 1, left + 70, 24, ATTR_ACTIVE);
+    if (help_top + rows < n)
+        sput(top + rows, left + 70, 25, ATTR_ACTIVE);
+}
+
 /* The windows on a black desk (each showing its program's own colours,
  * framed in Open 386MAX's), a message (status_line) on the bottom row;
  * MAXVIEW's menu over them while it has the keys (mode 0); mode 1, 2:
@@ -1206,18 +1355,21 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(desk_rows - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 6 && !(mode == 6 && status_line[0] != '\0')) {
+    if (mode >= 1 && mode <= 7 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
             " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
             " Scroll:  arrows, Enter done ", " Position:  1-9 ",
             " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back ",
-            " Mark:  arrows, B begin, M more, E end, Enter done, Esc back "
+            " Mark:  arrows, B begin, M more, E end, Enter done, Esc back ",
+            " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics "
         };
 
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
     }
     if (focus == 0 && (mode == 0 || mode == 6))
         dv_menu_draw();
+    if (mode == 7)
+        help_draw();
     _fmemcpy(video, scr, desk_rows * desk_cols * sizeof scr[0]);
     set_cursor(crow, ccol, cursor);
 }
@@ -1388,13 +1540,13 @@ static int dv_find(int key, int scan)
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
-    DV_VIDEO, DV_MARK, DV_TRANSFER
+    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
     A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
-    A_VIDEO, A_MARK, A_TRANSFER, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
+    A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
 static void dv_build(unsigned menu, const odq_catalog *catalog)
@@ -1503,6 +1655,14 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Dial", "", 0);
         dv_add(DV_ITEM, "Talk", "", 0);
         break;
+    case DV_HELP:
+        dv_begin("Help", 22);
+        for (i = 0; i < HELP_PAGES; ++i) {
+            dv_keys[i][0] = help[i].title[0];
+            dv_keys[i][1] = '\0';
+            dv_add(DV_ITEM, help[i].title, dv_keys[i], A_HELPPAGE + i);
+        }
+        break;
     case DV_TRANSFER:                   /* (its keys:  windows_view) */
         dv_begin("Transfer", 30);
         dv_add(DV_ITEM, "The first line only", "T", 0);
@@ -1526,7 +1686,7 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Transfer", "T", A_TRANSFER);
         dv_add(DV_ITEM, "Scissors", "", 0);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Help", "", 0);
+        dv_add(DV_ITEM, "Help", "F1", A_HELP);
         dv_add(DV_ITEM, "Quit MaxView", "Q", A_QUIT);
         break;
     }
@@ -1734,6 +1894,11 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 if (scan == 80 && w->vtop + w->rows < SCREEN_ROWS) ++w->vtop;
                 if (scan == 75 && w->hoff > 0) --w->hoff;
                 if (scan == 77 && w->hoff + w->cols < SCREEN_COLS) ++w->hoff;
+            } else if (mode == 7) {     /* Help:  its page */
+                if (scan == 72 && help_top > 0) --help_top;
+                if (scan == 80) ++help_top;     /* (help_draw limits it) */
+                if (scan == 73) help_top = help_top > 10 ? help_top - 10 : 0;
+                if (scan == 81) help_top += 10;
             } else if (mode == 6) {     /* the mark, its window's view
                                          * following it */
                 if (scan == 72 && mark_row > 0) --mark_row;
@@ -1762,6 +1927,14 @@ static int windows_view(const odq_catalog *catalog, char *status)
             w->colors = saved.colors;
             w->fg = saved.fg;
             w->bg = saved.bg;
+        }
+        if (mode == 7) {
+            if (key == 13 || key == 27) {
+                mode = 0;
+                menu = DV_HELP;
+                fresh = 1;
+            }
+            continue;
         }
         if (mode == 6) {
             key = toupper(key);
@@ -1802,7 +1975,9 @@ static int windows_view(const odq_catalog *catalog, char *status)
             fresh = 1;
             continue;
         }
-        if (key == 13 && dv_usable(dv_sel))
+        if (scan == 59)                 /* F1:  Help from every menu */
+            act = A_HELP;
+        else if (key == 13 && dv_usable(dv_sel))
             act = dv_items[dv_sel].act;
         else if (menu == DV_REARRANGE && key >= '1' && key <= '9' && scan == 0)
             act = A_PLACE + key - '1';
@@ -1811,6 +1986,7 @@ static int windows_view(const odq_catalog *catalog, char *status)
         if (act <= 0)
             continue;
         if (t == 0 && act != A_OPEN && act != A_SWITCH && act != A_QUIT &&
+            act != A_HELP && menu != DV_HELP &&
             act < A_PROGRAM && menu != DV_QUIT) {
             strcpy(status, "No window in front.");
             continue;
@@ -1864,6 +2040,9 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 break;
             case A_TUNE:
                 menu = DV_TUNE;
+                break;
+            case A_HELP:
+                menu = DV_HELP;
                 break;
             case A_MARK:                /* from its cursor, the view kept
                                          * still while marking */
@@ -1952,6 +2131,10 @@ static int windows_view(const odq_catalog *catalog, char *status)
                         sprintf(status, "MAXTEXT:  %ux%u not set (%d).",
                                 mt_cols[m], mt_rows[m], rc);
                     menu = DV_MAIN;
+                } else if (act >= A_HELPPAGE && act < A_HELPPAGE + (int)HELP_PAGES) {
+                    help_page = act - A_HELPPAGE;
+                    help_top = 0;
+                    mode = 7;
                 } else if (act >= A_PLACE && act < A_PLACE + 9) {
                     place(w, act - A_PLACE);
                     w->scrolled = 0;

@@ -83,9 +83,10 @@ into the front window (Alt returns).
 | Z | Zoom | the front window full screen (Alt returns) |
 | M | Mark | marks text on the front window's screen:  the arrows move the mark (the window's view follows it), B begins (what was marked before is dropped), M begins more (added to it), E ends; the text from the begin to the mark, row by row, is shown reversed. Enter is done (ending a begun mark), Esc goes back without it. Up to 2048 characters, blanks at line ends dropped |
 | T | Transfer | types the marked text into the program of the front window:  T its first line only, N its first number only (a minus before it and decimal points or commas in it kept), any other key (Enter, Tab, an arrow ...) every line, each followed by that key; Esc goes back. The keys wait while the program's key buffer is full, so a long text arrives complete |
+| F1 | Help | MaxView's help from every menu:  the topics (Keys and Menus K, Windows W, Rearrange R, Mark and Transfer M, Video V, About MaxView A), a page in a box (Up/Down, PgUp/PgDn when it is longer than the screen), Enter or Esc back to the topics |
 | Q | Quit MaxView | "Are you sure?" Yes (Y) closes all programs and leaves MaxView |
 
-Scissors, Help and Mark's Auto Dialer are shown in dark grey:  they are
+Scissors and Mark's Auto Dialer are shown in dark grey:  they are
 not available yet. A message (a program that ended, for example) shows on the
 bottom row until the next key.
 

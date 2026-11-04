@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video mark dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video mark help dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -428,6 +428,21 @@ mark)
     check "Transfer + Enter:  both lines typed and run in the other window, none lost" "[ '$(file mark XF.TXT)' = 'XFER-OK 4711' ] && [ '$(file mark X2.TXT)' = 'LINE-TWO' ]"
     check "Transfer N:  the first number typed" "file mark N.TXT | grep -q '^4711 *$'"
     check "DOS works afterwards" "grep -q '^mark end' '$d/end.txt'"
+    ;;
+help)
+    echo "== help:  MaxView's own help (F1):  the topics, a page, back"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\n' > "$cfg"
+    CMD="C:\\MAXVIEW" END="wait:help_end:30" run help 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg" \
+        "wait:Open_Program:60 key:ret sleep:3 key:alt wait:Switch_Windows:20 text:main key:f1 wait:About_MaxView:10 text:index key:r wait:Position_1-9:10 text:page key:down,down,down,down,down,down,down,down,down,down sleep:1 text:scrolled key:esc wait:About_MaxView:10 text:back key:esc wait:Switch_Windows:10 text:main2 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_help_end"
+    d=$OUT/help
+    check "the menu:  Help F1" "grep -q 'Help *F1' '$d/main.txt'"
+    check "F1:  the topics, each with its key" "grep -q 'Keys and Menus *K' '$d/index.txt' && grep -q 'Mark and Transfer *M' '$d/index.txt' && grep -q 'About MaxView *A' '$d/index.txt'"
+    check "R:  the Rearrange page in a box with its hint" "grep -q 'Rearrange (R) changes the window in front' '$d/page.txt' && grep -q 'Help:  Up/Down' '$d/page.txt'"
+    check "the page fits in 25 rows:  all of it shown, Down moves nothing" "grep -q 'while in front, the time slices' '$d/scrolled.txt' && grep -q 'Rearrange (R) changes the window' '$d/scrolled.txt'"
+    check "Esc:  back to the topics, Esc:  the main menu" "! grep -q 'Position 1-9' '$d/back.txt' && grep -q 'Open Window *O' '$d/main2.txt'"
+    check "DOS works afterwards" "grep -q '^help end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"
