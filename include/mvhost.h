@@ -32,6 +32,8 @@ int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size);
 /* The notifications task's window asked for (MAXVTSR, INT 2Fh D70Eh:  its
  * manager stream's 40h-51h):  bit N event 40h + N (MVN_*); 0 without
  * MAXVTSR. */
+#define MVN_CLOSE (1ul << 0x06)
+#define MVN_HELP  (1ul << 0x08)
 #define MVN_CUT   (1ul << 0x0d)
 #define MVN_COPY  (1ul << 0x0e)
 #define MVN_PASTE (1ul << 0x0f)

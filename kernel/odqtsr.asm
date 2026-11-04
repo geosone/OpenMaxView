@@ -242,6 +242,10 @@ video_known:
 
 int21_handler:
         pushf
+        cmp     ah,4Ch                ; a program's end:  its notifications
+        jne     short int21_not_end   ; (notify_end)
+        call    notify_end
+int21_not_end:
         cmp     ax,2B01h
         jne     int21_chain
         cmp     cx,4445h              ; 'DE'
@@ -4488,6 +4492,34 @@ note_put_ret:
         pop     bx
         ret
 
+; INT 21h AH=4Ch:  the program that asked for the task's notifications
+; ends (its PSP the current one):  they go (the task's shell stays).
+notify_end:
+        push    ax
+        push    bx
+        push    dx
+        mov     dx,word ptr cs:task_handle_segment
+        sub     dx,word ptr cs:task_objects_base
+        jb      short notify_end_ret
+        shr     dx,1
+        cmp     dx,TASK_OBJECT_COUNT
+        jae     short notify_end_ret
+        mov     ah,51h
+        int     21h
+        xchg    bx,dx                 ; BX the task, DX the PSP
+        shl     bx,1
+        cmp     dx,word ptr cs:notify_psp[bx]
+        jne     short notify_end_ret
+        mov     word ptr cs:notify_psp[bx],0
+        shl     bx,1
+        mov     word ptr cs:notify_mask[bx],0
+        mov     word ptr cs:notify_mask[bx+2],0
+notify_end_ret:
+        pop     dx
+        pop     bx
+        pop     ax
+        ret
+
 ; Manager stream opcode AL (40h-71h):  40h-51h sets, 60h-71h clears the
 ; calling task's notify bit (AL and 1Fh); CF:  another opcode (52h-5Fh).
 ; A subtask's go to its task's window as well (they share it).
@@ -4519,6 +4551,16 @@ notify_set_shift:
         shl     ax,cl
         test    ch,20h
         jnz     short notify_set_clear
+        push    ax
+        push    bx
+        mov     ah,51h                ; the program asking:  its PSP
+        int     21h
+        mov     ax,bx
+        pop     bx
+        shr     bx,1
+        mov     word ptr cs:notify_psp[bx],ax
+        shl     bx,1
+        pop     ax
         or      word ptr cs:notify_mask[bx],dx
         or      word ptr cs:notify_mask[bx+2],ax
         jmp     short notify_set_done
@@ -9573,6 +9615,8 @@ int2f_task_end:
         mov     word ptr cs:own_geom[si+2],0
         mov     word ptr cs:notify_mask[si],0 ; and its notifications
         mov     word ptr cs:notify_mask[si+2],0
+        shr     si,1
+        mov     word ptr cs:notify_psp[si],0
 task_end_dead:
         mov     al,bl
         inc     al                    ; its tag
@@ -9867,6 +9911,7 @@ appreq_dvp     db APPREQ_MAX dup(0)
 task_titles    db (TASK_OBJECT_COUNT * TITLE_MAX) dup(0) ; D70Ch
 own_tbuf       db (TITLE_MAX + 4) dup(0) ; own_title's
 own_geom       dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Dh:  place, size
+notify_psp     dw TASK_OBJECT_COUNT dup(0) ; the program that asked
 note_handle    dw 0                   ; note_put's
 note_flags     dw 0
 note_len       dw 0

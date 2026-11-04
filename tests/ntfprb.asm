@@ -2,7 +2,7 @@
 ; Window notifications (measurement and tests/qemu):  NTFPRB file
 ;   API level 2.01; a manager stream (type 10h) to the own window asks for
 ;   the notifications 40h-51h; "win", "kbd", "obq", "mbx" the handles (HANDLE
-;   01h, 05h, 07h, 03h); "ntfprb ready" on the screen.  Then, up to 16 times:  READ
+;   01h, 05h, 07h, 03h); "ntfprb ready" on the screen.  Then, up to 48 times:  READ
 ;   07h (an object with input), "q SSSS:OOOO" its handle; READ 00h of it
 ;   (handle on the stack), "  B d1 d2 d3" the bytes the call left and their
 ;   DWORDs (top first); the 16 bytes at the second DWORD and at the first
@@ -63,7 +63,7 @@ start:
         mov     ah,9
         int     21h
 
-        mov     count,16
+        mov     count,48
 again:  mov     di,offset line
         mov     si,offset t_q         ; READ 07h:  the object
         call    puts

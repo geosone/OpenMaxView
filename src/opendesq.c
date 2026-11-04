@@ -968,6 +968,34 @@ static int mark_on, mark_more;          /* begun (B, M:  added) */
 static unsigned long scis_mask;
 static int scis_event;
 static unsigned dvkey_task;
+
+/* DESQview's notification ev (40h-51h) to task t if it asked for it:  len
+ * 1 the event alone; else the event, its window's handle, a, b, zeros (7:
+ * a move's row and column, a resize's rows and columns; 8:  Close, Help) */
+static void notify(unsigned t, unsigned ev, unsigned len, unsigned a,
+                   unsigned b)
+{
+    unsigned char msg[8];
+
+    if (t == 0 || !(mvhost_notify(t) & 1ul << (ev - 0x40)))
+        return;
+    memset(msg, 0, sizeof msg);
+    msg[0] = (unsigned char)ev;
+    msg[5] = (unsigned char)a;
+    msg[6] = (unsigned char)b;
+    mvhost_note(t, msg, len, len > 1);
+}
+
+/* a program asks to be told of Close:  Quit is not offered (DESQview's) */
+static int close_asked(void)
+{
+    unsigned t;
+
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t] && mvhost_notify(t) & MVN_CLOSE)
+            return 1;
+    return 0;
+}
 static unsigned short __far xfer[MARK_MAX + 1];
 static unsigned xfer_n, xfer_i, xfer_task;
 /* in a script:  a fixed-size pause (that many keys of the user's), a
@@ -1951,7 +1979,7 @@ enum {
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
     A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
-    A_LFIXED, A_LVAR, A_LDELAY, A_SCISSORS, A_SCOPY, A_SCUT,
+    A_LFIXED, A_LVAR, A_LDELAY, A_SCISSORS, A_SCOPY, A_SCUT, A_PHELP,
     A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -2173,8 +2201,11 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
                scis_mask & (MVN_CUT | MVN_COPY | MVN_PASTE) ? "X" : "",
                A_SCISSORS);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Help", "F1", A_HELP);
-        dv_add(DV_ITEM, "Quit MaxView", "Q", A_QUIT);
+        if (scis_mask & MVN_HELP)       /* (the program's own, DESQview's) */
+            dv_add(DV_ITEM, "Help for Program", "F1", A_PHELP);
+        else
+            dv_add(DV_ITEM, "Help", "F1", A_HELP);
+        dv_add(DV_ITEM, "Quit MaxView", close_asked() ? "" : "Q", A_QUIT);
         break;
     }
 }
@@ -2274,6 +2305,7 @@ static int windows_view(odq_catalog *catalog, char *status)
 {
     unsigned long last = 0, now;
     int key, scan, act, mode = 0, learn_req = 0;
+    static unsigned last_front;         /* (kept over the calls) */
     unsigned t, sel, menu = DV_MAIN, focus, last_focus = 0xffff;
     int fresh = 1;
     mv_window *w, saved;
@@ -2332,6 +2364,11 @@ static int windows_view(odq_catalog *catalog, char *status)
             dvkey_task = 0;
         }
         scis_mask = t != 0 ? mvhost_notify(t) : 0;
+        if (t != last_front) {          /* another window in front */
+            notify(last_front, 0x4b, 1, 0, 0);
+            notify(t, 0x4a, 1, 0, 0);
+            last_front = t;
+        }
         if (learn_req && focus == 0) {  /* Shift+Alt:  Learn's */
             learn_req = 0;
             menu = DV_LEARN;
@@ -2413,18 +2450,30 @@ static int windows_view(odq_catalog *catalog, char *status)
         }
         if (key == 0 || key == 0xe0) {
             scan = getch();
-            if (mode == 1) {
+            if (mode == 1) {            /* (the program told, each step) */
+                unsigned top = w->top, left = w->left;
+
                 if (scan == 72 && w->top > 1) --w->top;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1) ++w->top;
                 if (scan == 75 && w->left > 1) --w->left;
                 if (scan == 77 && w->left + w->cols < desk_cols - 1) ++w->left;
+                if (w->left != left)
+                    notify(t, 0x40, 7, w->top, w->left);
+                if (w->top != top)
+                    notify(t, 0x41, 7, w->top, w->left);
             } else if (mode == 2) {
+                unsigned rows = w->rows, cols = w->cols;
+
                 if (scan == 72 && w->rows > 3) --w->rows;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1 &&
                     w->rows < SCREEN_ROWS) ++w->rows;
                 if (scan == 75 && w->cols > 10) --w->cols;
                 if (scan == 77 && w->left + w->cols < desk_cols - 1 &&
                     w->cols < SCREEN_COLS) ++w->cols;
+                if (w->cols != cols)
+                    notify(t, 0x42, 7, w->rows, w->cols);
+                if (w->rows != rows)
+                    notify(t, 0x43, 7, w->rows, w->cols);
             } else if (mode == 5) {     /* Change Colors */
                 w->colors = 1;
                 if (scan == 75) w->fg = (unsigned char)((w->fg + 15) & 15);
@@ -2679,8 +2728,10 @@ static int windows_view(odq_catalog *catalog, char *status)
             fresh = 1;
             continue;
         }
-        if (scan == 59)                 /* F1:  Help from every menu */
-            act = A_HELP;
+        if (scan == 59)                 /* F1:  Help from every menu (the
+                                         * program's from the main one, if
+                                         * it asked for it) */
+            act = menu == DV_MAIN && scis_mask & MVN_HELP ? A_PHELP : A_HELP;
         else if (key == 13 && dv_usable(dv_sel))
             act = dv_items[dv_sel].act;
         else if (menu == DV_REARRANGE && key >= '1' && key <= '9' && scan == 0)
@@ -2735,7 +2786,8 @@ static int windows_view(odq_catalog *catalog, char *status)
                 menu = DV_REARRANGE;
                 break;
             case A_QUIT:
-                menu = DV_QUIT;
+                if (!close_asked())
+                    menu = DV_QUIT;
                 break;
             case A_ZOOM:
                 mvk_setfg(t);
@@ -2817,6 +2869,11 @@ static int windows_view(odq_catalog *catalog, char *status)
                     strcpy(status, "MAXVIEW.SCR could not be used.");
                 menu = DV_MAIN;
                 break;
+            case A_PHELP:               /* the program shows its help */
+                notify(t, 0x48, 8, 0, 0);
+                menu = DV_MAIN;
+                to_window(t);
+                break;
             case A_SCISSORS:
                 if (scis_mask & (MVN_CUT | MVN_COPY | MVN_PASTE))
                     menu = DV_SCISSORS;
@@ -2897,6 +2954,8 @@ static int windows_view(odq_catalog *catalog, char *status)
             case A_HIDE:
             case A_ASIDE:                   /* the next window in front; none:
                                              * the menu stays */
+                if (act == A_HIDE)
+                    notify(t, 0x47, 1, 0, 0);
                 win_hide(t, act == A_ASIDE);
                 menu = DV_MAIN;
                 if (front() != 0)
@@ -2932,6 +2991,13 @@ static int windows_view(odq_catalog *catalog, char *status)
                     if (odq_catalog_save("MAXVIEW.CFG", catalog) != ODQ_CATALOG_OK)
                         strcpy(status, "MAXVIEW.CFG could not be written.");
                     menu = DV_MAIN;
+                    break;
+                }
+                if (mvhost_notify(t) & MVN_CLOSE) {     /* it closes itself */
+                    notify(t, 0x46, 8, 0, 0);
+                    sprintf(status, "%.40s is told to close.", task_title[t]);
+                    menu = DV_MAIN;
+                    to_window(t);
                     break;
                 }
                 mvk_kill(t);

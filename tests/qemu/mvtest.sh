@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -565,6 +565,33 @@ scis)
     check "Cut:  4Dh, row 0, column 0, 1 row, 2 columns" "echo \"\$n1\" | grep -q '^  a 4D $h 00 00 00 00 00 00 00 01 02'"
     check "the messages come from the own mailbox (HANDLE 03h)" "m=\$(echo \"\$n1\" | sed -n 's/^mbx //p'); [ -n \"\$m\" ] && echo \"\$n1\" | grep -q \"^q \$m\""
     check "the program read its x and ended, DOS works afterwards" "grep -q '^scis end' '$d/end.txt'"
+    ;;
+ntf)
+    echo "== ntf:  notifications of move, resize, help, front and back, hide, close (NTFPRB)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    CMD="C:\\MAXVIEW" END="wait:ntf_end:30" run ntf 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $M text:menu $R key:m key:right,down sleep:1 key:ret sleep:2 $R key:r key:left,up sleep:1 key:ret sleep:2 $M key:f1 sleep:2 text:phelp $M key:o wait:Change_a_Program:20 key:d sleep:5 $M key:s sleep:1 key:1 sleep:2 $R key:h sleep:2 $M key:s sleep:1 key:1 sleep:2 $M text:menuq key:q sleep:1 key:c wait:Are_you_sure:10 key:y sleep:2 text:closed key:x sleep:3 $M text:menuq2 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_ntf_end"
+    d=$OUT/ntf
+    n1=$(file ntf N1.TXT)
+    msgs=$(echo "$n1" | grep '^  a ' | cut -c5-)
+    echo "$msgs" | sed 's/^/  /'
+    win=$(echo "$n1" | sed -n 's/^win \(....\):\(....\)$/\2 \1/p')
+    h=$(echo "$win" | awk '{print substr($1,3,2)" "substr($1,1,2)" "substr($2,3,2)" "substr($2,1,2)}')
+    ev() { echo "$msgs" | grep "^$1 $h" | head -1 | cut -d' ' -f6-7; }
+    l() { echo "$n1" | grep -B1 "^  a $1" | head -1 | awk '{print $2}'; }
+    check "Help for Program F1 in the menu of a program asking for Help; Quit without its key (Close asked)" "grep -q 'Help for Program *F1' '$d/menu.txt' && ! grep -q 'Quit MaxView *Q' '$d/menu.txt'"
+    check "Move right:  40h (7 bytes), its row and column" "[ \"\$(l 40)\" = 0000:0007 ] && [ -n \"\$(ev 40)\" ]"
+    check "Move down:  41h, the row one more than 40h's, the same column" "(set -- \$(ev 40) \$(ev 41); [ \$((0x\$3)) = \$((0x\$1 + 1)) ] && [ \$2 = \$4 ])"
+    check "Resize narrower:  42h (7 bytes), then lower:  43h with a row less" "[ \"\$(l 42)\" = 0000:0007 ] && (set -- \$(ev 42) \$(ev 43); [ \$((0x\$3)) = \$((0x\$1 - 1)) ] && [ \$2 = \$4 ])"
+    check "F1:  48h (8 bytes) to the program, MaxView's help not shown" "[ \"\$(l 48)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^48 $h 00 00 00' && ! grep -q 'Keys and Menus' '$d/phelp.txt'"
+    check "another window in front:  4Bh, back in front:  4Ah, Hide:  47h (1 byte each)" "echo \"\$msgs\" | grep -q '^4B' && echo \"\$msgs\" | grep -q '^4A' && echo \"\$msgs\" | grep -q '^47' && [ \"\$(l 47)\" = 0000:0001 ]"
+    check "Close Yes:  46h (8 bytes), the program told, its window kept" "[ \"\$(l 46)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^46 $h 00 00 00' && grep -q 'is told to close' '$d/closed.txt' && grep -q 'ntfprb ready' '$d/closed.txt'"
+    check "the program ended itself (x):  its notifications gone, Quit Q again" "grep -q 'Quit MaxView *Q' '$d/menuq2.txt' && ! grep -q 'Help for Program' '$d/menuq2.txt'"
+    check "DOS works afterwards" "grep -q '^ntf end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"
