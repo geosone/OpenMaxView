@@ -34,6 +34,7 @@ int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size);
  * MAXVTSR. */
 #define MVN_CLOSE (1ul << 0x06)
 #define MVN_HELP  (1ul << 0x08)
+#define MVN_VIDEO (1ul << 0x0c)
 #define MVN_CUT   (1ul << 0x0d)
 #define MVN_COPY  (1ul << 0x0e)
 #define MVN_PASTE (1ul << 0x0f)

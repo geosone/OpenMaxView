@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -594,6 +594,23 @@ ntf)
     check "Close Yes:  46h (8 bytes), the program told, its window kept" "[ \"\$(l 46)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^46 $h 00 00 00' && grep -q 'is told to close' '$d/closed.txt' && grep -q 'ntfprb ready' '$d/closed.txt'"
     check "the program ended itself (x):  its notifications gone, Quit Q again" "grep -q 'Quit MaxView *Q' '$d/menuq2.txt' && ! grep -q 'Help for Program' '$d/menuq2.txt'"
     check "DOS works afterwards" "grep -q '^ntf end' '$d/end.txt'"
+    ;;
+vntf)
+    echo "== vntf:  Video Options sends 4Ch (NTFPRB, MAXTEXT)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    CONFIG="DOS=HIGH,UMB|DEVICE=C:\\MAX\\386MAX.SYS|DEVICE=C:\\MAXTEXT.SYS|FILES=40|BUFFERS=20|SHELL=C:\\COMMAND.COM C:\\ /E:1024 /P" \
+    CMD="C:\\MAXVIEW" END="wait:vntf_end:30" run vntf 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg $MAXROOT/build/bin/MAXTEXT.SYS" \
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $R key:v wait:Text_modes:10 key:1 sleep:3 $R key:v wait:Text_modes:10 key:3 sleep:3 key:esc sleep:1 key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:3 type:echo_vntf_end"
+    d=$OUT/vntf
+    n1=$(file vntf N1.TXT)
+    msgs=$(echo "$n1" | grep '^  a ' | cut -c5-)
+    echo "$msgs" | sed 's/^/  /'
+    check "two text mode changes:  4Ch 03h (2 bytes) three times each" "[ \"\$(echo \"\$msgs\" | grep -c '^4C 03')\" = 6 ] && [ \"\$(echo \"\$n1\" | grep -B1 '^  a 4C' | awk '\$2 == \"0000:0002\"' | wc -l)\" = 6 ]"
+    check "DOS works afterwards" "grep -q '^vntf end' '$d/end.txt'"
     ;;
 alw)
     echo "== alw:  a program disallows menu functions (ALWPRB, manager stream 20h-33h)"

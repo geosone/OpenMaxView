@@ -1127,6 +1127,22 @@ static int notify_scroll(unsigned t, unsigned ev, int step)
     return 1;
 }
 
+/* Video Options changed the text mode:  4Ch and the BIOS's mode (2 bytes)
+ * to each program asking for it, three times, as DESQview 2.80 sends it
+ * on its Video Options (measured; a program's own INT 10h sends none) */
+static void notify_video(void)
+{
+    unsigned char msg[2];
+    unsigned t, i;
+
+    msg[0] = 0x4c;
+    msg[1] = *(unsigned char far *)MK_FP(0x40, 0x49);
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t] && mvhost_notify(t) & MVN_VIDEO)
+            for (i = 0; i < 3; ++i)
+                mvhost_note(t, msg, sizeof msg, 0);
+}
+
 /* a program asks to be told of Close:  Quit is not offered (DESQview's) */
 static int close_asked(void)
 {
@@ -3244,6 +3260,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                     if (rc == 0) {
                         video_cols = desk_cols;
                         video_rows = desk_rows;
+                        notify_video();
                     } else
                         sprintf(status, "MAXTEXT:  %ux%u not set (%d).",
                                 mt_cols[m], mt_rows[m], rc);

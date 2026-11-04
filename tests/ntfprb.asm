@@ -1,5 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; Window notifications (measurement and tests/qemu):  NTFPRB file
+; Window notifications (measurement and tests/qemu):  NTFPRB file [V]
+;   (V:  INT 10h modes 1 and 3 once the notifications are asked for)
 ;   API level 2.01; a manager stream (type 10h) to the own window asks for
 ;   the notifications 40h-51h; "win", "kbd", "obq", "mbx" the handles (HANDLE
 ;   01h, 05h, 07h, 03h); "ntfprb ready" on the screen.  Then, up to 48 times:  READ
@@ -29,6 +30,12 @@ start:
         cmp     al,13
         jne     @B
 @@:     mov     byte ptr [di],0
+        dec     si                    ; flag V:  set the video modes 1, 3
+@@:     lodsb
+        cmp     al,' '
+        je      @B
+        or      al,20h
+        mov     vflag,al
         mov     ah,3Ch
         xor     cx,cx
         mov     dx,offset fname
@@ -59,7 +66,13 @@ start:
         mov     bx,0003h
         call    hnd
         call    flush
-        mov     dx,offset t_ready
+        cmp     vflag,'v'
+        jne     @F
+        mov     ax,0001h
+        int     10h
+        mov     ax,0003h
+        int     10h
+@@:     mov     dx,offset t_ready
         mov     ah,9
         int     21h
 
@@ -281,6 +294,7 @@ t_a     db      '  a',0
 t_b     db      '  b',0
 t_ready db      'ntfprb ready',13,10,'$'
 utext   db      'NTFPRB file',13,10,'$'
+vflag   db      0
 handle  dw      0
 count   dw      0
 savsp   dw      0
