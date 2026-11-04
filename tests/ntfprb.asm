@@ -1,6 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Window notifications (measurement and tests/qemu):  NTFPRB file [V]
-;   (V:  INT 10h modes 1 and 3 once the notifications are asked for)
+;   (V:  INT 10h modes 1 and 3 once the notifications are asked for;
+;   P:  a pointer object (NEW 0Fh) opened to the own window, ADDTO 0001h)
 ;   API level 2.01; a manager stream (type 10h) to the own window asks for
 ;   the notifications 40h-51h; "win", "kbd", "obq", "mbx" the handles (HANDLE
 ;   01h, 05h, 07h, 03h); "ntfprb ready" on the screen.  Then, up to 48 times:  READ
@@ -66,6 +67,31 @@ start:
         mov     bx,0003h
         call    hnd
         call    flush
+        cmp     vflag,'p'
+        jne     no_ptr
+        mov     ax,1200h              ; NEW pointer
+        mov     bx,010Fh
+        int     15h
+        pop     dx
+        pop     ax
+        mov     word ptr pobj,dx
+        mov     word ptr pobj+2,ax
+        mov     ax,1200h              ; OPEN:  to the own window
+        mov     bx,0001h
+        int     15h
+        push    word ptr pobj+2
+        push    word ptr pobj
+        mov     ax,1200h
+        mov     bx,0C00h
+        int     15h
+        push    0                     ; ADDTO:  button activity only
+        push    1
+        push    word ptr pobj+2
+        push    word ptr pobj
+        mov     ax,1200h
+        mov     bx,0A00h
+        int     15h
+no_ptr:
         cmp     vflag,'v'
         jne     @F
         mov     ax,0001h
@@ -299,6 +325,7 @@ handle  dw      0
 count   dw      0
 savsp   dw      0
 obj     dd      0
+pobj    dd      0
 kbd     dd      0
 fname   db      80 dup (0)
 line    db      600 dup (?)

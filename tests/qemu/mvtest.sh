@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -982,6 +982,21 @@ demos)
     check "  WRITE of the pointer:  a move to row 5, column 30" "[ \"\$(sed -n 6p '$OUT/demos/m0.txt' | cut -c31)\" = . ]"
     check "  the left button marked where it was" "sed -n 5p '$OUT/demos/m1.txt' | grep -q L"
     check "HELLO:  its line through the API" "grep -q '^Hello from a DESQview API program.' '$OUT/demos/h.txt'"
+    ;;
+pntf)
+    echo "== pntf:  a pointer message sends 49h (NTFPRB P, MVRUN)"
+    CTM=${CTMOUSE:-$HOME/mars/scratch-386max/ctm/bin/ctmouse.exe}
+    if [ ! -f "$CTM" ]; then echo "  SKIP  no CuteMouse (CTMOUSE=path of ctmouse.exe)"; continue; fi
+    cp "$CTM" "$OUT/CTMOUSE.EXE"
+    printf 'C:\\CTMOUSE.EXE\r\nC:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 60 C:\\NTFPRB.COM C:\\N1.TXT P ; C:\\TICK.EXE C:\\T2.TXT\r\n' > "$OUT/P.BAT"
+    mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
+    CMD="C:\\P.BAT" END="wait:MVRUN:_done:120 sleep:3" run pntf 60 "" "$OUT/P.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/NTFPRB.COM $TICK" \
+        "wait:ntfprb_ready:60 sleep:3 $(mv -100 -100 10) $(mv 4 0 23) $(mv 0 8 4) $(mv 0 4 1) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0 sleep:2 $(mv 4 0 8) $(mv 0 8 1) sleep:1 mon:mouse_button+2 sleep:0.5 mon:mouse_button+0 sleep:2 key:x"
+    n1=$(file pntf N1.TXT)
+    echo "$n1" | grep '^  [0-9]\|^  a' | sed 's/^/  /'
+    seq=$(echo "$n1" | grep '^  [0-9]' | awk '{print $2}' | tr '\n' ' ')
+    check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/pntf/end.txt'"
+    check "each click:  its pointer message (6 bytes), then 49h and the pointer's handle (5 bytes)" "[ \"\$(echo '$seq' | cut -d' ' -f1-4)\" = '0000:0006 0000:0005 0000:0006 0000:0005' ] && [ \"\$(echo \"\$n1\" | grep -c '^  a 49 00 00 ')\" = 2 ]"
     ;;
 pointer)
     echo "== pointer:  a pointer object (as under DV)"

@@ -9126,10 +9126,48 @@ pointer_poll_store:
         pop     es
         mov     byte ptr es:[15h],al
         mov     word ptr cs:pointer_count[si],1
+        call    pointer_notify
 pointer_poll_ret:
         pop     es
         pop     di
         pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; A message for the pointer SI (its owner a tag):  49h and the
+; pointer's handle (5 bytes) to the own mailbox of its task when the task
+; asked for 49h, after the message, as DESQview 2.80 (measured).
+pointer_notify:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    di
+        push    es
+        mov     bx,word ptr cs:pointer_owner[si]
+        dec     bx                    ; the task's number
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short pointer_notify_ret
+        shl     bx,1
+        shl     bx,1
+        test    word ptr cs:notify_mask[bx],0200h
+        jz      short pointer_notify_ret
+        shr     bx,1
+        shr     bx,1
+        mov     ax,word ptr cs:pointer_handle_segments[si]
+        mov     word ptr cs:pointer_note+3,ax
+        push    cs
+        pop     es
+        mov     di,offset pointer_note
+        mov     cx,5
+        xor     dx,dx
+        call    note_put
+pointer_notify_ret:
+        pop     es
+        pop     di
         pop     dx
         pop     cx
         pop     bx
@@ -10598,6 +10636,7 @@ notify_psp     dw TASK_OBJECT_COUNT dup(0) ; the program that asked
 note_handle    dw 0                   ; note_put's
 note_flags     dw 0
 note_len       dw 0
+pointer_note   db 49h,0,0,0,0         ; 49h, the pointer's handle
 deny_mask      dw (TASK_OBJECT_COUNT * 2) dup(0) ; D711h:  functions disallowed
 notify_mask    dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Eh:  the notifications
                                       ; each task asked for (bit N:  40h+N)
