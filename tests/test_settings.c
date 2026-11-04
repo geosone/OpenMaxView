@@ -28,20 +28,27 @@ int main(void)
     odq_settings_defaults(&settings);
     if (!settings.auto_tsr || !settings.auto_ansi || !settings.confirm_exit ||
         !settings.reload_catalog || !settings.show_memory ||
-        !settings.hotkey_launch || !settings.quick_help)
+        !settings.hotkey_launch || !settings.quick_help ||
+        settings.modem_port != 1 || strcmp(settings.dial, "ATDT") != 0 ||
+        strcmp(settings.hangup, "ATZ") != 0 || settings.access[0][0] != '\0')
         fail("defaults are incorrect");
 
     write_text("build/test-settings.ini",
                "# test\nAUTO_TSR=no\nAUTO_ANSI=0\nCONFIRM_EXIT=0\n"
                "RELOAD_CATALOG=yes\nSHOW_MEMORY=no\n"
-               "HOTKEY_LAUNCH=yes\nQUICK_HELP=no\n");
+               "HOTKEY_LAUNCH=yes\nQUICK_HELP=no\n"
+               "MODEM_PORT=2\nDIAL=ATDP\nACCESS1=9,\nACCESS3=0w\n");
     if (odq_settings_load("build/test-settings.ini", &settings, &line) !=
         ODQ_SETTINGS_OK)
         fail("valid settings rejected");
     if (settings.auto_tsr || settings.auto_ansi || settings.confirm_exit ||
         settings.show_memory ||
         settings.quick_help || !settings.reload_catalog ||
-        !settings.hotkey_launch)
+        !settings.hotkey_launch || settings.modem_port != 2 ||
+        strcmp(settings.dial, "ATDP") != 0 ||
+        strcmp(settings.hangup, "ATZ") != 0 ||
+        strcmp(settings.access[0], "9,") != 0 ||
+        settings.access[1][0] != '\0' || strcmp(settings.access[2], "0w") != 0)
         fail("valid settings parsed incorrectly");
 
     if (odq_settings_save("build/test-settings.ini", &settings) !=
@@ -69,6 +76,16 @@ int main(void)
     if (odq_settings_load("build/test-settings-bool.ini", &loaded, &line) !=
         ODQ_SETTINGS_SYNTAX || line != 1)
         fail("invalid boolean accepted");
+
+    write_text("build/test-settings-port.ini", "MODEM_PORT=5\n");
+    if (odq_settings_load("build/test-settings-port.ini", &loaded, &line) !=
+        ODQ_SETTINGS_SYNTAX || line != 1)
+        fail("invalid modem port accepted");
+    write_text("build/test-settings-long.ini",
+               "DIAL=ATDT0123456789ABCDEF\n");
+    if (odq_settings_load("build/test-settings-long.ini", &loaded, &line) !=
+        ODQ_SETTINGS_SYNTAX || line != 1)
+        fail("too long dial command accepted");
 
     puts("settings tests passed");
     return 0;

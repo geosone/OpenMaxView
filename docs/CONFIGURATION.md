@@ -64,7 +64,8 @@ their byte-sized DVP ranges are rejected rather than guessed.
 
 ## MAXVSET.INI
 
-The version-1 settings file contains `KEY=YES` or `KEY=NO` records:
+The version-1 settings file contains `KEY=YES` or `KEY=NO` records, and
+the text records of Mark's Auto Dialer:
 
 | Key | Default | Effect |
 |---|---:|---|
@@ -75,6 +76,10 @@ The version-1 settings file contains `KEY=YES` or `KEY=NO` records:
 | `SHOW_MEMORY` | YES | Show catalogue memory limits. |
 | `HOTKEY_LAUNCH` | YES | Enable direct red-letter launch keys. |
 | `QUICK_HELP` | YES | Display the quick-help pane. |
+| `MODEM_PORT` | 1 | The modem's COM port (1-4) for the Auto Dialer. |
+| `DIAL` | ATDT | The command before a number (up to 15 characters; `ATDP` for pulse dialling). |
+| `HANGUP` | ATZ | The command Talk sends:  the modem off the line. |
+| `ACCESS1`..`ACCESS3` | (none) | Access codes put before a number (Dial's Access Code 1-3), up to 23 characters, for example `9,`. |
 
 Unknown, duplicate or malformed records are validation errors rather than
 silently accepted future settings. Use `MAXVSET /CHECK` after hand editing.

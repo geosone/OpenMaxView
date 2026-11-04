@@ -36,8 +36,8 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
 | Mark (Mark Begin, Mark More, Mark End) and Transfer:  copy screen text from one window into another's keyboard | Mark (M):  Begin B, More M, End E, the arrows move the mark, the text row by row from the begin to the mark (as DV 2.80, measured); Transfer (T):  the first line T, the first number N, or every line followed by any other key | As DV; Transfer waits for room in the key buffer (DV 2.80 loses keys beyond its 15 places, measured); "keys to begin each line" not offered |
-| Scissors | none (not yet measured:  inactive in a plain DV setup) | Missing |
-| Auto Dialer (Mark Phone #, Dial, Talk) | none | Missing |
+| Scissors (Copy C, Cut U, Paste:  only for programs written for DESQview that support them through its API; inactive otherwise, measured) | shown, not available | Missing (needs the API's window notifications) |
+| Auto Dialer (Mark Phone #, Dial with Local and Access Code 1-3, Talk):  measured, Dial sends `ATDT`, the number and `;` + CR to COM1, Talk `ATZ` + CR | Mark Phone # P takes the number under the mark's cursor from the window; Dial D (Local L, Access Code 1-3) and Talk T send the commands of MAXVSET.INI (MODEM_PORT, DIAL, HANGUP, ACCESS1-3; by default COM1, ATDT, ATZ) by INT 14h | Covered |
 
 ### Programs and companions
 

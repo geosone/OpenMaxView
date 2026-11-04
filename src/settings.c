@@ -43,6 +43,7 @@ static int parse_boolean(const char *text, unsigned *value)
 
 void odq_settings_defaults(odq_settings *settings)
 {
+    memset(settings, 0, sizeof *settings);
     settings->auto_tsr = 1;
     settings->auto_ansi = 1;
     settings->confirm_exit = 1;
@@ -50,6 +51,18 @@ void odq_settings_defaults(odq_settings *settings)
     settings->show_memory = 1;
     settings->hotkey_launch = 1;
     settings->quick_help = 1;
+    settings->modem_port = 1;
+    strcpy(settings->dial, "ATDT");
+    strcpy(settings->hangup, "ATZ");
+}
+
+/* a text setting:  up to size - 1 characters */
+static int parse_text(const char *text, char *value, size_t size)
+{
+    if (strlen(text) >= size)
+        return 0;
+    strcpy(value, text);
+    return 1;
 }
 
 int odq_settings_load(const char *path, odq_settings *settings,
@@ -70,6 +83,8 @@ int odq_settings_load(const char *path, odq_settings *settings,
     while (fgets(line, sizeof(line), stream) != NULL) {
         char *content, *separator, *name, *value;
         unsigned *destination = NULL;
+        char *text = NULL;
+        size_t text_size = 0;
 
         ++line_number;
         if (strchr(line, '\n') == NULL && !feof(stream))
@@ -97,9 +112,27 @@ int odq_settings_load(const char *path, odq_settings *settings,
             destination = &parsed.hotkey_launch;
         else if (equal_text(name, "QUICK_HELP"))
             destination = &parsed.quick_help;
+        else if (equal_text(name, "MODEM_PORT")) {
+            if (value[0] < '1' || value[0] > '4' || value[1] != '\0')
+                goto syntax_error;
+            parsed.modem_port = (unsigned)(value[0] - '0');
+            continue;
+        } else if (equal_text(name, "DIAL"))
+            text = parsed.dial, text_size = sizeof parsed.dial;
+        else if (equal_text(name, "HANGUP"))
+            text = parsed.hangup, text_size = sizeof parsed.hangup;
+        else if (equal_text(name, "ACCESS1"))
+            text = parsed.access[0], text_size = sizeof parsed.access[0];
+        else if (equal_text(name, "ACCESS2"))
+            text = parsed.access[1], text_size = sizeof parsed.access[1];
+        else if (equal_text(name, "ACCESS3"))
+            text = parsed.access[2], text_size = sizeof parsed.access[2];
         else
             goto syntax_error;
-        if (!parse_boolean(value, destination))
+        if (text != NULL) {
+            if (!parse_text(value, text, text_size))
+                goto syntax_error;
+        } else if (!parse_boolean(value, destination))
             goto syntax_error;
     }
     fclose(stream);
@@ -153,6 +186,12 @@ int odq_settings_save(const char *path, const odq_settings *settings)
             settings->hotkey_launch ? "YES" : "NO");
     fprintf(stream, "QUICK_HELP=%s\n",
             settings->quick_help ? "YES" : "NO");
+    fprintf(stream, "MODEM_PORT=%u\n", settings->modem_port);
+    fprintf(stream, "DIAL=%s\n", settings->dial);
+    fprintf(stream, "HANGUP=%s\n", settings->hangup);
+    fprintf(stream, "ACCESS1=%s\n", settings->access[0]);
+    fprintf(stream, "ACCESS2=%s\n", settings->access[1]);
+    fprintf(stream, "ACCESS3=%s\n", settings->access[2]);
     if (fclose(stream) != 0)
         return ODQ_SETTINGS_IO;
 

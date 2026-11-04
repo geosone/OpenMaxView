@@ -978,6 +978,76 @@ static int play_wait;                   /* playing:  1 fixed, 2 variable,
 static unsigned play_left;
 static unsigned long play_until;
 
+/* Mark's Auto Dialer:  the number marked (as shown, and what is dialled),
+ * the settings with the modem's port and commands */
+static char phone_shown[24], phone[24];
+static const odq_settings *mv_settings;
+
+static int phone_char(char ch)
+{
+    return ch >= '0' && ch <= '9' || ch != '\0' && strchr("-()+/.,*#", ch);
+}
+
+/* Mark Phone #:  the number under the mark's cursor (its digits and
+ * - ( ) + / . , * #, a blank between two of them) */
+static int phone_take(void)
+{
+    unsigned row = mark_row * SCREEN_COLS, b = mark_col, e = mark_col, c, n;
+
+    if (mvk_peek(mark_task, cells) == 0xffff ||
+        !phone_char((char)cells[row + mark_col]))
+        return 0;
+    while (b > 0 && (phone_char((char)cells[row + b - 1]) ||
+                     (char)cells[row + b - 1] == ' ' && b >= 2 &&
+                     phone_char((char)cells[row + b - 2])))
+        --b;
+    while (e + 1 < SCREEN_COLS && (phone_char((char)cells[row + e + 1]) ||
+                                   (char)cells[row + e + 1] == ' ' &&
+                                   e + 2 < SCREEN_COLS &&
+                                   phone_char((char)cells[row + e + 2])))
+        ++e;
+    for (c = b, n = 0; c <= e && n + 1 < sizeof phone_shown; ++c)
+        phone_shown[n++] = (char)cells[row + c];
+    phone_shown[n] = '\0';
+    for (c = 0, n = 0; phone_shown[c] != '\0'; ++c)
+        if (phone_shown[c] >= '0' && phone_shown[c] <= '9' ||
+            strchr(",*#", phone_shown[c]) != NULL && phone_shown[c] != '\0')
+            phone[n++] = phone_shown[c];
+    phone[n] = '\0';
+    return n != 0;
+}
+
+/* the text to the modem (INT 14h); 0:  the port did not take it */
+static int modem_send(const char *text)
+{
+    union REGS r;
+
+    for (; *text != '\0'; ++text) {
+        r.h.ah = 0x01;
+        r.h.al = (unsigned char)*text;
+        r.x.dx = mv_settings->modem_port - 1;
+        int86(0x14, &r, &r);
+        if (r.h.ah & 0x80)
+            return 0;
+    }
+    return 1;
+}
+
+/* Dial:  the dial command, the access code, the number and ';' (the modem
+ * back to its commands after dialling:  the call is the phone's) */
+static void phone_dial(int code, char *status)
+{
+    char line[96];
+
+    sprintf(line, "%s%s%s;\r", mv_settings->dial,
+            code ? mv_settings->access[code - 1] : "", phone);
+    if (modem_send(line))
+        sprintf(status, "Dialing %s on COM%u; T when you hear it ring.",
+                phone_shown, mv_settings->modem_port);
+    else
+        sprintf(status, "COM%u does not answer.", mv_settings->modem_port);
+}
+
 /* cell r, c of mark_task's screen is marked */
 static int mark_in(unsigned r, unsigned c)
 {
@@ -1865,7 +1935,7 @@ static int dv_find(int key, int scan)
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
     DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE, DV_MRS, DV_LEARN,
-    DV_SCRIPTS
+    DV_SCRIPTS, DV_DIAL
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
@@ -1994,9 +2064,16 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Done", "Enter", 0);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_TEXT, "Auto Dialer", "", 0);
-        dv_add(DV_ITEM, "Mark Phone #", "", 0);
-        dv_add(DV_ITEM, "Dial", "", 0);
-        dv_add(DV_ITEM, "Talk", "", 0);
+        dv_add(DV_ITEM, "Mark Phone #", "P", 0);
+        dv_add(DV_ITEM, "Dial", phone[0] ? "D" : "", 0);
+        dv_add(DV_ITEM, "Talk", "T", 0);
+        break;
+    case DV_DIAL:                       /* (its keys:  windows_view) */
+        dv_begin("Dial", 22);
+        dv_add(DV_ITEM, "Local", "L", 0);
+        dv_add(DV_ITEM, "Access Code 1", mv_settings->access[0][0] ? "1" : "", 0);
+        dv_add(DV_ITEM, "Access Code 2", mv_settings->access[1][0] ? "2" : "", 0);
+        dv_add(DV_ITEM, "Access Code 3", mv_settings->access[2][0] ? "3" : "", 0);
         break;
     case DV_LEARN:
         dv_begin("Learn", 22);
@@ -2236,7 +2313,7 @@ static int windows_view(odq_catalog *catalog, char *status)
             if (!dv_usable(dv_sel))
                 dv_bar(0);
         }
-        if (menu == DV_MARK || menu == DV_TRANSFER)
+        if (menu == DV_MARK || menu == DV_TRANSFER || menu == DV_DIAL)
             dv_sel = dv_count;          /* (no bar:  their keys act) */
         if (menu == DV_MRS && mode >= 1 && mode <= 3)
             dv_sel = mode - 1;
@@ -2451,9 +2528,38 @@ static int windows_view(odq_catalog *catalog, char *status)
             }
             continue;
         }
+        if (mode == 6 && menu == DV_DIAL) {     /* Dial:  how */
+            key = toupper(key);
+            if (key == 13)
+                key = 'L';
+            if (key == 'L' || key >= '1' && key <= '3' &&
+                mv_settings->access[key - '1'][0] != '\0')
+                phone_dial(key == 'L' ? 0 : key - '0', status);
+            if (key == 'L' || key >= '1' && key <= '3' || key == 27) {
+                menu = DV_MARK;
+                fresh = 1;
+            }
+            continue;
+        }
         if (mode == 6) {
             key = toupper(key);
-            if (key == 'B' || key == 'M') {
+            if (key == 'P')
+                if (phone_take())
+                    sprintf(status, "Phone # %s marked.", phone_shown);
+                else
+                    strcpy(status, "No phone # under the cursor.");
+            else if (key == 'D' && phone[0] != '\0') {
+                menu = DV_DIAL;
+                fresh = 1;
+            } else if (key == 'T') {    /* the modem off the line */
+                char line[24];
+
+                sprintf(line, "%s\r", mv_settings->hangup);
+                if (modem_send(line))
+                    strcpy(status, "Talk:  the modem has hung up, the phone has the call.");
+                else
+                    sprintf(status, "COM%u does not answer.", mv_settings->modem_port);
+            } else if (key == 'B' || key == 'M') {
                 mark_on = 1;
                 mark_more = key == 'M' && mark_len != 0;
                 mark_brow = mark_row;
@@ -2853,6 +2959,7 @@ int main(void)
     }
 
     reload_settings(&settings);
+    mv_settings = &settings;
 
     apply_resident_services(&settings, status);
     mt_open();

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -421,7 +421,7 @@ mark)
     hl=$(awk '/^[0-9a-f]+:/' "$d/hl.txt" | grep -o "0x[0-9a-f][0-9a-f]" | awk 'NR % 2 == 0 && $1 == "0x70"' | wc -l)
     echo "  cells shown marked (70h):  $hl; XF.TXT:  $(file mark XF.TXT); X2.TXT:  $(file mark X2.TXT); N.TXT:  $(file mark N.TXT)"
     check "the menu:  Mark M, Transfer T" "grep -q 'Mark *M' '$d/main.txt' && grep -q 'Transfer *T' '$d/main.txt'"
-    check "Mark:  Begin B, More M, End after B, Auto Dialer not offered" "grep -q 'Mark Begin *B' '$d/markmenu.txt' && grep -q 'Mark More *M' '$d/markmenu.txt' && ! grep -q 'Mark End *E' '$d/markmenu.txt' && grep -q 'Auto Dialer' '$d/markmenu.txt'"
+    check "Mark:  Begin B, More M, End after B, the Auto Dialer below" "grep -q 'Mark Begin *B' '$d/markmenu.txt' && grep -q 'Mark More *M' '$d/markmenu.txt' && ! grep -q 'Mark End *E' '$d/markmenu.txt' && grep -q 'Auto Dialer' '$d/markmenu.txt'"
     check "the marked text shown reversed (07h -> 70h, 30 cells and more)" "[ $hl -ge 30 ]"
     check "Mark End:  2 lines marked" "grep -q '2 line(s) marked' '$d/ended.txt'"
     check "Transfer:  T, N, any other key" "grep -q 'first line only *T' '$d/xmenu.txt' && grep -q 'first number only *N' '$d/xmenu.txt'"
@@ -521,6 +521,27 @@ lpause)
     check "F8:  after the delay on" "grep -q '^ *C:.>echo uv >>C:.P.TXT' '$d/v2.txt'"
     check "P.TXT:  ab, q (learning), zy, uv (playing)" "[ \"$(file lpause P.TXT | tr -d '\r ' | tr '\n' ,)\" = 'ab,q,zy,uv,' ]"
     check "DOS works afterwards" "grep -q '^lpause end' '$d/end.txt'"
+    ;;
+dial)
+    echo "== dial:  Mark's Auto Dialer:  Mark Phone #, Dial (local, access code), Talk on COM1"
+    cfg=$OUT/MAXVIEW.CFG; set=$OUT/MAXVSET.INI
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    { cat "$ROOT/MAXVSET.INI"; printf 'MODEM_PORT=1\nACCESS1=9,\n'; } | sed 's/$/\r/' > "$set"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:dial_end:30" run dial 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg $set" \
+        "wait:Open_Program:60 key:ret sleep:4 type:cls sleep:1 type:echo_555-1234 sleep:2 $M key:m wait:Mark_Begin:10 text:menu key:p sleep:1 text:none key:up,up key:p sleep:1 text:marked key:d wait:Access_Code_1:10 text:dialmenu key:1 sleep:2 text:dialed key:d wait:Access_Code_1:10 key:l sleep:2 key:t sleep:2 text:talk key:esc sleep:1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_dial_end"
+    d=$OUT/dial
+    com=$(tr '\r' '|' < "$OUT/dial.com1" 2>/dev/null | tr -d '\0')
+    echo "  COM1:  $com"
+    check "Mark:  Auto Dialer with Mark Phone # P, Talk T; Dial not before a number" "grep -q 'Mark Phone # *P' '$d/menu.txt' && grep -q 'Talk *T' '$d/menu.txt' && ! grep -q 'Dial *D' '$d/menu.txt'"
+    check "P on a blank:  no phone number" "grep -q 'No phone # under the cursor' '$d/none.txt'"
+    check "P on the number:  555-1234 marked, Dial D" "grep -q 'Phone # 555-1234 marked' '$d/marked.txt' && grep -q 'Dial *D' '$d/marked.txt'"
+    check "Dial:  Local L, Access Code 1 with its key, 2 and 3 without" "grep -q 'Local *L' '$d/dialmenu.txt' && grep -q 'Access Code 1 *1' '$d/dialmenu.txt' && ! grep -q 'Access Code 2 *2' '$d/dialmenu.txt'"
+    check "Dialing shown" "grep -q 'Dialing 555-1234 on COM1' '$d/dialed.txt'"
+    check "COM1:  ATDT9,5551234; then ATDT5551234; then ATZ" "[ '$com' = 'ATDT9,5551234;|ATDT5551234;|ATZ|' ]"
+    check "Talk shown" "grep -q 'the modem has hung up' '$d/talk.txt'"
+    check "DOS works afterwards" "grep -q '^dial end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

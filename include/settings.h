@@ -10,6 +10,12 @@ typedef struct odq_settings {
     unsigned show_memory;
     unsigned hotkey_launch;
     unsigned quick_help;
+    /* Mark's Auto Dialer:  the modem's port (1-4), the commands to dial
+     * and to hang up, the access codes put before a number */
+    unsigned modem_port;
+    char dial[16];
+    char hangup[16];
+    char access[3][24];
 } odq_settings;
 
 enum odq_settings_result {

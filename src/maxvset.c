@@ -158,6 +158,12 @@ static void print_settings(const odq_settings *settings)
     printf("SHOW_MEMORY=%s\n", settings->show_memory ? "YES" : "NO");
     printf("HOTKEY_LAUNCH=%s\n", settings->hotkey_launch ? "YES" : "NO");
     printf("QUICK_HELP=%s\n", settings->quick_help ? "YES" : "NO");
+    printf("MODEM_PORT=%u\n", settings->modem_port);
+    printf("DIAL=%s\n", settings->dial);
+    printf("HANGUP=%s\n", settings->hangup);
+    printf("ACCESS1=%s\n", settings->access[0]);
+    printf("ACCESS2=%s\n", settings->access[1]);
+    printf("ACCESS3=%s\n", settings->access[2]);
 }
 
 int main(int argc, char **argv)

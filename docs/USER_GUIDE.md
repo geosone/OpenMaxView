@@ -87,8 +87,16 @@ into the front window (Alt returns).
 | F1 | Help | MaxView's help from every menu:  the topics (Keys and Menus K, Windows W, Rearrange R, Mark and Transfer M, Video V, About MaxView A), a page in a box (Up/Down, PgUp/PgDn when it is longer than the screen), Enter or Esc back to the topics |
 | Q | Quit MaxView | "Are you sure?" Yes (Y) closes all programs and leaves MaxView |
 
-Scissors and Mark's Auto Dialer are shown in dark grey:  they are
-not available yet. A message (a program that ended, for example) shows on the
+Mark's Auto Dialer:  in Mark, the arrows put the cursor on a phone number in
+the window and Mark Phone # (P) takes it (digits, - ( ) + / . , * # and
+single blanks between them); Dial (D) then offers Local (L) and the access
+codes 1-3 of MAXVSET.INI and sends the modem the dial command, the code, the
+number and `;` (the modem goes back to its commands, the call stays on the
+line); when it rings, Talk (T) sends the hang-up command and the phone has
+the call. The modem's port and commands are in MAXVSET.INI (see
+CONFIGURATION.md). Scissors is shown in dark grey:  DESQview offers it only
+to programs written for its Copy, Cut and Paste, which MaxView does not
+support yet. A message (a program that ended, for example) shows on the
 bottom row until the next key.
 
 A window shows the part of its program's 80x25 screen that holds the
