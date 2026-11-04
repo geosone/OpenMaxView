@@ -134,6 +134,12 @@ WOBJ_TITLE_SIZE equ 32
 KOBJ_COUNT equ 8                      ; keyboard objects (NEW 0Ah)
 POINTER_SLOT_COUNT equ 8
 POINTER_OBJECT_SIZE equ 32            ; its message at 10h (6 bytes)
+PANEL_SLOTS equ 4                     ; panel objects (NEW 10h)
+PANEL_DIR_MAX equ 16                  ; panels of a library (directory)
+PANEL_DIR_SIZE equ PANEL_DIR_MAX * 14
+PANEL_NAME_SIZE equ 80                ; the library's file name
+PANEL_POOL_SIZE equ 4096              ; the applied panels' bytes
+PANEL_OBJECT_SIZE equ 16
 MUX_FOREGROUND equ 0D70Ah
 MUX_APP_START  equ 0D70Bh
 MUX_TITLE      equ 0D70Ch
@@ -177,6 +183,7 @@ install:
         mov     word ptr task_live,1
         call    initialize_timer_objects
         call    initialize_pointer_objects
+        call    initialize_panel_objects
         call    initialize_window_objects
         call    initialize_keyboard_objects2
         call    initialize_mailbox_objects
@@ -343,6 +350,22 @@ message_dispatch_not5:
         jne     short message_dispatch_go
         jmp     message_task_keyboard
 message_dispatch_go:
+        or      bl,bl                 ; a panel's handle on the stack?
+        jnz     short message_dispatch_plain
+        cmp     bh,2
+        jb      short message_dispatch_plain
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    si
+        mov     ax,word ptr ss:[bp+12]
+        call    panel_validate
+        pop     si
+        pop     ax
+        pop     bp
+        jc      short message_dispatch_plain
+        jmp     int15_panel
+message_dispatch_plain:
         cmp     bh,0                  ; HANDLE
         je      short int15_dispatch_handle
         cmp     bh,1                  ; NEW
@@ -1645,6 +1668,10 @@ int15_message_new:
         je      message_new_mailbox
         cmp     bl,0Fh                ; POINTER object class
         je      short message_new_pointer
+        cmp     bl,10h                ; PANEL object class
+        jne     short message_new_not_panel
+        jmp     message_new_panel
+message_new_not_panel:
         cmp     bl,0Ah                ; KEYBOARD object class
         je      short message_new_keyboard
         cmp     bl,08h                ; WINDOW class
@@ -1745,6 +1772,28 @@ message_new_done:
         pop     cx
         pop     ax
         jmp     message_push4
+message_new_panel:
+        xor     si,si
+        mov     cx,PANEL_SLOTS
+message_new_panel_scan:
+        cmp     word ptr cs:panel_used[si],0
+        je      short message_new_panel_found
+        add     si,2
+        loop    message_new_panel_scan
+        jmp     message_new_done
+message_new_panel_found:
+        mov     word ptr cs:panel_used[si],1
+        call    caller_tag
+        xor     ah,ah
+        mov     word ptr cs:panel_owner[si],ax
+        xor     ax,ax
+        mov     word ptr cs:panel_open[si],ax
+        mov     word ptr cs:panel_status[si],ax
+        mov     word ptr cs:panel_count[si],ax
+        mov     word ptr cs:panel_bytes[si],ax
+        mov     ax,word ptr cs:panel_handle_segments[si]
+        mov     word ptr cs:message_result_ptr_seg,ax
+        jmp     message_new_done
 
 ; NEW 08h, its 8 DWORDs (top first):  the entry address, task, stack,
 ; buffer, columns, rows, the title's length and address.  Without an
@@ -5736,8 +5785,10 @@ wobj_tty_ret:
         ret
 
 ; The field manager's cells at the cursor of the target (BH = the page for
-; the task's window):  wcell_read AL character, AH attribute; wcell_char
-; AL (the attribute kept); wcell_charattr AL in attribute BL.
+; the task's window):  wcell_read AL character, AH attribute (a window
+; object's cursor past a row's end:  the next row's first, the one the next
+; character goes to; below the last row a blank); wcell_char AL (the
+; attribute kept); wcell_charattr AL in attribute BL.
 wcell_read:
         cmp     word ptr cs:wtarget,0
         jne     short wcell_read_obj
@@ -5750,8 +5801,18 @@ wcell_read_obj:
         push    si
         call    wobj_target
         mov     dx,word ptr cs:wobj_cursor[si]
+        cmp     dl,byte ptr cs:wobj_size[si]
+        jb      short wcell_read_cell
+        xor     dl,dl
+        inc     dh
+        cmp     dh,byte ptr cs:wobj_size[si+1]
+        jb      short wcell_read_cell
+        mov     ax,0720h
+        jmp     short wcell_read_ret
+wcell_read_cell:
         call    wobj_cell
         mov     ax,word ptr cs:[di]
+wcell_read_ret:
         pop     si
         pop     di
         pop     dx
@@ -7512,6 +7573,520 @@ timer_validate_done:
         pop     bx
         ret
 
+; Panel objects (NEW 10h), as DESQview 2.80's (measured, tests/panprb.asm):
+; OPEN reads a panel library's directory (the name's length counts its
+; 0; a DOS error:  status 80h + its code), SIZEOF gives its panels, ADDR
+; the directory (length on its address, 14 bytes a panel), READ applies a
+; panel (the panel, the window, the name's length and address on the
+; stack):  its streams go to that window (0:  the task's) as a WRITE's,
+; then the window and the keyboard (0) replace the four DWORDs; with an
+; E6h the new window's handle stays below them and the two are 0.  Status
+; 14h:  no such panel (or no library open), 16h:  its first stream not a
+; window stream beginning with E5h, 88h:  no room in panel_pool.  CLOSE,
+; FREE; the other messages only pop the handle (DESQview:  a programming
+; error).
+PANEL_POP macro
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        endm
+
+int15_panel:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     ax,word ptr ss:[bp+12]
+        call    panel_validate        ; SI
+        cmp     bh,02h
+        je      short panel_free
+        cmp     bh,03h
+        je      short panel_addr
+        cmp     bh,04h
+        jne     short panel_not_read
+        jmp     panel_apply
+panel_not_read:
+        cmp     bh,08h
+        je      short panel_sizeof
+        cmp     bh,0Ch
+        jne     short panel_not_open
+        jmp     panel_open_lib
+panel_not_open:
+        cmp     bh,0Dh
+        je      short panel_close
+        cmp     bh,0Fh
+        je      short panel_status_get
+        jmp     panel_exit4
+panel_free:
+        mov     word ptr cs:panel_used[si],0
+        mov     word ptr cs:panel_bytes[si],0
+        jmp     short panel_exit4
+panel_close:
+        cmp     word ptr cs:panel_open[si],0
+        je      short panel_exit4
+        xor     ax,ax
+        mov     word ptr cs:panel_open[si],ax
+        mov     word ptr cs:panel_count[si],ax
+        mov     word ptr cs:panel_status[si],ax
+        jmp     short panel_exit4
+panel_status_get:
+        mov     ax,word ptr cs:panel_status[si]
+        jmp     short panel_result
+panel_sizeof:
+        mov     ax,word ptr cs:panel_count[si]
+panel_result:
+        mov     word ptr ss:[bp+10],ax
+        mov     word ptr ss:[bp+12],0
+        PANEL_POP
+        pop     bp
+        jmp     int15_handled
+panel_addr:
+        mov     ax,word ptr cs:panel_count[si]
+        mov     cx,14
+        mul     cx
+        mov     word ptr cs:message_result_len_lo,ax
+        mov     word ptr cs:message_result_len_hi,0
+        call    panel_dir_of
+        mov     word ptr cs:message_result_ptr_off,di
+        mov     word ptr cs:message_result_ptr_seg,cs
+        PANEL_POP
+        jmp     message_expand4
+panel_exit4:
+        PANEL_POP
+        call    message_shift4
+        pop     bp
+        add     sp,4
+        jmp     int15_handled
+panel_exit8:
+        PANEL_POP
+        call    message_shift8
+        pop     bp
+        add     sp,8
+        jmp     int15_handled
+panel_exit12:
+        PANEL_POP
+        call    message_shift12
+        pop     bp
+        add     sp,12
+        jmp     int15_handled
+
+; OPEN:  the name (its length on its address) and the directory
+panel_open_lib:
+        xor     ax,ax
+        mov     word ptr cs:panel_open[si],ax
+        mov     word ptr cs:panel_count[si],ax
+        call    panel_name_of         ; DI
+        push    cs
+        pop     es
+        mov     cx,word ptr ss:[bp+14]
+        jcxz    panel_open_named
+        dec     cx                    ; (the 0 counted)
+        cmp     cx,PANEL_NAME_SIZE - 1
+        jbe     short panel_open_copy
+        mov     cx,PANEL_NAME_SIZE - 1
+panel_open_copy:
+        push    si
+        lds     si,dword ptr ss:[bp+18]
+        cld
+        jcxz    panel_open_copied
+panel_open_char:
+        lodsb
+        or      al,al
+        jz      short panel_open_copied
+        stosb
+        loop    panel_open_char
+panel_open_copied:
+        pop     si
+panel_open_named:
+        mov     byte ptr es:[di],0
+        call    panel_name_of
+        mov     dx,di
+        push    cs
+        pop     ds
+        mov     ax,3D00h
+        int     21h
+        jnc     short panel_open_opened
+        jmp     panel_open_error
+panel_open_opened:
+        mov     bx,ax
+        mov     ax,4202h              ; the size:  the panels it can hold
+        xor     cx,cx
+        xor     dx,dx
+        int     21h
+        jnc     short panel_open_sized
+        jmp     panel_open_close_error
+panel_open_sized:
+        mov     di,PANEL_DIR_MAX
+        or      dx,dx
+        jnz     short panel_open_fit
+        sub     ax,3
+        jb      short panel_open_none
+        xor     dx,dx
+        mov     cx,14
+        div     cx
+        cmp     ax,di
+        jae     short panel_open_fit
+        mov     di,ax
+        jmp     short panel_open_fit
+panel_open_none:
+        xor     di,di
+panel_open_fit:
+        mov     ax,4200h
+        xor     cx,cx
+        xor     dx,dx
+        int     21h
+        jc      short panel_open_close_error
+        mov     ah,3Fh                ; C0h C3h, the number of panels
+        mov     cx,3
+        mov     dx,offset panel_header
+        int     21h
+        jc      short panel_open_close_error
+        cmp     ax,3
+        jb      short panel_open_short
+        mov     al,byte ptr cs:panel_header+2
+        xor     ah,ah
+        cmp     ax,di
+        jbe     short panel_open_count
+        mov     ax,di
+        jmp     short panel_open_count
+panel_open_short:
+        xor     ax,ax
+panel_open_count:
+        mov     word ptr cs:panel_count[si],ax
+        mov     cx,14
+        mul     cx
+        mov     cx,ax
+        push    di
+        call    panel_dir_of
+        mov     dx,di
+        pop     di
+        mov     ah,3Fh
+        int     21h
+        jc      short panel_open_close_error
+        mov     ah,3Eh
+        int     21h
+        mov     word ptr cs:panel_open[si],1
+        xor     ax,ax
+        jmp     short panel_open_status
+panel_open_close_error:
+        push    ax
+        mov     ah,3Eh
+        int     21h
+        pop     ax
+        mov     word ptr cs:panel_count[si],0
+panel_open_error:
+        xor     ah,ah
+        or      al,80h
+panel_open_status:
+        mov     word ptr cs:panel_status[si],ax
+        jmp     panel_exit12
+
+; READ:  apply the panel named (its length on its address) to the window
+; (0:  the task's)
+panel_apply:
+        mov     ax,word ptr ss:[bp+14] ; the results:  the window, keyboard 0
+        mov     dx,word ptr ss:[bp+16]
+        mov     cx,ax
+        or      cx,dx
+        jnz     short panel_apply_window
+        mov     dx,word ptr cs:task_handle_segment
+panel_apply_window:
+        mov     word ptr cs:panel_win,ax
+        mov     word ptr cs:panel_win+2,dx
+        mov     ax,14h
+        cmp     word ptr cs:panel_open[si],0
+        jne     short panel_apply_find
+        jmp     panel_apply_status
+panel_apply_find:
+        call    panel_find            ; DI:  its directory entry
+        jnc     short panel_apply_found
+        mov     ax,14h
+        jmp     panel_apply_status
+panel_apply_found:
+        mov     word ptr cs:panel_bytes[si],0 ; (the last one's room)
+        mov     cx,word ptr cs:[di+12]
+        mov     ax,16h
+        cmp     cx,5
+        jae     short panel_apply_room
+        jmp     panel_apply_status
+panel_apply_room:
+        call    panel_alloc           ; AX
+        jnc     short panel_apply_read
+        mov     ax,88h
+        jmp     panel_apply_status
+panel_apply_read:
+        mov     word ptr cs:panel_buf[si],ax
+        push    cx
+        push    di
+        call    panel_name_of
+        mov     dx,di
+        pop     di
+        push    cs
+        pop     ds
+        mov     ax,3D00h
+        int     21h
+        pop     cx
+        jc      short panel_apply_dos
+        mov     bx,ax
+        push    cx
+        mov     dx,word ptr cs:[di+8]
+        mov     cx,word ptr cs:[di+10]
+        mov     ax,4200h
+        int     21h
+        pop     cx
+        jc      short panel_apply_dos_close
+        mov     dx,word ptr cs:panel_buf[si]
+        add     dx,offset panel_pool
+        mov     ah,3Fh
+        int     21h
+        jc      short panel_apply_dos_close
+        push    ax
+        mov     ah,3Eh
+        int     21h
+        pop     ax
+        cmp     ax,cx
+        jne     short panel_apply_bad
+        mov     word ptr cs:panel_bytes[si],cx
+        mov     di,word ptr cs:panel_buf[si]
+        add     di,offset panel_pool
+        cmp     word ptr cs:[di],001Bh ; 1Bh, 00h:  a window stream,
+        jne     short panel_apply_bad
+        cmp     byte ptr cs:[di+4],0E5h ; beginning with E5h
+        je      short panel_apply_go
+panel_apply_bad:
+        mov     word ptr cs:panel_bytes[si],0
+        mov     ax,16h
+        jmp     short panel_apply_status
+panel_apply_dos_close:
+        push    ax
+        mov     ah,3Eh
+        int     21h
+        pop     ax
+panel_apply_dos:
+        xor     ah,ah
+        or      al,80h
+        jmp     short panel_apply_status
+panel_apply_go:
+        mov     word ptr cs:wobj_made,0
+        push    si
+        mov     ax,word ptr ss:[bp+16] ; a window object's handle?
+        cmp     word ptr ss:[bp+14],0
+        jne     short panel_apply_task
+        call    wobj_validate
+        jc      short panel_apply_task
+        call    wobj_enter
+panel_apply_task:
+        call    own_enter
+        mov     si,di
+        mov     ah,0Fh                ; the active page
+        int     10h
+        sti
+        cld
+        call    window_output
+        cli
+        call    wobj_leave
+        pop     si
+        xor     ax,ax
+        cmp     word ptr cs:wobj_made,0
+        je      short panel_apply_status
+        mov     word ptr cs:panel_status[si],ax ; E6h:  0, 0 and the new
+        mov     di,word ptr cs:wobj_made ; window's handle
+        mov     di,word ptr cs:wobj_handle_segments[di-2]
+        mov     word ptr ss:[bp+14],ax
+        mov     word ptr ss:[bp+16],ax
+        mov     word ptr ss:[bp+18],ax
+        mov     word ptr ss:[bp+20],ax
+        mov     word ptr ss:[bp+22],ax
+        mov     word ptr ss:[bp+24],di
+        jmp     panel_exit4
+panel_apply_status:
+        mov     word ptr cs:panel_status[si],ax
+        mov     ax,word ptr cs:panel_win
+        mov     word ptr ss:[bp+18],ax
+        mov     ax,word ptr cs:panel_win+2
+        mov     word ptr ss:[bp+20],ax
+        mov     word ptr ss:[bp+22],0
+        mov     word ptr ss:[bp+24],0
+        jmp     panel_exit8
+
+; The panel named on the stack (length at BP+18, address at BP+22) in
+; panel SI's directory:  DI its entry (CF:  none); up to 8 characters,
+; either case, the rest of the name blanks.
+panel_find:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    ds
+        mov     dx,word ptr ss:[bp+18]
+        or      dx,dx
+        jz      short panel_find_none
+        cmp     dx,8
+        ja      short panel_find_none
+        call    panel_dir_of
+        mov     bx,word ptr cs:panel_count[si]
+        lds     ax,dword ptr ss:[bp+22]
+panel_find_entry:
+        or      bx,bx
+        jz      short panel_find_none
+        push    si
+        mov     si,ax
+        xor     cx,cx
+panel_find_char:
+        cmp     cx,8
+        jae     short panel_find_match
+        mov     ah,' '
+        cmp     cx,dx
+        jae     short panel_find_cmp
+        mov     ah,byte ptr [si]
+        inc     si
+panel_find_cmp:
+        push    bx
+        mov     bx,cx
+        mov     bl,byte ptr cs:[di+bx]
+        call    panel_upper
+        xchg    ah,bl
+        call    panel_upper
+        cmp     ah,bl
+        pop     bx
+        jne     short panel_find_next
+        inc     cx
+        jmp     short panel_find_char
+panel_find_match:
+        pop     si
+        clc
+        jmp     short panel_find_ret
+panel_find_next:
+        pop     si
+        mov     ax,word ptr ss:[bp+22]
+        add     di,14
+        dec     bx
+        jmp     short panel_find_entry
+panel_find_none:
+        stc
+panel_find_ret:
+        pop     ds
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+; AH upper case
+panel_upper:
+        cmp     ah,'a'
+        jb      short panel_upper_ret
+        cmp     ah,'z'
+        ja      short panel_upper_ret
+        sub     ah,20h
+panel_upper_ret:
+        ret
+
+; DI = panel SI's directory, file name (in CS)
+panel_dir_of:
+        push    ax
+        push    dx
+        mov     ax,si
+        shr     ax,1
+        mov     dx,PANEL_DIR_SIZE
+        mul     dx
+        add     ax,offset panel_dirs
+        mov     di,ax
+        pop     dx
+        pop     ax
+        ret
+panel_name_of:
+        push    ax
+        push    dx
+        mov     ax,si
+        shr     ax,1
+        mov     dx,PANEL_NAME_SIZE
+        mul     dx
+        add     ax,offset panel_names
+        mov     di,ax
+        pop     dx
+        pop     ax
+        ret
+
+; CX bytes of panel_pool:  AX = their offset (CF:  no room); the first gap
+; that fits (the panels applied last).
+panel_alloc:
+        push    bx
+        push    dx
+        push    di
+        xor     ax,ax                 ; candidates:  0 and each block's end
+        mov     di,-2
+panel_alloc_try:
+        mov     dx,ax
+        add     dx,cx
+        jc      short panel_alloc_next
+        cmp     dx,PANEL_POOL_SIZE
+        ja      short panel_alloc_next
+        xor     bx,bx                 ; overlaps a used block?
+panel_alloc_check:
+        cmp     word ptr cs:panel_bytes[bx],0
+        je      short panel_alloc_check_next
+        cmp     dx,word ptr cs:panel_buf[bx]
+        jbe     short panel_alloc_check_next
+        push    dx
+        mov     dx,word ptr cs:panel_buf[bx]
+        add     dx,word ptr cs:panel_bytes[bx]
+        cmp     ax,dx
+        pop     dx
+        jb      short panel_alloc_next
+panel_alloc_check_next:
+        add     bx,2
+        cmp     bx,PANEL_SLOTS * 2
+        jb      short panel_alloc_check
+        clc
+        jmp     short panel_alloc_ret
+panel_alloc_next:
+        add     di,2
+        cmp     di,PANEL_SLOTS * 2
+        jae     short panel_alloc_fail
+        cmp     word ptr cs:panel_bytes[di],0
+        je      short panel_alloc_next
+        mov     ax,word ptr cs:panel_buf[di]
+        add     ax,word ptr cs:panel_bytes[di]
+        jmp     short panel_alloc_try
+panel_alloc_fail:
+        stc
+panel_alloc_ret:
+        pop     di
+        pop     dx
+        pop     bx
+        ret
+
+panel_validate:
+        push    cx
+        xor     si,si
+        mov     cx,PANEL_SLOTS
+panel_validate_scan:
+        cmp     ax,word ptr cs:panel_handle_segments[si]
+        jne     short panel_validate_next
+        cmp     word ptr cs:panel_used[si],1
+        jne     short panel_validate_invalid
+        clc
+        jmp     short panel_validate_done
+panel_validate_next:
+        add     si,2
+        loop    panel_validate_scan
+panel_validate_invalid:
+        stc
+panel_validate_done:
+        pop     cx
+        ret
+
 pointer_validate:
         push    cx
         xor     si,si
@@ -9182,6 +9757,41 @@ kobj_read_task:
         pop     bp
         jmp     int15_message_keyboard_read
 
+; The panel objects (type 10h), as the pointers'.
+initialize_panel_objects:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        mov     bx,offset panel_objects
+        xor     si,si
+        mov     cx,PANEL_SLOTS
+initialize_panel_loop:
+        mov     ax,bx
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        shr     ax,1
+        mov     dx,cs
+        add     ax,dx
+        mov     word ptr panel_handle_segments[si],ax
+        mov     word ptr [bx+4],0FEDCh
+        mov     word ptr [bx+6],10h
+        mov     word ptr [bx+8],0
+        mov     word ptr [bx+0Ah],ax
+        mov     word ptr [bx+0Ch],0
+        mov     word ptr [bx+0Eh],ax
+        add     bx,PANEL_OBJECT_SIZE
+        add     si,2
+        loop    initialize_panel_loop
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
 ; The pointer objects (type 0Fh), as the timers'.
 initialize_pointer_objects:
         push    ax
@@ -9690,6 +10300,16 @@ task_end_ptr:
 task_end_ptr_next:
         add     si,2
         loop    task_end_ptr
+        xor     si,si                 ; its panels
+        mov     cx,PANEL_SLOTS
+task_end_pan:
+        cmp     word ptr cs:panel_owner[si],ax
+        jne     short task_end_pan_next
+        mov     word ptr cs:panel_used[si],0
+        mov     word ptr cs:panel_bytes[si],0
+task_end_pan_next:
+        add     si,2
+        loop    task_end_pan
         pop     si
         pop     dx
         pop     cx
@@ -9888,6 +10508,22 @@ pointer_last   dw POINTER_SLOT_COUNT dup(0) ; the last cell (movement)
 POINTER_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      POINTER_OBJECT_PAD dup (0) ; (segment:0000 handles)
 pointer_objects db (POINTER_SLOT_COUNT * POINTER_OBJECT_SIZE) dup(0)
+panel_used     dw PANEL_SLOTS dup(0)
+panel_handle_segments dw PANEL_SLOTS dup(0)
+panel_owner    dw PANEL_SLOTS dup(0)  ; caller_tag at NEW
+panel_open     dw PANEL_SLOTS dup(0)  ; 1:  a library open
+panel_status   dw PANEL_SLOTS dup(0)  ; STATUS:  the last OPEN's or READ's
+panel_count    dw PANEL_SLOTS dup(0)  ; the library's panels (directory)
+panel_buf      dw PANEL_SLOTS dup(0)  ; the panel applied last:  its
+panel_bytes    dw PANEL_SLOTS dup(0)  ;   offset in panel_pool, length
+panel_names    db (PANEL_SLOTS * PANEL_NAME_SIZE) dup(0)
+panel_dirs     db (PANEL_SLOTS * PANEL_DIR_SIZE) dup(0)
+panel_header   db 3 dup(0)
+panel_win      dd 0                   ; READ's result window
+panel_pool     db PANEL_POOL_SIZE dup(0)
+PANEL_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
+        db      PANEL_OBJECT_PAD dup (0) ; (segment:0000 handles)
+panel_objects  db (PANEL_SLOTS * PANEL_OBJECT_SIZE) dup(0)
 foreground_task dw 0FFFFh              ; the core's (D70Ah)
 timer_used     dw TIMER_SLOT_COUNT dup(0)
 timer_handle_segments dw TIMER_SLOT_COUNT dup(0)

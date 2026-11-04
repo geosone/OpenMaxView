@@ -230,6 +230,15 @@ $(BUILD)/ntfprb.obj: tests/ntfprb.asm | $(BUILD)
 $(BUILD)/NTFPRB.COM: $(BUILD)/ntfprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name NTFPRB.COM option quiet option map=NTFPRB.MAP file ntfprb.obj
 
+$(BUILD)/MVTEST.PLB: tests/panels/mkplb.py | $(BUILD)
+	python3 $< $@
+
+$(BUILD)/panprb.obj: tests/panprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/PANPRB.COM: $(BUILD)/panprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name PANPRB.COM option quiet option map=PANPRB.MAP file panprb.obj
+
 $(BUILD)/crtprb.obj: tests/crtprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

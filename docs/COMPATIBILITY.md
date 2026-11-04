@@ -65,11 +65,11 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 
 The API calls DESQview-aware programs use (scheduling, critical sections,
 tasks, subtasks, mailboxes, timers, windows, window streams, query streams,
-keyboard objects, field mode, pointers, object queues, `APP_START`) are
-implemented and compared with DESQview 2.80 call by call; the Quarterdeck
-API examples run as under DESQview. [The API reference](API.md) lists
-every call and its state. Panels and some rarely used objects are still
-missing.
+keyboard objects, field mode, pointers, object queues, panels,
+`APP_START`) are implemented and compared with DESQview 2.80 call by call;
+the Quarterdeck API examples run as under DESQview. [The API
+reference](API.md) lists every call and its state. Some rarely used
+objects are still missing.
 
 ## Meaning of the version lines
 

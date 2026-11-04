@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf swap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf swap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/MVTEST.PLB || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -599,10 +599,10 @@ swap)
     printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
     M="key:alt wait:Switch_Windows:20"
     R="$M key:r wait:Tune_Performance:10"
-    O="$M key:o wait:Change_a_Program:20 key:d sleep:6"
+    OPN="$M key:o wait:Change_a_Program:20 key:d sleep:6"
     MEMSIZE=${SWAPMEM:-4} CMD="C:\\MAXVIEW" END="wait:swap_end:60" run swap 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
-        "wait:Open_Program:60 key:ret sleep:4 type:cd_DOS sleep:1 $R key:p sleep:2 $O $O $O $O $O $O text:w7 type:cls sleep:1 type:dir_C:\\MVSWAP*.TMP sleep:3 text:dir7 $R key:p sleep:2 $M key:s sleep:1 key:1 sleep:8 text:back1 type:cls sleep:1 type:cd>C:\\S.TXT sleep:2 type:dir_C:\\MVSWAP*.TMP sleep:3 text:dir1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:90 sleep:2 type:echo_swap_end"
+        "wait:Open_Program:60 key:ret sleep:4 type:cd_DOS sleep:1 $R key:p sleep:2 $OPN $OPN $OPN $OPN $OPN $OPN text:w7 type:cls sleep:1 type:dir_C:\\MVSWAP*.TMP sleep:3 text:dir7 $R key:p sleep:2 $M key:s sleep:1 key:1 sleep:8 text:back1 type:cls sleep:1 type:cd>C:\\S.TXT sleep:2 type:dir_C:\\MVSWAP*.TMP sleep:3 text:dir1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:90 sleep:2 type:echo_swap_end"
     d=$OUT/swap
     echo "  S.TXT:  $(file swap S.TXT | tr -d '\r' | tr '\n' ' ')"
     check "7 windows in 4 MB:  window 1 (put aside) swapped out for them" "grep -q 'MVSWAP01 TMP' '$d/dir7.txt' && ! grep -q 'QPI\\|memory' '$d/w7.txt'"
@@ -774,6 +774,23 @@ wobj)
     check "  bottom" "[ \"$(hx bottom)\" = '0xc0 0x1f $(printf '0xc4 0x1f %.0s' 1 2 3 4 5 6 7 8 9 10 11 12)0xd9 0x1f' ]"
     check "C2h 17,50 + E4h:  moved, the old place restored" "hx moved | grep -q '^0xda 0x1f 0x70 0x1f' && ! hx old | grep -q '^0xda'"
     check "FREE:  the screen restored" "! grep -q probe '$OUT/wobj/freed.txt'"
+    ;;
+panel)
+    echo "== panel:  panel objects (NEW 10h):  a library opened, panels applied (PANPRB, as under DV)"
+    printf 'C:\\MAXVTSR.COM\r\nC:\\MVRUN /F1 25 C:\\PANPRB.COM C:\\P1.TXT C:\\MVTEST.PLB x TEXT WIN FORM WRAP NOPE\r\n' > "$OUT/PN.BAT"
+    CMD="C:\\PN.BAT" END="wait:MVRUN:_done:120 sleep:3" run panel 25 "" "$OUT/PN.BAT $ROOT/build/MAXVTSR.COM $ROOT/build/PANPRB.COM $ROOT/build/MVTEST.PLB" \
+        "wait:panprb_ready:60 sleep:1 text:t1 key:ret sleep:3 text:t2 key:ret sleep:3 text:t3 key:ret sleep:3 text:t4 key:ret sleep:3 key:ret sleep:3"
+    p1=$(file panel P1.TXT)
+    echo "$p1" | sed 's/^/  /'
+    own=$(echo "$p1" | sed -n 's/^own 4 //p')
+    rd() { echo "$p1" | grep '^read' | sed -n "$1p"; }
+    check "NEW 10h:  a handle; OPEN (its length with the 0):  status 0; SIZEOF:  5 panels" "echo \"\$p1\" | grep -q '^new 4 [0-9A-F]*:0000' && echo \"\$p1\" | grep -A1 '^open 0' | grep -q '^status 4 0000:0000' && echo \"\$p1\" | grep -q '^sizeof 4 0000:0005'"
+    check "READ TEXT (window 0):  the own window and keyboard 0, status 0, its text in the own window" "[ \"\$(rd 1)\" = \"read 8 \$own 0000:0000\" ] && [ \"\$(echo \"\$p1\" | grep -A1 '^read' | sed -n 2p)\" = 'status 4 0000:0000' ] && grep -q 'Panel text in the own window' '$OUT/panel/t1.txt' && grep -q '^second row' '$OUT/panel/t1.txt'"
+    check "READ WIN (E6h):  0, 0 and the new window's handle below them, status 0, the window shown" "rd 2 | grep -q '^read 12 0000:0000 0000:0000 [0-9A-F]*:0000$' && grep -q 'in a new window' '$OUT/panel/t2.txt'"
+    check "READ FORM:  a window with fields" "rd 3 | grep -q '^read 12 0000:0000 0000:0000 [0-9A-F]*:0000$' && grep -q 'Two fields:' '$OUT/panel/t3.txt'"
+    check "READ WRAP (C5h:  the own window a window object):  colours only (90h) keep the characters past a row's end" "[ \"\$(rd 4)\" = \"read 8 \$own 0000:0000\" ] && grep -q '^ 0123456789' '$OUT/panel/t4.txt' && grep -q '^ ABCDE ' '$OUT/panel/t4.txt'"
+    check "READ NOPE:  status 14h, the own window and 0" "[ \"\$(rd 5)\" = \"read 8 \$own 0000:0000\" ] && echo \"\$p1\" | grep -A1 '^read' | tail -1 | grep -q '^status 4 0000:0014'"
+    check "CLOSE:  status 0; FREE; MVRUN ended" "echo \"\$p1\" | grep -A1 '^close 0' | grep -q '^status 4 0000:0000' && echo \"\$p1\" | grep -q '^free 0' && grep -q 'MVRUN: done' '$OUT/panel/end.txt'"
     ;;
 menu)
     echo "== menu:  demos/MENU, a window and keyboard of its own, as under DV"

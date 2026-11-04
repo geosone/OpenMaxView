@@ -245,7 +245,8 @@ network-specific ABI is to be added to Open 386MAX.
 | Object messages | partial | `HANDLE` stack ABI plus bounded timer control and mailbox writes; blocking messages planned |
 | Timers | nonblocking subset implemented | Sixteen identities, relative/absolute countdown and elapsed/remaining/state queries; blocking wait planned |
 | Mailboxes | bounded queue subset implemented | Eight identities (a task's own among them), four copied messages each, lifecycle/query/read, erase and base `SETFLAGS`/`GETFLAGS`; READ waits while the multitasking core runs |
-| Panels and further mailbox operations | planned | DESQview-specific dynamic object API |
+| Panels | implemented | Four panel objects:  a library's directory, panels applied as window, manager and query streams (PANPRB, measured under DESQview 2.80) |
+| Further mailbox operations | planned | DESQview-specific dynamic object API |
 | Scheduler policy | bounded foundation | 16 generation-tagged lifecycle slots, saved V86 register/PIC images, context ownership, round-robin dispatch and critical exclusion |
 | VM context lifecycle | bounded foundation | Current-task activation, fail-closed root/Windows transition and ordered context teardown over the single owned QPI clone |
 | Master IRQ calldowns | bounded foundation | Guarded QPI `1C01h` install, `1C04h` injection and `1C00h` removal with a copied non-null IRQ0-7 table |
