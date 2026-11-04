@@ -359,6 +359,30 @@ static int desk_set(unsigned cols, unsigned rows)
     return rc;
 }
 
+/* The windows view the first time:  with MAXTEXT the first of these it
+ * sets (wide, then many rows; the 8-pixel 60-row fonts last), without it
+ * 80x25.  Video Options changes it later. */
+static int video_auto = 1;
+
+static void desk_auto(void)
+{
+    static const unsigned char prefer[][2] = {
+        { 132, 43 }, { 132, 50 }, { 132, 25 }, { 80, 50 }, { 80, 43 },
+        { 80, 60 }, { 132, 60 }
+    };
+    unsigned i;
+
+    video_auto = 0;
+    for (i = 0; mt_handle >= 0 && i < sizeof prefer / sizeof prefer[0]; ++i)
+        if (desk_set(prefer[i][0], prefer[i][1]) == 0 &&
+            desk_cols == prefer[i][0] && desk_rows == prefer[i][1]) {
+            video_cols = desk_cols;
+            video_rows = desk_rows;
+            return;
+        }
+    desk_set(video_cols, video_rows);
+}
+
 static void initialise_video(void)
 {
     union REGS inregs, outregs;
@@ -904,6 +928,160 @@ static unsigned front(void)
     return 0;
 }
 
+/* the view (top row, left column of the program's 80x25 screen) window t
+ * shows, its cursor at cur, as compose takes it */
+static void view_of(unsigned t, const mv_window *w, unsigned cur,
+                    unsigned *vtop, unsigned *hoff)
+{
+    unsigned gpos, gsize, vrow = cur >> 8;
+
+    if (w->scrolled) {
+        *vtop = w->vtop;
+        *hoff = w->hoff;
+        return;
+    }
+    *hoff = 0;
+    if (mvhost_owngeom(t, &gpos, &gsize)) {
+        *vtop = gpos >> 8;
+        *hoff = gpos & 0xff;
+    } else
+        *vtop = vrow >= w->rows ? vrow - w->rows + 1 : 0;
+    if (*vtop + w->rows > SCREEN_ROWS)
+        *vtop = SCREEN_ROWS - w->rows;
+    if (*hoff + w->cols > SCREEN_COLS)
+        *hoff = SCREEN_COLS - w->cols;
+}
+
+/* Mark and Transfer:  text marked on a window's screen (from the begin to
+ * the mark, row by row as it is read), typed into the program in front.
+ * Unlike DESQview's, a transfer waits while the program's key buffer is
+ * full, so no key is lost. */
+#define MARK_MAX 2048
+static char __far mark_text[MARK_MAX];  /* the lines, '\n' between (far:
+                                         * DGROUP is full) */
+static unsigned mark_len, mark_task, mark_row, mark_col, mark_brow, mark_bcol;
+static int mark_on, mark_more;          /* begun (B, M:  added) */
+static unsigned short __far xfer[MARK_MAX + 1];
+static unsigned xfer_n, xfer_i, xfer_task;
+
+/* cell r, c of mark_task's screen is marked */
+static int mark_in(unsigned r, unsigned c)
+{
+    unsigned p = r * SCREEN_COLS + c, b = mark_brow * SCREEN_COLS + mark_bcol,
+             e = mark_row * SCREEN_COLS + mark_col;
+
+    return mark_on && (b <= e ? p >= b && p <= e : p >= e && p <= b);
+}
+
+/* Mark End:  the marked text (Mark More:  after what was marked) */
+static unsigned mark_take(void)
+{
+    unsigned b = mark_brow * SCREEN_COLS + mark_bcol,
+             e = mark_row * SCREEN_COLS + mark_col, r, c, c0, c1, n = 0, end;
+
+    if (b > e) {
+        r = b;
+        b = e;
+        e = r;
+    }
+    if (mvk_peek(mark_task, cells) == 0xffff)
+        return 0;
+    if (!mark_more)
+        mark_len = 0;
+    for (r = b / SCREEN_COLS; r <= e / SCREEN_COLS; ++r) {
+        c0 = r == b / SCREEN_COLS ? b % SCREEN_COLS : 0;
+        c1 = r == e / SCREEN_COLS ? e % SCREEN_COLS : SCREEN_COLS - 1;
+        if (mark_len != 0 && mark_len < MARK_MAX)
+            mark_text[mark_len++] = '\n';
+        end = mark_len;
+        for (c = c0; c <= c1 && mark_len < MARK_MAX; ++c) {
+            char ch = (char)cells[r * SCREEN_COLS + c];
+
+            mark_text[mark_len++] = ch == '\0' ? ' ' : ch;
+            if (ch != ' ' && ch != '\0')
+                end = mark_len;
+        }
+        mark_len = end;                 /* without the blanks at the end */
+        ++n;
+    }
+    return n;
+}
+
+/* a character as the keyboard gives it:  its scan code (US layout) << 8 |
+ * the character */
+static unsigned key_word(int ch)
+{
+    static const char *const rows[8] = {
+        "1234567890-=", "qwertyuiop[]", "asdfghjkl;'`", "\\zxcvbnm,./",
+        "!@#$%^&*()_+", "QWERTYUIOP{}", "ASDFGHJKL:\"~", "|ZXCVBNM<>?"
+    };
+    static const unsigned char first[4] = { 0x02, 0x10, 0x1e, 0x2b };
+    const char *p;
+    unsigned i;
+
+    ch &= 0xff;
+    switch (ch) {
+    case 8:   return 0x0e08;
+    case 9:   return 0x0f09;
+    case 13:  return 0x1c0d;
+    case 27:  return 0x011b;
+    case ' ': return 0x3920;
+    }
+    for (i = 0; i < 8 && ch != 0; ++i)
+        if ((p = strchr(rows[i], ch)) != NULL)
+            return (unsigned)(first[i & 3] + (p - rows[i])) << 8 | ch;
+    return (unsigned)ch;
+}
+
+/* Transfer into task t:  how 1 the first line, 2 the first number, 0 every
+ * line followed by the key k */
+static void xfer_start(unsigned t, int how, unsigned k)
+{
+    const char __far *p = mark_text, __far *e = mark_text + mark_len;
+
+    xfer_n = xfer_i = 0;
+    xfer_task = t;
+    if (how == 2) {
+        while (p < e && !isdigit((unsigned char)*p))
+            ++p;
+        if (p < e && p > mark_text && p[-1] == '-')
+            --p;
+        if (p < e)
+            xfer[xfer_n++] = (unsigned short)key_word(*p++);
+        while (p < e && (isdigit((unsigned char)*p) ||
+                         ((*p == '.' || *p == ',') && p + 1 < e &&
+                          isdigit((unsigned char)p[1]))))
+            xfer[xfer_n++] = (unsigned short)key_word(*p++);
+        return;
+    }
+    for (; p < e; ++p) {
+        if (*p == '\n') {
+            if (how == 1)
+                return;
+            xfer[xfer_n++] = (unsigned short)k;
+        } else
+            xfer[xfer_n++] = (unsigned short)key_word(*p);
+    }
+    if (how == 0)
+        xfer[xfer_n++] = (unsigned short)k;
+}
+
+/* the transfer's next keys, as far as the program's buffer takes them */
+static void xfer_feed(void)
+{
+    while (xfer_i < xfer_n) {
+        int rc = mvk_putkey(xfer_task, xfer[xfer_i]);
+
+        if (rc == 1)
+            break;
+        if (rc != 0) {                  /* (the program has ended) */
+            xfer_n = 0;
+            break;
+        }
+        ++xfer_i;
+    }
+}
+
 /* The windows on a black desk (each showing its program's own colours,
  * framed in Open 386MAX's), a message (status_line) on the bottom row;
  * MAXVIEW's menu over them while it has the keys (mode 0); mode 1, 2:
@@ -1004,6 +1182,10 @@ static void compose(int mode)
                     cell = (unsigned short)(win_color(w, cell >> 12) << 12 |
                                             win_color(w, cell >> 8 & 15) << 8 |
                                             (cell & 0xff));
+                if (mode == 6 && t == mark_task && mark_in(vtop + r, hoff + c))
+                    cell = (unsigned short)((cell >> 4 & 0x0f00) |
+                                            (cell << 4 & 0xf000) |
+                                            (cell & 0xff));
                 scr[(w->top + r) * desk_cols + w->left + c] = cell;
             }
         }
@@ -1014,18 +1196,27 @@ static void compose(int mode)
             ccol = w->left + (cur & 0xff) - hoff;
             cursor = 1;
         }
+        if (mode == 6 && t == mark_task && mark_row >= vtop &&
+            mark_row < vtop + w->rows && mark_col >= hoff &&
+            mark_col < hoff + w->cols) {        /* the mark */
+            crow = w->top + mark_row - vtop;
+            ccol = w->left + mark_col - hoff;
+            cursor = 1;
+        }
     }
     if (status_line[0] != '\0')
         swrite(desk_rows - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 5) {
+    if (mode >= 1 && mode <= 6 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
             " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
             " Scroll:  arrows, Enter done ", " Position:  1-9 ",
-            " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back "
+            " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back ",
+            " Mark:  arrows, B begin, M more, E end, Enter done, Esc back "
         };
 
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
-    } else if (focus == 0)
+    }
+    if (focus == 0 && (mode == 0 || mode == 6))
         dv_menu_draw();
     _fmemcpy(video, scr, desk_rows * desk_cols * sizeof scr[0]);
     set_cursor(crow, ccol, cursor);
@@ -1197,13 +1388,13 @@ static int dv_find(int key, int scan)
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
-    DV_VIDEO
+    DV_VIDEO, DV_MARK, DV_TRANSFER
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
     A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
-    A_VIDEO, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
+    A_VIDEO, A_MARK, A_TRANSFER, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
 static void dv_build(unsigned menu, const odq_catalog *catalog)
@@ -1300,6 +1491,28 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         sprintf(dv_labels[3], "Background ticks  [%2u]", tune_bg);
         dv_add(DV_ITEM, dv_labels[3], "K", A_BGTICKS);
         break;
+    case DV_MARK:                       /* (its keys:  windows_view) */
+        dv_begin("Mark", 22);
+        dv_add(DV_ITEM, "Mark Begin", "B", 0);
+        dv_add(DV_ITEM, "Mark More", "M", 0);
+        dv_add(DV_ITEM, "Mark End", mark_on ? "E" : "", 0);
+        dv_add(DV_ITEM, "Done", "Enter", 0);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_TEXT, "Auto Dialer", "", 0);
+        dv_add(DV_ITEM, "Mark Phone #", "", 0);
+        dv_add(DV_ITEM, "Dial", "", 0);
+        dv_add(DV_ITEM, "Talk", "", 0);
+        break;
+    case DV_TRANSFER:                   /* (its keys:  windows_view) */
+        dv_begin("Transfer", 30);
+        dv_add(DV_ITEM, "The first line only", "T", 0);
+        dv_add(DV_ITEM, "The first number only", "N", 0);
+        dv_add(DV_ITEM, "Keys before each line", "", 0);
+        dv_add(DV_BLANK, "", "", 0);
+        dv_add(DV_TEXT, "Any other key (Enter, Tab):", "", 0);
+        dv_add(DV_TEXT, "every line, each followed", "", 0);
+        dv_add(DV_TEXT, "by that key.  Esc:  back", "", 0);
+        break;
     default:
         dv_begin("MaxView", 22);
         dv_add(DV_ITEM, "Open Window", "O", A_OPEN);
@@ -1309,8 +1522,8 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Rearrange", "R", A_REARRANGE);
         dv_add(DV_ITEM, "Zoom", "Z", A_ZOOM);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Mark", "", 0);
-        dv_add(DV_ITEM, "Transfer", "", 0);
+        dv_add(DV_ITEM, "Mark", "M", A_MARK);
+        dv_add(DV_ITEM, "Transfer", "T", A_TRANSFER);
         dv_add(DV_ITEM, "Scissors", "", 0);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Help", "", 0);
@@ -1423,8 +1636,14 @@ static int windows_view(const odq_catalog *catalog, char *status)
             return 0;
         if (nwin == 0)
             return 0;
+        xfer_feed();
         t = front();
         w = &win[t];
+        if (mode == 6 && t != mark_task) {      /* its window has gone */
+            mode = 0;
+            mark_on = 0;
+            menu = DV_MAIN;
+        }
         focus = mvk_focused();
         if (focus == 0 && last_focus != 0) {    /* Alt:  the menu again */
             menu = DV_MAIN;
@@ -1441,7 +1660,12 @@ static int windows_view(const odq_catalog *catalog, char *status)
             if (!dv_usable(dv_sel))
                 dv_bar(0);
         }
+        if (menu == DV_MARK || menu == DV_TRANSFER)
+            dv_sel = dv_count;          /* (no bar:  their keys act) */
         status_line = status;
+        if (video_auto && mvk_fg() == 0)  /* (not while a program has the
+                                             * screen) */
+            desk_auto();
         if (mvk_fg() == 0 &&
             (bios_rows() != desk_rows || bios_cols() != desk_cols) &&
             desk_fits(bios_cols(), bios_rows()))
@@ -1460,6 +1684,25 @@ static int windows_view(const odq_catalog *catalog, char *status)
         scan = 0;
         last = 0;
         status[0] = '\0';
+        if (mode == 0 && menu == DV_TRANSFER) {
+            /* T, N, or any other key to follow each line;  Esc:  back */
+            unsigned k;
+
+            if (key == 0 || key == 0xe0)
+                k = (unsigned)getch() << 8;
+            else if (key == 27) {
+                menu = DV_MAIN;
+                fresh = 1;
+                continue;
+            } else
+                k = key_word(key);
+            xfer_start(t, toupper(key) == 'T' ? 1 : toupper(key) == 'N' ? 2 : 0,
+                       k);
+            menu = DV_MAIN;
+            fresh = 1;
+            to_window(t);
+            continue;
+        }
         if (key == 0 || key == 0xe0) {
             scan = getch();
             if (mode == 1) {
@@ -1491,6 +1734,18 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 if (scan == 80 && w->vtop + w->rows < SCREEN_ROWS) ++w->vtop;
                 if (scan == 75 && w->hoff > 0) --w->hoff;
                 if (scan == 77 && w->hoff + w->cols < SCREEN_COLS) ++w->hoff;
+            } else if (mode == 6) {     /* the mark, its window's view
+                                         * following it */
+                if (scan == 72 && mark_row > 0) --mark_row;
+                if (scan == 80 && mark_row + 1 < SCREEN_ROWS) ++mark_row;
+                if (scan == 75 && mark_col > 0) --mark_col;
+                if (scan == 77 && mark_col + 1 < SCREEN_COLS) ++mark_col;
+                if (mark_row < w->vtop) w->vtop = (unsigned char)mark_row;
+                if (mark_row >= w->vtop + w->rows)
+                    w->vtop = (unsigned char)(mark_row - w->rows + 1);
+                if (mark_col < w->hoff) w->hoff = (unsigned char)mark_col;
+                if (mark_col >= w->hoff + w->cols)
+                    w->hoff = (unsigned char)(mark_col - w->cols + 1);
             } else if (scan == 72)
                 dv_bar(-1);
             else if (scan == 80)
@@ -1507,6 +1762,29 @@ static int windows_view(const odq_catalog *catalog, char *status)
             w->colors = saved.colors;
             w->fg = saved.fg;
             w->bg = saved.bg;
+        }
+        if (mode == 6) {
+            key = toupper(key);
+            if (key == 'B' || key == 'M') {
+                mark_on = 1;
+                mark_more = key == 'M' && mark_len != 0;
+                mark_brow = mark_row;
+                mark_bcol = mark_col;
+            } else if (key == 'E' && mark_on) {
+                sprintf(status, "%u line(s) marked.", mark_take());
+                mark_on = 0;
+            } else if (key == 13 || key == 27) {
+                if (key == 13 && mark_on)
+                    sprintf(status, "%u line(s) marked.", mark_take());
+                mark_on = 0;
+                w->scrolled = saved.scrolled;
+                w->vtop = saved.vtop;
+                w->hoff = saved.hoff;
+                mode = 0;
+                menu = DV_MAIN;
+                to_window(t);
+            }
+            continue;
         }
         if (mode != 0) {
             if (key == 13 || key == 27) {
@@ -1586,6 +1864,32 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 break;
             case A_TUNE:
                 menu = DV_TUNE;
+                break;
+            case A_MARK:                /* from its cursor, the view kept
+                                         * still while marking */
+                {
+                    unsigned cur = mvk_peek(t, cells), vtop, hoff;
+
+                    if (cur == 0xffff)
+                        break;
+                    saved = *w;
+                    view_of(t, w, cur, &vtop, &hoff);
+                    w->scrolled = 1;
+                    w->vtop = (unsigned char)vtop;
+                    w->hoff = (unsigned char)hoff;
+                    mark_task = t;
+                    mark_row = cur >> 8 < SCREEN_ROWS ? cur >> 8 : 0;
+                    mark_col = (cur & 0xff) < SCREEN_COLS ? cur & 0xff : 0;
+                    mark_on = 0;
+                    mode = 6;
+                    menu = DV_MARK;
+                }
+                break;
+            case A_TRANSFER:
+                if (mark_len == 0)
+                    strcpy(status, "Nothing marked:  Mark (M) first.");
+                else
+                    menu = DV_TRANSFER;
                 break;
             case A_VIDEO:
                 menu = DV_VIDEO;

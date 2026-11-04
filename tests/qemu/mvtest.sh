@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video mark dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -284,7 +284,7 @@ desk)
     check "Alt:  the windows and the menu (Open Window O ... Quit MaxView Q)" "grep -q 'Open Window *O' '$d/desk1.txt' && grep -q 'Rearrange *R' '$d/desk1.txt' && grep -q 'Quit MaxView *Q' '$d/desk1.txt' && grep -q 'Tick' '$d/desk1.txt'"
     # cell (row, column) of the menu's dump:  character and attribute
     cell() { awk '/^[0-9a-f]+:/' "$d/menu.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1)),+1p" | tr '\n' ' ' | sed 's/ $//'; }
-    check "the menu at the top right in Open 386MAX's look:  single frame 70h, the bar 0Fh with its red trigger 0Ch, triggers 74h, keys at the right, a line, Mark not available (78h), a shadow" "[ '$(cell 0 54)' = '0xda 0x70' ] && [ '$(cell 0 77)' = '0xbf 0x70' ] && [ '$(cell 14 54)' = '0xc0 0x70' ] && [ '$(cell 1 55)' = '0x20 0x0f' ] && [ '$(cell 1 56)' = '0x4f 0x0c' ] && [ '$(cell 2 56)' = '0x53 0x74' ] && [ '$(cell 2 75)' = '0x53 0x70' ] && [ '$(cell 4 56)' = '0xc4 0x70' ] && [ '$(cell 8 56)' = '0x4d 0x78' ] && [ '$(cell 1 78 | cut -c6-9)' = '0x08' ]"
+    check "the menu at the top right in Open 386MAX's look:  single frame 70h, the bar 0Fh with its red trigger 0Ch, triggers 74h, keys at the right, a line, Mark's trigger 74h, Scissors not available (78h), a shadow" "[ '$(cell 0 54)' = '0xda 0x70' ] && [ '$(cell 0 77)' = '0xbf 0x70' ] && [ '$(cell 14 54)' = '0xc0 0x70' ] && [ '$(cell 1 55)' = '0x20 0x0f' ] && [ '$(cell 1 56)' = '0x4f 0x0c' ] && [ '$(cell 2 56)' = '0x53 0x74' ] && [ '$(cell 2 75)' = '0x53 0x70' ] && [ '$(cell 4 56)' = '0xc4 0x70' ] && [ '$(cell 8 56)' = '0x4d 0x74' ] && [ '$(cell 10 56)' = '0x53 0x78' ] && [ '$(cell 1 78 | cut -c6-9)' = '0x08' ]"
     check "Open Window:  the programs by key, Add / Delete / Change a Program" "grep -q 'Tick counter *T' '$d/open.txt' && grep -q 'Key probe *K' '$d/open.txt' && grep -q 'Change a Program' '$d/open.txt'"
     check "Switch Windows:  the windows by number" "grep -q 'Tick counter *1' '$d/tasks.txt' && grep -q 'Key probe *2' '$d/tasks.txt'"
     check "KEYPROBE got its keys (also in its window)" "[ '$k2' = xyz ]"
@@ -387,7 +387,7 @@ tune)
     check "DOS works afterwards" "grep -q '^tune end' '$d/end.txt'"
     ;;
 video)
-    echo "== video:  Video Options through MAXTEXT (Open 386MAX):  the windows in 50 rows"
+    echo "== video:  with MAXTEXT (Open 386MAX) the windows in its higher mode; Video Options"
     cfg=$OUT/MAXVIEW.CFG
     printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\n' > "$cfg"
     M="key:alt wait:Switch_Windows:20"
@@ -396,17 +396,38 @@ video)
     CONFIG="DOS=HIGH,UMB|DEVICE=C:\\MAX\\386MAX.SYS|DEVICE=C:\\MAXTEXT.SYS|FILES=40|BUFFERS=20|SHELL=C:\\COMMAND.COM C:\\ /E:1024 /P" \
     CMD="C:\\MAXVIEW" END="wait:video_end:30" run video 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg $MAXROOT/build/bin/MAXTEXT.SYS" \
-        "wait:Open_Program:60 key:ret sleep:3 $R key:v wait:Text_modes:10 text:vid $(rows r0) key:3 sleep:3 $(rows r1) $R key:2 sleep:2 mon:xp+/8000xb+0xb8000>half $M key:z sleep:3 $(rows rz) key:alt wait:Switch_Windows:20 sleep:2 $(rows r2) key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:3 $(rows r3) type:echo_video_end"
+        "wait:Open_Program:60 key:ret sleep:3 $R key:v wait:Text_modes:10 text:vid $(rows r0) key:1 sleep:3 $(rows r1) $R key:v wait:Text_modes:10 key:3 sleep:3 $(rows r1b) $R key:2 sleep:2 mon:xp+/8000xb+0xb8000>half $M key:z sleep:3 $(rows rz) key:alt wait:Switch_Windows:20 sleep:2 $(rows r2) key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:3 $(rows r3) type:echo_video_end"
     d=$OUT/video
     rv() { awk -F': ' '/^[0-9a-f]+:/ {print $2; exit}' "$d/$1.txt" 2>/dev/null | tr -dc '0-9a-fx'; }
     hc() { awk '/^[0-9a-f]+:/' "$d/half.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1))p"; }
-    echo "  rows (40:84):  $(rv r0) $(rv r1) zoomed $(rv rz) $(rv r2) launcher $(rv r3)"
-    check "Video Options:  MAXTEXT's modes, 80 x 25 in use" "grep -q 'Text modes (MAXTEXT)' '$d/vid.txt' && grep -q '80 x 25  \*' '$d/vid.txt' && grep -q '80 x 50 *3' '$d/vid.txt'"
-    check "3:  the windows in 50 rows" "[ '$(rv r0) $(rv r1)' = '0x18 0x31' ]"
+    echo "  rows (40:84):  $(rv r0) $(rv r1) $(rv r1b) zoomed $(rv rz) $(rv r2) launcher $(rv r3)"
+    check "Video Options:  MAXTEXT's modes, its higher one (80 x 50 in QEMU) in use from the start" "grep -q 'Text modes (MAXTEXT)' '$d/vid.txt' && grep -q '80 x 50  \*' '$d/vid.txt' && grep -q '80 x 25 *1' '$d/vid.txt'"
+    check "1:  the windows in 25 rows, 3:  in 50 again" "[ '$(rv r0) $(rv r1) $(rv r1b)' = '0x31 0x18 0x31' ]"
     check "Position 2 on 50 rows:  the bottom half (frame rows 26 / 49)" "[ '$(hc 26 0) $(hc 49 0) $(hc 49 79)' = '0xc9 0xc8 0xbc' ]"
     check "Zoom:  the program in its 25 rows, back:  50 again" "[ '$(rv rz) $(rv r2)' = '0x18 0x31' ]"
     check "the launcher in 25 rows again" "[ '$(rv r3)' = '0x18' ]"
     check "DOS works afterwards" "grep -q '^video end' '$d/end.txt'"
+    ;;
+mark)
+    echo "== mark:  Mark in one DOS window, Transfer into another (every line + Enter, the first number)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\nE|DosTwo|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    printf 'echo XFER-OK 4711> C:\\XF.TXT\r\necho LINE-TWO> C:\\X2.TXT\r\n' > "$OUT/SRC.TXT"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:mark_end:30" run mark 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg $OUT/SRC.TXT" \
+        "wait:Open_Program:60 key:ret sleep:4 type:cls sleep:1 type:type_C:\\SRC.TXT wait:LINE-TWO:20 $M text:main key:m wait:Mark_Begin:10 text:markmenu key:up,up,up,up,up,down,down,left,left,left,left key:b key:down,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right,right sleep:1 mon:xp+/4000xb+0xb8000>hl key:e sleep:1 text:ended key:ret sleep:1 $M key:o wait:Change_a_Program:20 key:e sleep:4 $M key:t wait:first_number:10 text:xmenu key:ret sleep:20 key:e,c,h,o,spc $M key:t wait:first_number:10 key:n sleep:3 type:_>_C:\\N.TXT sleep:3 text:after $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_mark_end"
+    d=$OUT/mark
+    hl=$(awk '/^[0-9a-f]+:/' "$d/hl.txt" | grep -o "0x[0-9a-f][0-9a-f]" | awk 'NR % 2 == 0 && $1 == "0x70"' | wc -l)
+    echo "  cells shown marked (70h):  $hl; XF.TXT:  $(file mark XF.TXT); X2.TXT:  $(file mark X2.TXT); N.TXT:  $(file mark N.TXT)"
+    check "the menu:  Mark M, Transfer T" "grep -q 'Mark *M' '$d/main.txt' && grep -q 'Transfer *T' '$d/main.txt'"
+    check "Mark:  Begin B, More M, End after B, Auto Dialer not offered" "grep -q 'Mark Begin *B' '$d/markmenu.txt' && grep -q 'Mark More *M' '$d/markmenu.txt' && ! grep -q 'Mark End *E' '$d/markmenu.txt' && grep -q 'Auto Dialer' '$d/markmenu.txt'"
+    check "the marked text shown reversed (07h -> 70h, 30 cells and more)" "[ $hl -ge 30 ]"
+    check "Mark End:  2 lines marked" "grep -q '2 line(s) marked' '$d/ended.txt'"
+    check "Transfer:  T, N, any other key" "grep -q 'first line only *T' '$d/xmenu.txt' && grep -q 'first number only *N' '$d/xmenu.txt'"
+    check "Transfer + Enter:  both lines typed and run in the other window, none lost" "[ '$(file mark XF.TXT)' = 'XFER-OK 4711' ] && [ '$(file mark X2.TXT)' = 'LINE-TWO' ]"
+    check "Transfer N:  the first number typed" "file mark N.TXT | grep -q '^4711 *$'"
+    check "DOS works afterwards" "grep -q '^mark end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

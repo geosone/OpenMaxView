@@ -28,14 +28,14 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Position 1-9 (fixed places) | Rearrange:  1-9, the same places (halves, middle, quarters) | Covered |
 | Freeze, Hide, Put Aside | Rearrange:  Freeze (F, again:  Unfreeze) runs the window only while it has the keys; Hide (H) takes it off the screen, running; Put Aside (P) off the screen and held; Switch Windows brings either back | Covered (Put Aside holds the program in memory; DV swaps it out) |
 | Change Colors (text and background colour of the window) | Rearrange:  Change Colors (C), Left/Right the text, Up/Down the background colour:  the program's black and grey shown in them (otherwise its own colours), live; Esc back | Covered |
-| Video Options (VGA 25 / 30 / 50 / 60 rows) | Rearrange:  Video Options (V), 80 x 25 / 43 / 50 / 60 and 132 x 25 / 43 / 50 / 60 as Open 386MAX's MAXTEXT offers them (132 columns through the card's VBE text modes); the windows view in that geometry, a program's own screen 80x25, the launcher 80x25 | Covered with MAXTEXT loaded (without it:  80x25 only); more than DV (132 columns) |
+| Video Options (VGA 25 / 30 / 50 / 60 rows) | Rearrange:  Video Options (V), 80 x 25 / 43 / 50 / 60 and 132 x 25 / 43 / 50 / 60 as Open 386MAX's MAXTEXT offers them (132 columns through the card's VBE text modes); the windows view in that geometry, a program's own screen 80x25, the launcher 80x25 | Covered with MAXTEXT loaded (without it:  80x25 only), starting in the higher mode MAXTEXT can set; more than DV (132 columns) |
 | Tune Performance (this window:  share CPU and EGA in front, run in background, allow swapping; system:  foreground / background ticks, swapping; Revive Mouse) | MAXVIEW's Tune Performance:  Run in background, Share CPU in front per window, Foreground / Background ticks (6:2 at start); MVRUN /T the slices | Partial (Share EGA, swapping and Revive Mouse:  not offered; MaxView does not swap) |
 
 ### Mark, Transfer, Scissors, Auto Dialer
 
 | DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
-| Mark (Mark Begin, Mark More, Mark End) and Transfer:  copy screen text from one window into another's keyboard | none | Missing |
+| Mark (Mark Begin, Mark More, Mark End) and Transfer:  copy screen text from one window into another's keyboard | Mark (M):  Begin B, More M, End E, the arrows move the mark, the text row by row from the begin to the mark (as DV 2.80, measured); Transfer (T):  the first line T, the first number N, or every line followed by any other key | As DV; Transfer waits for room in the key buffer (DV 2.80 loses keys beyond its 15 places, measured); "keys to begin each line" not offered |
 | Scissors | none (not yet measured:  inactive in a plain DV setup) | Missing |
 | Auto Dialer (Mark Phone #, Dial, Talk) | none | Missing |
 

@@ -187,6 +187,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_freeze_
         public  mvk_share_
         public  mvk_peek_
+        public  mvk_putkey_
         public  mvk_datasize_
         public  mvk_tune_
 
@@ -3620,6 +3621,59 @@ pk_ret: pop     ds
         pop     bx
         ret
 mvk_peek_ endp
+
+; int mvk_putkey(unsigned task, unsigned key):  key (scan code high, char
+; low) at the end of the task's key buffer, as if typed (Transfer); 0, 1:
+; the buffer is full (try again later), MVE_STATE.  From task 0:  the
+; task's buffer is then in its TASK (only the running one's is live).
+mvk_putkey_ proc near
+        push    bx
+        push    cx
+        push    si
+        push    ds
+        mov     ds,cs:kseg
+        mov     bx,ax
+        mov     cx,dx
+        mov     ax,MVE_STATE
+        cmp     cs:cur,0
+        jne     pu_ret
+        or      bx,bx
+        jz      pu_ret
+        cmp     bx,cs:ntasks
+        jae     pu_ret
+        call    taskptr
+        cmp     [bx].T_STATE,TS_READY
+        jne     pu_ret
+        pushf
+        cli
+        mov     si,word ptr [bx].T_KBD+2        ; the tail (40:1Eh-3Ch)
+        cmp     si,1Eh
+        jb      pu_bad
+        cmp     si,3Ch
+        ja      pu_bad
+        lea     ax,[si+2]
+        cmp     ax,3Eh
+        jb      @F
+        mov     ax,1Eh
+@@:     cmp     ax,word ptr [bx].T_KBD          ; the head:  full
+        je      pu_full
+        mov     word ptr [bx].T_KBD+2,ax
+        add     si,bx
+        mov     word ptr [si].T_KBD-1Ah,cx
+        xor     ax,ax
+        jmp     short pu_done
+pu_full:
+        mov     ax,1
+        jmp     short pu_done
+pu_bad: mov     ax,MVE_STATE
+pu_done:
+        popf
+pu_ret: pop     ds
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+mvk_putkey_ endp
 
 ; unsigned mvk_fg(void):  the foreground task
 mvk_fg_ proc near
