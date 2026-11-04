@@ -58,7 +58,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Windows on one screen, numbered, titled | The windows view, in Open 386MAX's colours | Covered (titles, own-window geometry) |
 | Background serial programs (BBS nodes):  each IRQ to the window that hooked it last | The core | As DV (`nodes`, `samecom`) |
 | Graphics programs in the background | Held in the background | Partial |
-| Swapping windows out to disk or EMS | MAXVIEW:  when a window cannot open for want of memory, a put aside window (no subtask, no hardware interrupt of its own) goes page by page to `MVSWAPnn.TMP` in the current directory and its memory is freed; switched to again it comes back (another put aside window out if need be); Quit ends the swapped out ones too and removes the files | Partial (disk only, no EMS; only put aside windows, not by Tune Performance's settings; with little memory (4 MB) Open 386MAX 3d8b448 or later) |
+| Swapping windows out to disk or EMS | MAXVIEW:  when a window cannot open for want of memory, a put aside window (no subtask, no hardware interrupt of its own) goes page by page to `MVSWAPnn.TMP` in the current directory and its memory is freed; switched to again it comes back (another put aside window out if need be); Quit ends the swapped out ones too and removes the files | Partial (disk only, no EMS; only put aside windows, not by Tune Performance's settings; with little memory (4 MB) Open 386MAX 9.00-beta7 or later) |
 | Program protection levels, writes-directly-to-screen virtualization | Text pages private per task; CRTC/DAC writes of background tasks trapped | Partial |
 
 ### The DESQview API
