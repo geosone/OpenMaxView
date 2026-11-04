@@ -76,6 +76,10 @@
 ;   INT 2Fh AX=D70Eh, BX=task        for the host:  DX:AX = the notifications
 ;                                    its window asked for (manager stream
 ;                                    40h-51h:  bit N event 40h+N)
+;   INT 2Fh AX=D711h, BX=task        for the host:  DX:AX = the menu
+;                                    functions its window disallowed
+;                                    (manager stream 20h-33h:  bit N ALW_* N;
+;                                    D710h is MAXVANSI's)
 ;   INT 2Fh AX=D70Fh, BX=task        from the host:  ES:DI, CX bytes (up to
 ;                                    128) to its own mailbox, as DESQview's
 ;                                    notification messages (DX bit 0:  its
@@ -145,6 +149,7 @@ MUX_APP_START  equ 0D70Bh
 MUX_TITLE      equ 0D70Ch
 MUX_GEOM       equ 0D70Dh
 MUX_NOTIFY     equ 0D70Eh
+MUX_DENY       equ 0D711h
 MUX_NOTE       equ 0D70Fh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
@@ -4233,6 +4238,16 @@ window_manager:
 window_manager_next:
         call    window_byte
         jc      short window_manager_ret
+        cmp     al,34h                ; 00h-13h allow, 20h-33h disallow
+        jae     short window_manager_not_allow
+        push    ax
+        and     al,1Fh
+        cmp     al,13h
+        pop     ax
+        ja      short window_manager_not_allow
+        call    deny_set
+        jmp     short window_manager_next
+window_manager_not_allow:
         cmp     al,40h
         jb      short window_manager_not_notify
         cmp     al,71h
@@ -4563,6 +4578,8 @@ notify_end:
         shl     bx,1
         mov     word ptr cs:notify_mask[bx],0
         mov     word ptr cs:notify_mask[bx+2],0
+        mov     word ptr cs:deny_mask[bx],0
+        mov     word ptr cs:deny_mask[bx+2],0
 notify_end_ret:
         pop     dx
         pop     bx
@@ -4573,14 +4590,31 @@ notify_end_ret:
 ; calling task's notify bit (AL and 1Fh); CF:  another opcode (52h-5Fh).
 ; A subtask's go to its task's window as well (they share it).
 notify_set:
+        push    di
+        mov     di,offset notify_mask
         push    ax
+        mov     ah,11h
+        jmp     short notify_bits
+; Manager stream opcode AL 00h-13h (allow:  its bit clear) or 20h-33h
+; (disallow:  set) in the task's deny_mask (D711h), as DESQview's
+; win_allow / win_disallow (ALW_*):  MAXVIEW's menu leaves those functions
+; out for the window (measured:  tests/alwprb.asm).
+deny_set:
+        push    di
+        mov     di,offset deny_mask
+        xor     al,20h                ; (20h:  set, as 40h's)
+        push    ax
+        mov     ah,13h
+; AL the opcode (bit 5:  clear the bit), its bit (AL and 1Fh, up to AH) in
+; the calling task's DWORD of the table at DI; CF:  above AH.
+notify_bits:
         push    bx
         push    cx
         push    dx
         mov     ch,al                 ; the opcode
         mov     cl,al
         and     cl,1Fh
-        cmp     cl,11h
+        cmp     cl,ah
         ja      short notify_set_no
         mov     bx,word ptr cs:task_handle_segment
         sub     bx,word ptr cs:task_objects_base
@@ -4610,14 +4644,14 @@ notify_set_shift:
         mov     word ptr cs:notify_psp[bx],ax
         shl     bx,1
         pop     ax
-        or      word ptr cs:notify_mask[bx],dx
-        or      word ptr cs:notify_mask[bx+2],ax
+        or      word ptr cs:[di+bx],dx
+        or      word ptr cs:[di+bx+2],ax
         jmp     short notify_set_done
 notify_set_clear:
         not     dx
         not     ax
-        and     word ptr cs:notify_mask[bx],dx
-        and     word ptr cs:notify_mask[bx+2],ax
+        and     word ptr cs:[di+bx],dx
+        and     word ptr cs:[di+bx+2],ax
 notify_set_done:
         clc
         jmp     short notify_set_ret
@@ -4628,6 +4662,7 @@ notify_set_ret:
         pop     cx
         pop     bx
         pop     ax
+        pop     di
         ret
 
 ; The place and size of the task's window object SI for the host (D70Dh):
@@ -10110,18 +10145,28 @@ int2f_geom_ret:
         popf
         iret
 int2f_not_geom:
+        push    si
+        mov     si,offset notify_mask
         cmp     ax,MUX_NOTIFY
-        jne     short int2f_not_notify
+        je      short int2f_notify
+        mov     si,offset deny_mask
+        cmp     ax,MUX_DENY
+        je      short int2f_notify
+        pop     si
+        jmp     short int2f_not_notify
+int2f_notify:
         xor     ax,ax
         xor     dx,dx
         cmp     bx,TASK_OBJECT_COUNT
-        jae     short int2f_notify_ret
+        jae     short int2f_notify_pop
         push    bx
         shl     bx,1
         shl     bx,1
-        mov     ax,word ptr cs:notify_mask[bx]
-        mov     dx,word ptr cs:notify_mask[bx+2]
+        mov     ax,word ptr cs:[si+bx]
+        mov     dx,word ptr cs:[si+bx+2]
         pop     bx
+int2f_notify_pop:
+        pop     si
 int2f_notify_ret:
         popf
         iret
@@ -10225,6 +10270,8 @@ int2f_task_end:
         mov     word ptr cs:own_geom[si+2],0
         mov     word ptr cs:notify_mask[si],0 ; and its notifications
         mov     word ptr cs:notify_mask[si+2],0
+        mov     word ptr cs:deny_mask[si],0
+        mov     word ptr cs:deny_mask[si+2],0
         shr     si,1
         mov     word ptr cs:notify_psp[si],0
 task_end_dead:
@@ -10551,6 +10598,7 @@ notify_psp     dw TASK_OBJECT_COUNT dup(0) ; the program that asked
 note_handle    dw 0                   ; note_put's
 note_flags     dw 0
 note_len       dw 0
+deny_mask      dw (TASK_OBJECT_COUNT * 2) dup(0) ; D711h:  functions disallowed
 notify_mask    dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Eh:  the notifications
                                       ; each task asked for (bit N:  40h+N)
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/MVTEST.PLB || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/MVTEST.PLB || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -594,6 +594,22 @@ ntf)
     check "Close Yes:  46h (8 bytes), the program told, its window kept" "[ \"\$(l 46)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^46 $h 00 00 00' && grep -q 'is told to close' '$d/closed.txt' && grep -q 'ntfprb ready' '$d/closed.txt'"
     check "the program ended itself (x):  its notifications gone, Quit Q again" "grep -q 'Quit MaxView *Q' '$d/menuq2.txt' && ! grep -q 'Help for Program' '$d/menuq2.txt'"
     check "DOS works afterwards" "grep -q '^ntf end' '$d/end.txt'"
+    ;;
+alw)
+    echo "== alw:  a program disallows menu functions (ALWPRB, manager stream 20h-33h)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:alw_end:30" run alw 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/ALWPRB.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\ALWPRB_20_21_22_23_24_25_26_27_28_2E_31_32_33 wait:alwprb_ready:30 sleep:1 $M text:menu key:o sleep:1 key:c sleep:1 text:menuo key:r wait:Tune_Performance:10 text:rear key:m sleep:1 key:1 sleep:1 text:rearm key:esc sleep:1 key:esc sleep:1 key:x sleep:2 $M text:menu2 key:esc sleep:1 type:C:\\ALWPRB_30 wait:alwprb_ready:30 sleep:1 key:alt sleep:2 text:nomenu key:x sleep:2 $M text:menu3 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_alw_end"
+    d=$OUT/alw
+    check "disallowed (20h-28h, 2Eh, 31h-33h):  Open, Switch, Close, Zoom, Mark, Quit without their keys; Rearrange and Scissors stay" "! grep -q 'Open Window *O' '$d/menu.txt' && ! grep -q 'Switch Windows *S' '$d/menu.txt' && ! grep -q 'Close Window *C' '$d/menu.txt' && ! grep -q 'Zoom *Z' '$d/menu.txt' && ! grep -q 'Mark *M' '$d/menu.txt' && ! grep -q 'Quit MaxView *Q' '$d/menu.txt' && grep -q 'Rearrange *R' '$d/menu.txt'"
+    check "O and C do nothing (the main menu stays)" "grep -q 'Rearrange *R' '$d/menuo.txt' && ! grep -q 'Are you sure' '$d/menuo.txt' && ! grep -q 'Add a Program' '$d/menuo.txt'"
+    check "Rearrange:  Move, Resize, Scroll, Position, Freeze, Hide, Put Aside without keys, Change Colors stays" "! grep -q 'Move *M' '$d/rear.txt' && ! grep -q 'Resize *R' '$d/rear.txt' && ! grep -q 'Scroll *S' '$d/rear.txt' && ! grep -q 'Position *1-9' '$d/rear.txt' && ! grep -q 'Freeze *F' '$d/rear.txt' && ! grep -q 'Hide *H' '$d/rear.txt' && ! grep -q 'Put Aside *P' '$d/rear.txt' && grep -q 'Change Colors *C' '$d/rear.txt' && grep -q 'Tune Performance' '$d/rearm.txt'"
+    check "the program ended:  its functions allowed again" "grep -q 'Open Window *O' '$d/menu2.txt' && grep -q 'Quit MaxView *Q' '$d/menu2.txt' && grep -q 'Zoom *Z' '$d/menu2.txt'"
+    check "30h:  the DESQ key opens no menu, the program keeps the keyboard" "! grep -q 'Switch Windows' '$d/nomenu.txt' && grep -q 'Switch Windows *S' '$d/menu3.txt'"
+    check "DOS works afterwards" "grep -q '^alw end' '$d/end.txt'"
     ;;
 swap)
     echo "== swap:  a window put aside swapped out when memory runs out, back when switched to"

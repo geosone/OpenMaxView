@@ -1071,6 +1071,25 @@ static int mark_on, mark_more;          /* begun (B, M:  added) */
  * event of Copy (4Eh) or Cut (4Dh) while marking for it (Mark's mode, 0:
  * Mark itself); the task told of the DESQ key (50h) */
 static unsigned long scis_mask;
+static unsigned long deny_mask;         /* the front window's (MVD_*) */
+
+/* key, or no key (unavailable) when the front window disallowed all of
+ * bits (DESQview 2.80, measured:  tests/alwprb.asm) */
+static const char *allowed(const char *key, unsigned long bits)
+{
+    return (deny_mask & bits) == bits ? "" : key;
+}
+
+/* Quit:  not while a window disallows Close or Quit */
+static int quit_denied(void)
+{
+    unsigned t;
+
+    for (t = 1; t < MVK_MAXTASK; ++t)
+        if (task_live[t] && mvhost_deny(t) & (MVD_CLOSE | MVD_QUIT))
+            return 1;
+    return 0;
+}
 static int scis_event;
 static unsigned dvkey_task;
 
@@ -2208,16 +2227,19 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         break;
     case DV_REARRANGE:
         dv_begin("Rearrange", 22);
-        dv_add(DV_ITEM, "Move", "M", A_MOVE);
-        dv_add(DV_ITEM, "Resize", "R", A_RESIZE);
-        dv_add(DV_ITEM, "Scroll", "S", A_SCROLL);
-        dv_add(DV_ITEM, "Position", "1-9", A_POSITION);
+        dv_add(DV_ITEM, "Move", allowed("M", MVD_HMOVE | MVD_VMOVE), A_MOVE);
+        dv_add(DV_ITEM, "Resize", allowed("R", MVD_HSIZE | MVD_VSIZE),
+               A_RESIZE);
+        dv_add(DV_ITEM, "Scroll", allowed("S", MVD_HSCROLL | MVD_VSCROLL),
+               A_SCROLL);
+        dv_add(DV_ITEM, "Position", deny_mask & (MVD_HMOVE | MVD_VMOVE) ? ""
+               : "1-9", A_POSITION);
         dv_add(DV_LINE, "", "", 0);
         t = front();
-        dv_add(DV_ITEM, t != 0 && win[t].frozen ? "Unfreeze" : "Freeze", "F",
-               A_FREEZE);
-        dv_add(DV_ITEM, "Hide", "H", A_HIDE);
-        dv_add(DV_ITEM, "Put Aside", "P", A_ASIDE);
+        dv_add(DV_ITEM, t != 0 && win[t].frozen ? "Unfreeze" : "Freeze",
+               allowed("F", MVD_FREEZE), A_FREEZE);
+        dv_add(DV_ITEM, "Hide", allowed("H", MVD_HIDE), A_HIDE);
+        dv_add(DV_ITEM, "Put Aside", allowed("P", MVD_FREEZE), A_ASIDE);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Change Colors", "C", A_COLORS);
         dv_add(DV_ITEM, "Video Options", "V", A_VIDEO);
@@ -2324,9 +2346,11 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
     case DV_MRS:                        /* while moving, resizing, scrolling:
                                          * the bar on the one going on */
         dv_begin("Rearrange", 22);
-        dv_add(DV_ITEM, "Move", "M", A_MOVE);
-        dv_add(DV_ITEM, "Resize", "R", A_RESIZE);
-        dv_add(DV_ITEM, "Scroll", "S", A_SCROLL);
+        dv_add(DV_ITEM, "Move", allowed("M", MVD_HMOVE | MVD_VMOVE), A_MOVE);
+        dv_add(DV_ITEM, "Resize", allowed("R", MVD_HSIZE | MVD_VSIZE),
+               A_RESIZE);
+        dv_add(DV_ITEM, "Scroll", allowed("S", MVD_HSCROLL | MVD_VSCROLL),
+               A_SCROLL);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Done", "Enter", 0);
         break;
@@ -2350,14 +2374,16 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         break;
     default:
         dv_begin("MaxView", 22);
-        dv_add(DV_ITEM, "Open Window", "O", A_OPEN);
-        dv_add(DV_ITEM, "Switch Windows", "S", A_SWITCH);
-        dv_add(DV_ITEM, "Close Window", "C", A_CLOSE);
+        dv_add(DV_ITEM, "Open Window", allowed("O", MVD_OPEN), A_OPEN);
+        dv_add(DV_ITEM, "Switch Windows", allowed("S", MVD_SWITCH), A_SWITCH);
+        dv_add(DV_ITEM, "Close Window", allowed("C", MVD_CLOSE), A_CLOSE);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Rearrange", "R", A_REARRANGE);
-        dv_add(DV_ITEM, "Zoom", "Z", A_ZOOM);
+        dv_add(DV_ITEM, "Zoom", deny_mask & (MVD_HSIZE | MVD_VSIZE) ? "" : "Z",
+               A_ZOOM);
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Mark", "M", A_MARK);
+        dv_add(DV_ITEM, "Mark", deny_mask & (MVD_FREEZE | MVD_COPY) ? "" : "M",
+               A_MARK);
         dv_add(DV_ITEM, "Transfer", "T", A_TRANSFER);
         dv_add(DV_ITEM, "Scissors",
                scis_mask & (MVN_CUT | MVN_COPY | MVN_PASTE) ? "X" : "",
@@ -2367,7 +2393,8 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
             dv_add(DV_ITEM, "Help for Program", "F1", A_PHELP);
         else
             dv_add(DV_ITEM, "Help", "F1", A_HELP);
-        dv_add(DV_ITEM, "Quit MaxView", close_asked() ? "" : "Q", A_QUIT);
+        dv_add(DV_ITEM, "Quit MaxView",
+               close_asked() || quit_denied() ? "" : "Q", A_QUIT);
         break;
     }
 }
@@ -2514,6 +2541,11 @@ static int windows_view(odq_catalog *catalog, char *status)
             menu = DV_MAIN;
         }
         focus = mvk_focused();
+        if (focus == 0 && last_focus != 0 &&    /* the program disallowed */
+            mvhost_deny(last_focus) & MVD_DVMENU) {     /* the menu */
+            to_window(last_focus);
+            continue;
+        }
         if (focus == 0 && last_focus != 0) {    /* Alt:  the menu again */
             menu = DV_MAIN;
             fresh = 1;
@@ -2532,6 +2564,7 @@ static int windows_view(odq_catalog *catalog, char *status)
             dvkey_task = 0;
         }
         scis_mask = t != 0 ? mvhost_notify(t) : 0;
+        deny_mask = t != 0 ? mvhost_deny(t) : 0;
         if (t != last_front) {          /* another window in front */
             notify(last_front, 0x4b, 1, 0, 0);
             notify(t, 0x4a, 1, 0, 0);
@@ -2621,6 +2654,10 @@ static int windows_view(odq_catalog *catalog, char *status)
             if (mode == 1) {            /* (the program told, each step) */
                 unsigned top = w->top, left = w->left;
 
+                if ((scan == 72 || scan == 80) && deny_mask & MVD_VMOVE)
+                    scan = 0;           /* (that direction disallowed) */
+                if ((scan == 75 || scan == 77) && deny_mask & MVD_HMOVE)
+                    scan = 0;
                 if (scan == 72 && w->top > 1) --w->top;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1) ++w->top;
                 if (scan == 75 && w->left > 1) --w->left;
@@ -2632,6 +2669,10 @@ static int windows_view(odq_catalog *catalog, char *status)
             } else if (mode == 2) {
                 unsigned rows = w->rows, cols = w->cols;
 
+                if ((scan == 72 || scan == 80) && deny_mask & MVD_VSIZE)
+                    scan = 0;
+                if ((scan == 75 || scan == 77) && deny_mask & MVD_HSIZE)
+                    scan = 0;
                 if (scan == 72 && w->rows > 3) --w->rows;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1 &&
                     w->rows < SCREEN_ROWS) ++w->rows;
@@ -2651,7 +2692,13 @@ static int windows_view(odq_catalog *catalog, char *status)
                 if (w->fg == 7 && w->bg == 0)
                     w->colors = 0;
             } else if (mode == 3 && (scan == 75 || scan == 77) &&
-                       notify_scroll(t, 0x44, scan == 77 ? 1 : -1))
+                       deny_mask & MVD_HSCROLL)
+                ;
+            else if (mode == 3 && (scan == 72 || scan == 80) &&
+                     deny_mask & MVD_VSCROLL)
+                ;
+            else if (mode == 3 && (scan == 75 || scan == 77) &&
+                     notify_scroll(t, 0x44, scan == 77 ? 1 : -1))
                 ;
             else if (mode == 3 && (scan == 72 || scan == 80) &&
                      notify_scroll(t, 0x45, scan == 80 ? 1 : -1))
@@ -2913,7 +2960,8 @@ static int windows_view(odq_catalog *catalog, char *status)
             act = menu == DV_MAIN && scis_mask & MVN_HELP ? A_PHELP : A_HELP;
         else if (key == 13 && dv_usable(dv_sel))
             act = dv_items[dv_sel].act;
-        else if (menu == DV_REARRANGE && key >= '1' && key <= '9' && scan == 0)
+        else if (menu == DV_REARRANGE && key >= '1' && key <= '9' &&
+                 scan == 0 && !(deny_mask & (MVD_HMOVE | MVD_VMOVE)))
             act = A_PLACE + key - '1';
         else
             act = dv_find(key, scan);

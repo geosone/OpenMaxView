@@ -233,6 +233,12 @@ $(BUILD)/NTFPRB.COM: $(BUILD)/ntfprb.obj
 $(BUILD)/MVTEST.PLB: tests/panels/mkplb.py | $(BUILD)
 	python3 $< $@
 
+$(BUILD)/alwprb.obj: tests/alwprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/ALWPRB.COM: $(BUILD)/alwprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name ALWPRB.COM option quiet option map=ALWPRB.MAP file alwprb.obj
+
 $(BUILD)/panprb.obj: tests/panprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

@@ -40,6 +40,23 @@ int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size);
 #define MVN_DVKEY (1ul << 0x10)
 #define MVN_DVDONE (1ul << 0x11)
 unsigned long mvhost_notify(unsigned task);
+/* The menu functions task's window disallowed (manager stream 20h-33h,
+ * DESQview's win_disallow):  bit N ALW_* N (MVD_*); 0 without MAXVTSR */
+#define MVD_HMOVE  (1ul << 0x00)
+#define MVD_VMOVE  (1ul << 0x01)
+#define MVD_HSIZE  (1ul << 0x02)
+#define MVD_VSIZE  (1ul << 0x03)
+#define MVD_HSCROLL (1ul << 0x04)
+#define MVD_VSCROLL (1ul << 0x05)
+#define MVD_CLOSE  (1ul << 0x06)
+#define MVD_HIDE   (1ul << 0x07)
+#define MVD_FREEZE (1ul << 0x08)
+#define MVD_COPY   (1ul << 0x0e)
+#define MVD_DVMENU (1ul << 0x10)
+#define MVD_SWITCH (1ul << 0x11)
+#define MVD_OPEN   (1ul << 0x12)
+#define MVD_QUIT   (1ul << 0x13)
+unsigned long mvhost_deny(unsigned task);
 /* A notification message (len bytes, up to 128) into task's own mailbox
  * (MAXVTSR, INT 2Fh D70Fh), as DESQview sends them (handle:  its window's
  * handle put in bytes 1-4):  1, else 0. */

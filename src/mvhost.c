@@ -237,6 +237,19 @@ unsigned long mvhost_notify(unsigned task)
     return (unsigned long)r.x.dx << 16 | r.x.ax;
 }
 
+unsigned long mvhost_deny(unsigned task)
+{
+    union REGS r;
+
+    r.x.ax = 0xd711;
+    r.x.bx = task;
+    r.x.dx = 0;
+    int86(0x2f, &r, &r);
+    if (r.x.ax == 0xd711 && r.x.dx == 0)      /* (no MAXVTSR) */
+        return 0;
+    return (unsigned long)r.x.dx << 16 | r.x.ax;
+}
+
 int mvhost_note(unsigned task, const void *msg, unsigned len, int handle)
 {
     union REGS r;
