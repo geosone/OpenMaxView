@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -542,6 +542,29 @@ dial)
     check "COM1:  ATDT9,5551234; then ATDT5551234; then ATZ" "[ '$com' = 'ATDT9,5551234;|ATDT5551234;|ATZ|' ]"
     check "Talk shown" "grep -q 'the modem has hung up' '$d/talk.txt'"
     check "DOS works afterwards" "grep -q '^dial end' '$d/end.txt'"
+    ;;
+scis)
+    echo "== scis:  window notifications and Scissors (NTFPRB asks for 40h-51h)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:scis_end:30" run scis 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $M text:menu key:x wait:Paste:10 text:scis key:c wait:Mark_Begin:10 key:down,down,right,right key:b key:right,right,down sleep:1 text:marking key:e sleep:2 text:copied $M text:menu2 key:x wait:Paste:10 key:u wait:Mark_Begin:10 key:b,right key:e sleep:2 key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_scis_end"
+    d=$OUT/scis
+    n1=$(file scis N1.TXT)
+    echo "$n1" | sed 's/^/  /'
+    win=$(echo "$n1" | sed -n 's/^win \(....\):\(....\)$/\2 \1/p')
+    h=$(echo "$win" | awk '{print substr($1,3,2)" "substr($1,1,2)" "substr($2,3,2)" "substr($2,1,2)}')
+    check "a window asking for Cut, Copy, Paste:  Scissors X in the menu" "grep -q 'Scissors *X' '$d/menu.txt'"
+    check "Scissors:  Copy C, Cut U, Paste without a key" "grep -q 'Copy *C' '$d/scis.txt' && grep -q 'Cut *U' '$d/scis.txt' && ! grep -q 'Paste *P' '$d/scis.txt'"
+    check "Copy:  Mark Begin B, Mark End E after it, the hint" "grep -q 'Mark End *E' '$d/marking.txt' && grep -q 'B begin, E end (to the program)' '$d/marking.txt'"
+    check "Copy told:  2 x 3" "grep -q 'Copy:  2 x 3 to the program' '$d/copied.txt'"
+    check "the DESQ key (50h) and its end (51h), as 1-byte messages in the own mailbox" "echo \"\$n1\" | grep -q '^  a 50' && echo \"\$n1\" | grep -q '^  a 51'"
+    check "Copy:  4Eh, the window's handle ($h), row 2, column 2, 2 rows, 3 columns (14 bytes)" "echo \"\$n1\" | grep -A1 '0000:000E' | grep -q '^  a 4E $h 02 02 00 00 00 00 00 02 03'"
+    check "Cut:  4Dh, row 0, column 0, 1 row, 2 columns" "echo \"\$n1\" | grep -q '^  a 4D $h 00 00 00 00 00 00 00 01 02'"
+    check "the messages come from the own mailbox (HANDLE 03h)" "m=\$(echo \"\$n1\" | sed -n 's/^mbx //p'); [ -n \"\$m\" ] && echo \"\$n1\" | grep -q \"^q \$m\""
+    check "the program read its x and ended, DOS works afterwards" "grep -q '^scis end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

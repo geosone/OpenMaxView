@@ -224,6 +224,35 @@ void mvhost_title(unsigned task, const char *title)
     int86x(0x2f, &r, &r, &s);
 }
 
+unsigned long mvhost_notify(unsigned task)
+{
+    union REGS r;
+
+    r.x.ax = 0xd70e;
+    r.x.bx = task;
+    r.x.dx = 0;
+    int86(0x2f, &r, &r);
+    if (r.x.ax == 0xd70e && r.x.dx == 0)      /* (no MAXVTSR) */
+        return 0;
+    return (unsigned long)r.x.dx << 16 | r.x.ax;
+}
+
+int mvhost_note(unsigned task, const void *msg, unsigned len, int handle)
+{
+    union REGS r;
+    struct SREGS s;
+
+    segread(&s);
+    s.es = s.ds;
+    r.x.ax = 0xd70f;
+    r.x.bx = task;
+    r.x.cx = len;
+    r.x.dx = handle != 0;
+    r.x.di = (unsigned)msg;
+    int86x(0x2f, &r, &r, &s);
+    return r.x.ax == 0;
+}
+
 int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size)
 {
     union REGS r;

@@ -94,9 +94,12 @@ codes 1-3 of MAXVSET.INI and sends the modem the dial command, the code, the
 number and `;` (the modem goes back to its commands, the call stays on the
 line); when it rings, Talk (T) sends the hang-up command and the phone has
 the call. The modem's port and commands are in MAXVSET.INI (see
-CONFIGURATION.md). Scissors is shown in dark grey:  DESQview offers it only
-to programs written for its Copy, Cut and Paste, which MaxView does not
-support yet. A message (a program that ended, for example) shows on the
+CONFIGURATION.md). Scissors (X) is there for a program written for
+DESQview that asks for its Copy and Cut (otherwise it is shown in dark
+grey, as in DESQview):  Copy (C) or Cut (U) put the mark's cursor at the
+window's top left, B begins the area, the arrows extend it and E ends it;
+the program is told the area and does the copying or cutting itself. Paste
+has no key yet. A message (a program that ended, for example) shows on the
 bottom row until the next key.
 
 A window shows the part of its program's 80x25 screen that holds the

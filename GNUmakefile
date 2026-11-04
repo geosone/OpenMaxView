@@ -224,6 +224,12 @@ $(BUILD)/obqprb.obj: tests/obqprb.asm | $(BUILD)
 $(BUILD)/OBQPRB.COM: $(BUILD)/obqprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name OBQPRB.COM option quiet option map=OBQPRB.MAP file obqprb.obj
 
+$(BUILD)/ntfprb.obj: tests/ntfprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/NTFPRB.COM: $(BUILD)/ntfprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name NTFPRB.COM option quiet option map=NTFPRB.MAP file ntfprb.obj
+
 $(BUILD)/crtprb.obj: tests/crtprb.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 

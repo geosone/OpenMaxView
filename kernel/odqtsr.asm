@@ -73,6 +73,14 @@
 ;   INT 2Fh AX=D70Dh, BX=task        for the host:  AX=0, DX = the place
 ;                                    (row, column) and CX the size of its
 ;                                    sized window (own_make); else AX=1
+;   INT 2Fh AX=D70Eh, BX=task        for the host:  DX:AX = the notifications
+;                                    its window asked for (manager stream
+;                                    40h-51h:  bit N event 40h+N)
+;   INT 2Fh AX=D70Fh, BX=task        from the host:  ES:DI, CX bytes (up to
+;                                    128) to its own mailbox, as DESQview's
+;                                    notification messages (DX bit 0:  its
+;                                    window's handle in bytes 1-4); AX=0,
+;                                    else 1
 ;   INT 2Fh AX=D70Bh                 for the host (task 0):  AX=0, ES:BX =
 ;                                    an APP_START asked (appreq), else AX=1
 
@@ -130,6 +138,8 @@ MUX_FOREGROUND equ 0D70Ah
 MUX_APP_START  equ 0D70Bh
 MUX_TITLE      equ 0D70Ch
 MUX_GEOM       equ 0D70Dh
+MUX_NOTIFY     equ 0D70Eh
+MUX_NOTE       equ 0D70Fh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
 TASK_OBJECT_COUNT equ 32              ; task 0 .. 31 of the multitasking core
@@ -4160,15 +4170,24 @@ window_stream_ret:
         pop     ax
         ret
 
-; A manager stream (type 10h) at SI up to DI:  BCh / BDh the standard /
-; alternate field mode (the cursor keys in menus), BEh, BFh nothing,
-; C0h-C2h the window (object) on top, C3h, C4h (2 arguments) nothing;
-; another opcode ends it.
+; A manager stream (type 10h) at SI up to DI:  40h-51h the task asks for
+; a notification (that event), 60h-71h no longer (notify_set); BCh / BDh
+; the standard / alternate field mode (the cursor keys in menus), BEh, BFh
+; nothing, C0h-C2h the window (object) on top, C3h, C4h (2 arguments)
+; nothing; another opcode ends it.
 window_manager:
         push    ax
 window_manager_next:
         call    window_byte
         jc      short window_manager_ret
+        cmp     al,40h
+        jb      short window_manager_not_notify
+        cmp     al,71h
+        ja      short window_manager_not_notify
+        call    notify_set
+        jnc     short window_manager_next
+        jmp     short window_manager_ret
+window_manager_not_notify:
         cmp     al,0BCh
         jne     short window_manager_not_bc
         mov     byte ptr cs:field_alt,0
@@ -4380,6 +4399,140 @@ own_resize_ret:
         pop     bp
         pop     di
         pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+; D70Fh:  ES:DI, CX bytes (up to MAILBOX_MESSAGE_SIZE) from the host into
+; the own mailbox of task BX (made if it has none yet), sender 0; DX bit 0
+; (and 5 bytes at least):  bytes 1-4 the task's window handle (its task
+; handle, offset 0); AX = 0, else 1 (no such task, the mailbox full or
+; closed, too long).
+note_put:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    ds
+        push    es
+        cli
+        mov     ax,bx
+        cmp     ax,TASK_OBJECT_COUNT
+        jae     note_put_no
+        shl     bx,1                  ; its handle
+        add     bx,word ptr cs:task_objects_base
+        mov     word ptr cs:note_handle,bx
+        mov     word ptr cs:note_flags,dx
+        mov     word ptr cs:note_len,cx
+        inc     ax                    ; its tag
+        call    task_mailbox_of
+        jc      note_put_no
+        cmp     word ptr cs:mailbox_open[si],1
+        jne     note_put_no
+        cmp     word ptr cs:mailbox_count[si],MAILBOX_QUEUE_DEPTH
+        jae     note_put_no
+        cmp     cx,MAILBOX_MESSAGE_SIZE
+        ja      note_put_no
+        mov     bx,si
+        shl     bx,1                  ; four entries per mailbox
+        add     bx,word ptr cs:mailbox_tail[si]
+        mov     byte ptr cs:mailbox_message_reference[bx],0
+        mov     byte ptr cs:mailbox_message_status[bx],0
+        mov     dx,bx
+        shl     bx,1
+        mov     word ptr cs:mailbox_message_length[bx],cx
+        mov     word ptr cs:mailbox_message_sender[bx],0
+        add     word ptr cs:mailbox_bytes[si],cx
+        inc     word ptr cs:mailbox_count[si]
+        inc     word ptr cs:mailbox_tail[si]
+        cmp     word ptr cs:mailbox_tail[si],MAILBOX_QUEUE_DEPTH
+        jb      short note_put_copy
+        mov     word ptr cs:mailbox_tail[si],0
+note_put_copy:
+        mov     si,di                 ; ES:DI to its entry
+        push    es
+        pop     ds
+        mov     di,dx
+        push    cx
+        mov     cl,7
+        shl     di,cl
+        pop     cx
+        add     di,offset mailbox_message_data
+        push    cs
+        pop     es
+        cld
+        rep     movsb
+        test    byte ptr cs:note_flags,1
+        jz      short note_put_done
+        cmp     word ptr cs:note_len,5
+        jb      short note_put_done
+        sub     di,word ptr cs:note_len
+        mov     word ptr cs:[di+1],0
+        mov     ax,word ptr cs:note_handle
+        mov     word ptr cs:[di+3],ax
+note_put_done:
+        xor     ax,ax
+        jmp     short note_put_ret
+note_put_no:
+        mov     ax,1
+note_put_ret:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
+
+; Manager stream opcode AL (40h-71h):  40h-51h sets, 60h-71h clears the
+; calling task's notify bit (AL and 1Fh); CF:  another opcode (52h-5Fh).
+; A subtask's go to its task's window as well (they share it).
+notify_set:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        mov     ch,al                 ; the opcode
+        mov     cl,al
+        and     cl,1Fh
+        cmp     cl,11h
+        ja      short notify_set_no
+        mov     bx,word ptr cs:task_handle_segment
+        sub     bx,word ptr cs:task_objects_base
+        shr     bx,1
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short notify_set_done
+        shl     bx,1
+        shl     bx,1
+        mov     dx,1                  ; its bit:  DX the low word's, AX the
+        xor     ax,ax                 ; high word's
+        cmp     cl,10h
+        jb      short notify_set_shift
+        sub     cl,10h
+        xchg    ax,dx
+notify_set_shift:
+        shl     dx,cl
+        shl     ax,cl
+        test    ch,20h
+        jnz     short notify_set_clear
+        or      word ptr cs:notify_mask[bx],dx
+        or      word ptr cs:notify_mask[bx+2],ax
+        jmp     short notify_set_done
+notify_set_clear:
+        not     dx
+        not     ax
+        and     word ptr cs:notify_mask[bx],dx
+        and     word ptr cs:notify_mask[bx+2],ax
+notify_set_done:
+        clc
+        jmp     short notify_set_ret
+notify_set_no:
+        stc
+notify_set_ret:
         pop     dx
         pop     cx
         pop     bx
@@ -9305,6 +9458,28 @@ int2f_geom_ret:
         popf
         iret
 int2f_not_geom:
+        cmp     ax,MUX_NOTIFY
+        jne     short int2f_not_notify
+        xor     ax,ax
+        xor     dx,dx
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short int2f_notify_ret
+        push    bx
+        shl     bx,1
+        shl     bx,1
+        mov     ax,word ptr cs:notify_mask[bx]
+        mov     dx,word ptr cs:notify_mask[bx+2]
+        pop     bx
+int2f_notify_ret:
+        popf
+        iret
+int2f_not_notify:
+        cmp     ax,MUX_NOTE
+        jne     short int2f_not_note
+        call    note_put
+        popf
+        iret
+int2f_not_note:
         cmp     ax,MUX_TASK_STATE
         jne     short int2f_not_task_state
         push    cs
@@ -9396,6 +9571,8 @@ int2f_task_end:
         shl     si,1
         mov     word ptr cs:own_geom[si],0
         mov     word ptr cs:own_geom[si+2],0
+        mov     word ptr cs:notify_mask[si],0 ; and its notifications
+        mov     word ptr cs:notify_mask[si+2],0
 task_end_dead:
         mov     al,bl
         inc     al                    ; its tag
@@ -9690,6 +9867,11 @@ appreq_dvp     db APPREQ_MAX dup(0)
 task_titles    db (TASK_OBJECT_COUNT * TITLE_MAX) dup(0) ; D70Ch
 own_tbuf       db (TITLE_MAX + 4) dup(0) ; own_title's
 own_geom       dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Dh:  place, size
+note_handle    dw 0                   ; note_put's
+note_flags     dw 0
+note_len       dw 0
+notify_mask    dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Eh:  the notifications
+                                      ; each task asked for (bit N:  40h+N)
 mailbox_handle_segments dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_open   dw MAILBOX_SLOT_COUNT dup(0)
 mailbox_status dw MAILBOX_SLOT_COUNT dup(0)

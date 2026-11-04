@@ -29,5 +29,18 @@ void mvhost_title(unsigned task, const char *title);
  * place (row << 8 | column) on the task's screen, *size rows << 8 |
  * columns; else 0. */
 int mvhost_owngeom(unsigned task, unsigned *pos, unsigned *size);
+/* The notifications task's window asked for (MAXVTSR, INT 2Fh D70Eh:  its
+ * manager stream's 40h-51h):  bit N event 40h + N (MVN_*); 0 without
+ * MAXVTSR. */
+#define MVN_CUT   (1ul << 0x0d)
+#define MVN_COPY  (1ul << 0x0e)
+#define MVN_PASTE (1ul << 0x0f)
+#define MVN_DVKEY (1ul << 0x10)
+#define MVN_DVDONE (1ul << 0x11)
+unsigned long mvhost_notify(unsigned task);
+/* A notification message (len bytes, up to 128) into task's own mailbox
+ * (MAXVTSR, INT 2Fh D70Fh), as DESQview sends them (handle:  its window's
+ * handle put in bytes 1-4):  1, else 0. */
+int mvhost_note(unsigned task, const void *msg, unsigned len, int handle);
 
 #endif

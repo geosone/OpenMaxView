@@ -962,6 +962,12 @@ static char __far mark_text[MARK_MAX];  /* the lines, '\n' between (far:
                                          * DGROUP is full) */
 static unsigned mark_len, mark_task, mark_row, mark_col, mark_brow, mark_bcol;
 static int mark_on, mark_more;          /* begun (B, M:  added) */
+/* Scissors:  the notifications the front window's program asked for, the
+ * event of Copy (4Eh) or Cut (4Dh) while marking for it (Mark's mode, 0:
+ * Mark itself); the task told of the DESQ key (50h) */
+static unsigned long scis_mask;
+static int scis_event;
+static unsigned dvkey_task;
 static unsigned short __far xfer[MARK_MAX + 1];
 static unsigned xfer_n, xfer_i, xfer_task;
 /* in a script:  a fixed-size pause (that many keys of the user's), a
@@ -1753,7 +1759,9 @@ static void compose(int mode)
             sprintf(learn_hint, " Script on %s, its name:  %s_  (Enter:  learn, Esc:  back) ",
                     key_name(learn.key), learn.name);
 
-        swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
+        swrite(desk_rows - 1, 0, mode == 6 && scis_event
+               ? " Copy, Cut:  arrows, B begin, E end (to the program), Esc back "
+               : hint[mode - 1], 0x70);
     }
     if (focus == 0 && mode <= 3 || focus == 0 && mode == 6)
         dv_menu_draw();
@@ -1935,7 +1943,7 @@ static int dv_find(int key, int scan)
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
     DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE, DV_MRS, DV_LEARN,
-    DV_SCRIPTS, DV_DIAL
+    DV_SCRIPTS, DV_DIAL, DV_SCISSORS, DV_SMARK
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
@@ -1943,7 +1951,7 @@ enum {
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
     A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
-    A_LFIXED, A_LVAR, A_LDELAY,
+    A_LFIXED, A_LVAR, A_LDELAY, A_SCISSORS, A_SCOPY, A_SCUT,
     A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -2068,6 +2076,17 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Dial", phone[0] ? "D" : "", 0);
         dv_add(DV_ITEM, "Talk", "T", 0);
         break;
+    case DV_SCISSORS:                   /* for a program asking for them */
+        dv_begin("Scissors", 22);
+        dv_add(DV_ITEM, "Copy", scis_mask & MVN_COPY ? "C" : "", A_SCOPY);
+        dv_add(DV_ITEM, "Cut", scis_mask & MVN_CUT ? "U" : "", A_SCUT);
+        dv_add(DV_ITEM, "Paste", "", 0);
+        break;
+    case DV_SMARK:                      /* (its keys:  windows_view) */
+        dv_begin(scis_event == 0x4d ? "Cut" : "Copy", 22);
+        dv_add(DV_ITEM, "Mark Begin", "B", 0);
+        dv_add(DV_ITEM, "Mark End", mark_on ? "E" : "", 0);
+        break;
     case DV_DIAL:                       /* (its keys:  windows_view) */
         dv_begin("Dial", 22);
         dv_add(DV_ITEM, "Local", "L", 0);
@@ -2150,7 +2169,9 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Mark", "M", A_MARK);
         dv_add(DV_ITEM, "Transfer", "T", A_TRANSFER);
-        dv_add(DV_ITEM, "Scissors", "", 0);
+        dv_add(DV_ITEM, "Scissors",
+               scis_mask & (MVN_CUT | MVN_COPY | MVN_PASTE) ? "X" : "",
+               A_SCISSORS);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Help", "F1", A_HELP);
         dv_add(DV_ITEM, "Quit MaxView", "Q", A_QUIT);
@@ -2296,7 +2317,21 @@ static int windows_view(odq_catalog *catalog, char *status)
         if (focus == 0 && last_focus != 0) {    /* Alt:  the menu again */
             menu = DV_MAIN;
             fresh = 1;
+            if (mvhost_notify(last_focus) & MVN_DVKEY) {
+                static const unsigned char dvkey = 0x50;
+
+                mvhost_note(last_focus, &dvkey, 1, 0);
+                dvkey_task = last_focus;
+            }
         }
+        if (focus != 0 && last_focus == 0 && dvkey_task != 0) {
+            static const unsigned char dvdone = 0x51;   /* the menu left */
+
+            if (mvhost_notify(dvkey_task) & MVN_DVDONE)
+                mvhost_note(dvkey_task, &dvdone, 1, 0);
+            dvkey_task = 0;
+        }
+        scis_mask = t != 0 ? mvhost_notify(t) : 0;
         if (learn_req && focus == 0) {  /* Shift+Alt:  Learn's */
             learn_req = 0;
             menu = DV_LEARN;
@@ -2313,7 +2348,8 @@ static int windows_view(odq_catalog *catalog, char *status)
             if (!dv_usable(dv_sel))
                 dv_bar(0);
         }
-        if (menu == DV_MARK || menu == DV_TRANSFER || menu == DV_DIAL)
+        if (menu == DV_MARK || menu == DV_TRANSFER || menu == DV_DIAL ||
+            menu == DV_SMARK)
             dv_sel = dv_count;          /* (no bar:  their keys act) */
         if (menu == DV_MRS && mode >= 1 && mode <= 3)
             dv_sel = mode - 1;
@@ -2525,6 +2561,44 @@ static int windows_view(odq_catalog *catalog, char *status)
                 mode = 0;
                 menu = DV_HELP;
                 fresh = 1;
+            }
+            continue;
+        }
+        if (mode == 6 && scis_event != 0) {     /* Copy, Cut:  the area */
+            key = toupper(key);
+            if (key == 'B') {
+                mark_on = 1;
+                mark_brow = mark_row;
+                mark_bcol = mark_col;
+            } else if (key == 'E' && mark_on || key == 13 || key == 27) {
+                if (key == 'E') {       /* the program told:  event, its
+                                         * window, row, column, 0, no
+                                         * scrap object, rows, columns */
+                    unsigned char msg[14];
+
+                    memset(msg, 0, sizeof msg);
+                    msg[0] = (unsigned char)scis_event;
+                    msg[5] = (unsigned char)(mark_brow < mark_row ? mark_brow : mark_row);
+                    msg[6] = (unsigned char)(mark_bcol < mark_col ? mark_bcol : mark_col);
+                    msg[12] = (unsigned char)((mark_brow > mark_row ? mark_brow - mark_row
+                                                                   : mark_row - mark_brow) + 1);
+                    msg[13] = (unsigned char)((mark_bcol > mark_col ? mark_bcol - mark_col
+                                                                   : mark_col - mark_bcol) + 1);
+                    if (mvhost_note(t, msg, sizeof msg, 1))
+                        sprintf(status, "%s:  %u x %u to the program.",
+                                scis_event == 0x4e ? "Copy" : "Cut",
+                                msg[12], msg[13]);
+                    else
+                        strcpy(status, "The program's mailbox is full.");
+                }
+                mark_on = 0;
+                scis_event = 0;
+                w->scrolled = saved.scrolled;
+                w->vtop = saved.vtop;
+                w->hoff = saved.hoff;
+                mode = 0;
+                menu = DV_MAIN;
+                to_window(t);
             }
             continue;
         }
@@ -2743,6 +2817,25 @@ static int windows_view(odq_catalog *catalog, char *status)
                     strcpy(status, "MAXVIEW.SCR could not be used.");
                 menu = DV_MAIN;
                 break;
+            case A_SCISSORS:
+                if (scis_mask & (MVN_CUT | MVN_COPY | MVN_PASTE))
+                    menu = DV_SCISSORS;
+                break;
+            case A_SCOPY:               /* Copy, Cut:  marked from the top
+                                         * left, the program told */
+            case A_SCUT:
+                if (!(scis_mask & (act == A_SCOPY ? MVN_COPY : MVN_CUT)))
+                    break;
+                saved = *w;
+                w->scrolled = 1;
+                w->vtop = w->hoff = 0;
+                mark_task = t;
+                mark_row = mark_col = 0;
+                mark_on = 0;
+                scis_event = act == A_SCOPY ? 0x4e : 0x4d;
+                mode = 6;
+                menu = DV_SMARK;
+                break;
             case A_MARK:                /* from its cursor, the view kept
                                          * still while marking */
                 {
@@ -2759,6 +2852,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                     mark_row = cur >> 8 < SCREEN_ROWS ? cur >> 8 : 0;
                     mark_col = (cur & 0xff) < SCREEN_COLS ? cur & 0xff : 0;
                     mark_on = 0;
+                    scis_event = 0;
                     mode = 6;
                     menu = DV_MARK;
                 }
