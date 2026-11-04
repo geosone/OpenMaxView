@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video mark help catalog dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -462,6 +462,23 @@ catalog)
     check "Delete:  asked first, then gone from Open Window" "grep -q 'TickA' '$d/delconf.txt' && grep -q 'TickA deleted' '$d/deleted.txt' && ! grep -q 'TickA *A' '$d/open3.txt' && grep -q 'ticker *B' '$d/open3.txt'"
     check "MAXVIEW.CFG:  only the changed program" "[ \"$(file catalog MAXVIEW.CFG | grep -v '^#')\" = 'B|ticker|C:\\tick.exe C:\\tb.txt||64|128' ]"
     check "DOS works afterwards" "grep -q '^catalog end' '$d/end.txt'"
+    ;;
+mrs)
+    echo "== mrs:  Rearrange's Move / Resize / Scroll box, switching between them"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:mrs_end:30" run mrs 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg" \
+        "wait:Open_Program:60 key:ret sleep:3 $M text:before key:r wait:Tune_Performance:10 key:m wait:Move:__arrows:10 text:move key:right,right,right,down,down sleep:1 text:moved key:r wait:Resize:__arrows:10 text:resize key:right,right sleep:1 text:resized key:s wait:Scroll:__arrows:10 key:ret sleep:1 text:done $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_mrs_end"
+    d=$OUT/mrs
+    fr() { grep -n 'TickA' "$d/$1.txt" | head -1 | awk -F: '{print $1 ":" index($0, "TickA")}'; }
+    echo "  title before $(fr before), moved $(fr moved)"
+    check "Move:  the box (Move, Resize, Scroll, Done) with the hint" "grep -q 'Resize *R' '$d/move.txt' && grep -q 'Scroll *S' '$d/move.txt' && grep -q 'Done *Enter' '$d/move.txt' && grep -q 'R resize, S scroll' '$d/move.txt'"
+    check "Move:  the window 2 down, 3 right" "[ '$(fr moved)' != '$(fr before)' ]"
+    check "R:  resizing from there, S:  scrolling" "grep -q 'M move, S scroll' '$d/resize.txt'"
+    check "Enter:  done, back in the window (no box, no hint)" "! grep -q 'Done *Enter' '$d/done.txt' && ! grep -q 'arrows;' '$d/done.txt' && grep -q 'TickA' '$d/done.txt'"
+    check "DOS works afterwards" "grep -q '^mrs end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

@@ -23,7 +23,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 
 | DESQview 2.80 | Open MaxView today | Status |
 |---|---|---|
-| Move, Resize (with the arrows; Move / Resize / Scroll switch between each other) | Rearrange:  Move, Resize with the arrows | Partial (DV's Move / Resize / Scroll box not shown) |
+| Move, Resize (with the arrows; Move / Resize / Scroll switch between each other) | Rearrange:  Move, Resize, Scroll with the arrows, a box with Move M, Resize R, Scroll S (the bar on the one going on) and Done Enter; M, R, S switch between them | Covered |
 | Scroll (the window over the program's screen) | Rearrange:  Scroll (S) with the arrows; the view stays there (otherwise it follows the cursor) | Covered |
 | Position 1-9 (fixed places) | Rearrange:  1-9, the same places (halves, middle, quarters) | Covered |
 | Freeze, Hide, Put Aside | Rearrange:  Freeze (F, again:  Unfreeze) runs the window only while it has the keys; Hide (H) takes it off the screen, running; Put Aside (P) off the screen and held; Switch Windows brings either back | Covered (Put Aside holds the program in memory; DV swaps it out) |

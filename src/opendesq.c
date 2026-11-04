@@ -1467,8 +1467,9 @@ static void compose(int mode)
         swrite(desk_rows - 1, 0, status_line, 0x70);
     if (mode >= 1 && mode <= 8 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
-            " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
-            " Scroll:  arrows, Enter done ", " Position:  1-9 ",
+            " Move:  arrows; R resize, S scroll; Enter done ",
+            " Resize:  arrows; M move, S scroll; Enter done ",
+            " Scroll:  arrows; M move, R resize; Enter done ", " Position:  1-9 ",
             " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back ",
             " Mark:  arrows, B begin, M more, E end, Enter done, Esc back ",
             " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics ",
@@ -1477,7 +1478,7 @@ static void compose(int mode)
 
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
     }
-    if (focus == 0 && (mode == 0 || mode == 6))
+    if (focus == 0 && mode <= 3 || focus == 0 && mode == 6)
         dv_menu_draw();
     if (mode == 7)
         help_draw();
@@ -1656,7 +1657,7 @@ static int dv_find(int key, int scan)
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
-    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE
+    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE, DV_MRS
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
@@ -1786,6 +1787,15 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Mark Phone #", "", 0);
         dv_add(DV_ITEM, "Dial", "", 0);
         dv_add(DV_ITEM, "Talk", "", 0);
+        break;
+    case DV_MRS:                        /* while moving, resizing, scrolling:
+                                         * the bar on the one going on */
+        dv_begin("Rearrange", 22);
+        dv_add(DV_ITEM, "Move", "M", A_MOVE);
+        dv_add(DV_ITEM, "Resize", "R", A_RESIZE);
+        dv_add(DV_ITEM, "Scroll", "S", A_SCROLL);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Done", "Enter", 0);
         break;
     case DV_HELP:
         dv_begin("Help", 22);
@@ -1954,6 +1964,8 @@ static int windows_view(odq_catalog *catalog, char *status)
         }
         if (menu == DV_MARK || menu == DV_TRANSFER)
             dv_sel = dv_count;          /* (no bar:  their keys act) */
+        if (menu == DV_MRS && mode >= 1 && mode <= 3)
+            dv_sel = mode - 1;
         status_line = status;
         if (video_auto && mvk_fg() == 0)  /* (not while a program has the
                                              * screen) */
@@ -2123,6 +2135,14 @@ static int windows_view(odq_catalog *catalog, char *status)
             }
             continue;
         }
+        if (mode >= 1 && mode <= 3) {   /* M, R, S:  the other one */
+            int k = toupper(key);
+
+            if (k == 'M' || k == 'R' || k == 'S') {
+                mode = k == 'M' ? 1 : k == 'R' ? 2 : 3;
+                continue;
+            }
+        }
         if (mode != 0) {
             if (key == 13 || key == 27) {
                 mode = 0;
@@ -2205,12 +2225,15 @@ static int windows_view(odq_catalog *catalog, char *status)
                 break;
             case A_MOVE:
                 mode = 1;
+                menu = DV_MRS;
                 break;
             case A_RESIZE:
                 mode = 2;
+                menu = DV_MRS;
                 break;
             case A_SCROLL:
                 mode = 3;
+                menu = DV_MRS;
                 break;
             case A_COLORS:
                 saved = *w;
