@@ -868,7 +868,7 @@ static void show_tasks(char *status)
     }
 }
 
-static unsigned short scr[DESK_MAX_ROWS * DESK_MAX_COLS];
+static unsigned short __far scr[DESK_MAX_ROWS * DESK_MAX_COLS];   /* (far:  DGROUP is full) */
 static unsigned short cells[SCREEN_ROWS * SCREEN_COLS];
 
 static void sput(unsigned row, unsigned col, unsigned char ch,
@@ -903,6 +903,7 @@ static void set_cursor(unsigned row, unsigned col, int on)
 static const char *status_line = "";
 
 static void dv_menu_draw(void);
+static char learn_hint[80];
 
 /* Change Colors:  a colour (nibble) of the program as its window shows it,
  * black and grey (and their bright ones) the window's colours */
@@ -1231,6 +1232,146 @@ static void help_draw(void)
         sput(top + rows, left + 70, 25, ATTR_ACTIVE);
 }
 
+/* Learn (Shift+Alt):  scripts, the keys typed into a window kept under a
+ * key of their own; that key, pressed in a window, types them again.  The
+ * scripts are MaxView's (not per program as DESQview's); Save and Load use
+ * MAXVIEW.SCR. */
+#define SCRIPTS 16
+#define SCRIPT_LEN 256
+#define SCRIPT_NAME 12
+typedef struct script {
+    unsigned key, len;
+    char name[SCRIPT_NAME + 1];
+} script;
+static script scripts[SCRIPTS];
+static unsigned short __far script_keys[SCRIPTS + 1][SCRIPT_LEN];
+static unsigned nscripts;
+static int learning;                    /* recording into slot SCRIPTS */
+static script learn;                    /* the one being learned */
+
+/* a key's name:  F1-F12, Alt+X, Ctrl+X, the character, else its code */
+static const char *key_name(unsigned w)
+{
+    static char name[12];
+    unsigned scan = w >> 8, ch = w & 0xff;
+    static const char letters[] = "QWERTYUIOP....ASDFGHJKL.....ZXCVBNM";
+
+    if (ch == 0 && scan >= 0x3b && scan <= 0x44)
+        sprintf(name, "F%u", scan - 0x3a);
+    else if (ch == 0 && (scan == 0x85 || scan == 0x86))
+        sprintf(name, "F%u", scan - 0x7a);
+    else if (ch == 0 && scan >= 0x10 && scan <= 0x32 &&
+             letters[scan - 0x10] != '.')
+        sprintf(name, "Alt+%c", letters[scan - 0x10]);
+    else if (ch >= 1 && ch <= 26 && scan != 0x1c && scan != 0x0e &&
+             scan != 0x0f)
+        sprintf(name, "Ctrl+%c", 'A' + ch - 1);
+    else if (ch > ' ' && ch < 127)
+        sprintf(name, "%c", ch);
+    else
+        sprintf(name, "{%04X}", w);
+    return name;
+}
+
+/* the script keys to the core (taken from the window's keys) */
+static void scripts_tap(void)
+{
+    unsigned keys[SCRIPTS], i;
+
+    for (i = 0; i < nscripts; ++i)
+        keys[i] = scripts[i].key;
+    mvk_keytap(keys, nscripts, learning);
+}
+
+static int script_find(unsigned key)
+{
+    unsigned i;
+
+    for (i = 0; i < nscripts; ++i)
+        if (scripts[i].key == key)
+            return (int)i;
+    return -1;
+}
+
+/* Finish Script:  the keys learned kept under its key (its old script
+ * replaced) */
+static void script_finish(void)
+{
+    int i = script_find(learn.key);
+
+    learning = 0;
+    if (i < 0 && nscripts < SCRIPTS)
+        i = (int)nscripts++;
+    if (i >= 0) {
+        scripts[i] = learn;
+        _fmemcpy(script_keys[i], script_keys[SCRIPTS],
+                 learn.len * sizeof script_keys[0][0]);
+    }
+    scripts_tap();
+}
+
+/* script i typed into the program with the keys */
+static void script_play(unsigned i)
+{
+    unsigned n;
+
+    xfer_task = mvk_focused();
+    xfer_n = xfer_i = 0;
+    for (n = 0; n < scripts[i].len && n < MARK_MAX; ++n)
+        xfer[xfer_n++] = script_keys[i][n];
+}
+
+static int scripts_save(void)
+{
+    FILE *f = fopen("MAXVIEW.SCR", "wb");
+    unsigned i, n;
+
+    if (f == NULL)
+        return 0;
+    fputs("MVSCR1", f);
+    fputc((int)nscripts, f);
+    for (i = 0; i < nscripts; ++i) {
+        fwrite(&scripts[i], sizeof scripts[i], 1, f);
+        for (n = 0; n < scripts[i].len; ++n) {
+            fputc(script_keys[i][n] & 0xff, f);
+            fputc(script_keys[i][n] >> 8, f);
+        }
+    }
+    return fclose(f) == 0;
+}
+
+static int scripts_load(void)
+{
+    FILE *f = fopen("MAXVIEW.SCR", "rb");
+    char magic[6];
+    unsigned i, n, count;
+    int ok = 0;
+
+    if (f == NULL)
+        return 0;
+    if (fread(magic, 1, 6, f) == 6 && memcmp(magic, "MVSCR1", 6) == 0 &&
+        (count = (unsigned)fgetc(f)) <= SCRIPTS) {
+        for (i = 0; i < count; ++i) {
+            if (fread(&scripts[i], sizeof scripts[i], 1, f) != 1 ||
+                scripts[i].len > SCRIPT_LEN)
+                break;
+            scripts[i].name[SCRIPT_NAME] = '\0';
+            for (n = 0; n < scripts[i].len; ++n) {
+                unsigned lo = (unsigned)fgetc(f);
+
+                script_keys[i][n] = (unsigned short)(lo | (unsigned)fgetc(f) << 8);
+            }
+        }
+        if (i == count && !ferror(f)) {
+            nscripts = count;
+            ok = 1;
+        }
+    }
+    fclose(f);
+    scripts_tap();
+    return ok;
+}
+
 /* Add a Program, Change a Program:  a form over the windows; Enter keeps
  * it in MAXVIEW.CFG */
 #define FORM_FIELDS 5
@@ -1465,7 +1606,7 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(desk_rows - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 8 && !(mode == 6 && status_line[0] != '\0')) {
+    if (mode >= 1 && mode <= 10 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
             " Move:  arrows; R resize, S scroll; Enter done ",
             " Resize:  arrows; M move, S scroll; Enter done ",
@@ -1473,8 +1614,13 @@ static void compose(int mode)
             " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back ",
             " Mark:  arrows, B begin, M more, E end, Enter done, Esc back ",
             " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics ",
-            " Program:  type; Up/Down, Tab the field; Enter keeps it, Esc cancels "
+            " Program:  type; Up/Down, Tab the field; Enter keeps it, Esc cancels ",
+            " Start Script:  press the key it is to have (Esc:  back) ",
+            learn_hint
         };
+
+        sprintf(learn_hint, " Script on %s, its name:  %s_  (Enter:  learn, Esc:  back) ",
+                key_name(learn.key), learn.name);
 
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
     }
@@ -1657,13 +1803,15 @@ static int dv_find(int key, int scan)
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
-    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE, DV_MRS
+    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE, DV_MRS, DV_LEARN,
+    DV_SCRIPTS
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
     A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
+    A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
     A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -1787,6 +1935,36 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_add(DV_ITEM, "Mark Phone #", "", 0);
         dv_add(DV_ITEM, "Dial", "", 0);
         dv_add(DV_ITEM, "Talk", "", 0);
+        break;
+    case DV_LEARN:
+        dv_begin("Learn", 22);
+        if (learning)
+            sprintf(dv_labels[0], "Learning:  %s", key_name(learn.key));
+        else
+            strcpy(dv_labels[0], "Not learning");
+        dv_add(DV_TEXT, dv_labels[0], "", 0);
+        dv_add(DV_BLANK, "", "", 0);
+        dv_add(DV_ITEM, "Start Script", learning ? "" : "=", A_LSTART);
+        dv_add(DV_ITEM, "Finish Script", learning ? "-" : "", A_LFINISH);
+        dv_add(DV_ITEM, "Cancel Script", learning ? "C" : "", A_LCANCEL);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Fixed-Size Pause", "", 0);
+        dv_add(DV_ITEM, "Variable Pause", "", 0);
+        dv_add(DV_ITEM, "Time Delay", "", 0);
+        dv_add(DV_LINE, "", "", 0);
+        dv_add(DV_ITEM, "Display Scripts", "D", A_LDISPLAY);
+        dv_add(DV_ITEM, "Save Scripts", nscripts ? "S" : "", A_LSAVE);
+        dv_add(DV_ITEM, "Load Scripts", "L", A_LLOAD);
+        break;
+    case DV_SCRIPTS:
+        dv_begin("Scripts", 22);
+        if (nscripts == 0)
+            dv_add(DV_TEXT, "(none)", "", 0);
+        for (i = 0; i < nscripts && i < DV_MAX; ++i) {
+            sprintf(dv_labels[i], "%-12s %6s", scripts[i].name,
+                    key_name(scripts[i].key));
+            dv_add(DV_TEXT, dv_labels[i], "", 0);
+        }
         break;
     case DV_MRS:                        /* while moving, resizing, scrolling:
                                          * the bar on the one going on */
@@ -1928,7 +2106,7 @@ static void to_window(unsigned t)
 static int windows_view(odq_catalog *catalog, char *status)
 {
     unsigned long last = 0, now;
-    int key, scan, act, mode = 0;
+    int key, scan, act, mode = 0, learn_req = 0;
     unsigned t, sel, menu = DV_MAIN, focus, last_focus = 0xffff;
     int fresh = 1;
     mv_window *w, saved;
@@ -1938,6 +2116,17 @@ static int windows_view(odq_catalog *catalog, char *status)
             return 0;
         if (nwin == 0)
             return 0;
+        {                               /* Learn's events */
+            unsigned ev, k;
+
+            while ((ev = mvk_keyget(&k)) != 0)
+                if (ev == 1 && learning && learn.len < SCRIPT_LEN)
+                    script_keys[SCRIPTS][learn.len++] = (unsigned short)k;
+                else if (ev == 2 && script_find(k) >= 0)
+                    script_play((unsigned)script_find(k));
+                else if (ev == 3 && mode == 0)
+                    learn_req = 1;
+        }
         xfer_feed();
         t = front();
         w = &win[t];
@@ -1949,6 +2138,11 @@ static int windows_view(odq_catalog *catalog, char *status)
         focus = mvk_focused();
         if (focus == 0 && last_focus != 0) {    /* Alt:  the menu again */
             menu = DV_MAIN;
+            fresh = 1;
+        }
+        if (learn_req && focus == 0) {  /* Shift+Alt:  Learn's */
+            learn_req = 0;
+            menu = DV_LEARN;
             fresh = 1;
         }
         last_focus = focus;
@@ -1982,6 +2176,23 @@ static int windows_view(odq_catalog *catalog, char *status)
         }
         if (focus != 0 || !kbhit()) {
             mvk_yield();
+            continue;
+        }
+        if (mode == 9) {                /* Start Script:  its key */
+            union REGS r;
+
+            r.h.ah = 0x00;
+            int86(0x16, &r, &r);
+            if (r.x.ax == 0x011b) {
+                mode = 0;
+                menu = DV_LEARN;
+                fresh = 1;
+                continue;
+            }
+            memset(&learn, 0, sizeof learn);
+            learn.key = r.x.ax;
+            mode = 10;
+            last = 0;
             continue;
         }
         key = getch();
@@ -2074,6 +2285,30 @@ static int windows_view(odq_catalog *catalog, char *status)
             w->colors = saved.colors;
             w->fg = saved.fg;
             w->bg = saved.bg;
+        }
+        if (mode == 10) {               /* its name; Enter:  learning */
+            unsigned len = strlen(learn.name);
+
+            if (key == 27) {
+                mode = 0;
+                menu = DV_LEARN;
+                fresh = 1;
+            } else if (key == 13) {
+                if (len == 0)
+                    strcpy(learn.name, key_name(learn.key));
+                learning = 1;
+                scripts_tap();
+                mode = 0;
+                menu = DV_MAIN;
+                if (t != 0)
+                    to_window(t);
+            } else if (key == 8 && len > 0)
+                learn.name[len - 1] = '\0';
+            else if (key >= ' ' && key < 127 && len < SCRIPT_NAME) {
+                learn.name[len] = (char)key;
+                learn.name[len + 1] = '\0';
+            }
+            continue;
         }
         if (mode == 8) {
             unsigned cap, len;
@@ -2172,6 +2407,7 @@ static int windows_view(odq_catalog *catalog, char *status)
             continue;
         if (t == 0 && act != A_OPEN && act != A_SWITCH && act != A_QUIT &&
             act != A_HELP && menu != DV_HELP && menu != DV_OPEN &&
+            menu != DV_LEARN &&
             menu != DV_DELETE &&
             act < A_PROGRAM && menu != DV_QUIT) {
             strcpy(status, "No window in front.");
@@ -2248,6 +2484,36 @@ static int windows_view(odq_catalog *catalog, char *status)
                 break;
             case A_HELP:
                 menu = DV_HELP;
+                break;
+            case A_LSTART:
+                mode = 9;
+                break;
+            case A_LFINISH:
+                script_finish();
+                sprintf(status, "Script %s:  %u keys on %s.", learn.name,
+                        learn.len, key_name(learn.key));
+                menu = DV_MAIN;
+                if (t != 0)
+                    to_window(t);
+                break;
+            case A_LCANCEL:
+                learning = 0;
+                scripts_tap();
+                menu = DV_MAIN;
+                if (t != 0)
+                    to_window(t);
+                break;
+            case A_LDISPLAY:
+                menu = DV_SCRIPTS;
+                break;
+            case A_LSAVE:
+            case A_LLOAD:
+                if (act == A_LSAVE ? scripts_save() : scripts_load())
+                    sprintf(status, "%u script(s) %s MAXVIEW.SCR.", nscripts,
+                            act == A_LSAVE ? "saved in" : "loaded from");
+                else
+                    strcpy(status, "MAXVIEW.SCR could not be used.");
+                menu = DV_MAIN;
                 break;
             case A_MARK:                /* from its cursor, the view kept
                                          * still while marking */
@@ -2469,6 +2735,8 @@ int main(void)
     apply_resident_services(&settings, status);
     mt_open();
     start_multitasking(status);
+    if (mv_on)
+        scripts_load();                 /* (Learn's scripts saved before) */
     initialise_video();
 
     for (;;) {

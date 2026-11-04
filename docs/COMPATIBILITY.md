@@ -46,7 +46,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 | Add a Program, Delete a Program, Change a Program (all DVP options) | From Open Window:  a form with key, title, program, directory and memory, kept in MAXVIEW.CFG (a changed program keeps its other settings); all options:  `MAXVAPP` (separate full-screen editor), `MAXVDVP` imports DVP files, `MAXVAUTO` finds programs | Partial:  the menu's form has the main settings, not every DVP option takes effect |
 | DOS Services | `MAXVFILE` | Partial |
 | Memory Status | `MAXVMEM` | Partial |
-| Learn (keyboard macros and scripts) | none | Missing |
+| Learn (keyboard macros and scripts):  Shift+Alt, Start Script =, Finish -, Cancel C, pauses, Display D, Save S, Load L (measured) | Learn on Shift+Alt:  Start Script (the key, a name, then the keys typed into the window), Finish, Cancel, Display Scripts, Save / Load Scripts (MAXVIEW.SCR, loaded at start); the script's key in a window types its keys | Partial:  no pauses or time delays; scripts are MaxView's, not per program |
 | Setup (DVSETUP) | `MAXVSET` | Partial |
 
 ### Multitasking and programs

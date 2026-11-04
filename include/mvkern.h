@@ -75,5 +75,11 @@ unsigned mvk_peek(unsigned task, unsigned short *buf);
 /* key (scan code << 8 | char) at the end of the task's key buffer, as if
  * typed; 0, 1:  the buffer is full (again later) or MVE_x.  From task 0. */
 int mvk_putkey(unsigned task, unsigned key);
+/* Learn:  the script keys (up to 16) taken from the keys of the task with
+ * them, and its keys recorded (rec); mvk_keyget:  the next event (0 none, 1
+ * a key recorded, 2 a script key pressed, 3 the Learn key Shift+Alt), its
+ * key (scan code << 8 | char) in *key */
+void mvk_keytap(const unsigned *keys, unsigned n, unsigned rec);
+unsigned mvk_keyget(unsigned *key);
 
 #endif

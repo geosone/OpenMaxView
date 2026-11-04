@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -479,6 +479,25 @@ mrs)
     check "R:  resizing from there, S:  scrolling" "grep -q 'M move, S scroll' '$d/resize.txt'"
     check "Enter:  done, back in the window (no box, no hint)" "! grep -q 'Done *Enter' '$d/done.txt' && ! grep -q 'arrows;' '$d/done.txt' && grep -q 'TickA' '$d/done.txt'"
     check "DOS works afterwards" "grep -q '^mrs end' '$d/end.txt'"
+    ;;
+learn)
+    echo "== learn:  Learn (Shift+Alt):  a script learned on F6, played twice, listed, saved"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    L="key:shift-alt wait:Display_Scripts:10"
+    CMD="C:\\MAXVIEW" END="wait:learn_end:30" run learn 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 $L text:l0 key:equal wait:press_the_key:10 key:f6 wait:its_name:10 key:h,i sleep:1 text:l1 key:ret sleep:2 type:echo_learned>>C:\\L.TXT sleep:2 $L text:l2 key:minus sleep:2 text:l3 key:f6 sleep:4 key:f6 sleep:4 text:l4 $L key:d wait:Scripts:10 text:list key:esc sleep:1 $L key:s sleep:2 text:saved key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_learn_end"
+    d=$OUT/learn
+    echo "  L.TXT:  $(file learn L.TXT | tr '\n' ' ')"
+    check "Shift+Alt:  Learn, not learning; Start Script =, Display D, Load L" "grep -q 'Not learning' '$d/l0.txt' && grep -q 'Start Script *=' '$d/l0.txt' && grep -q 'Display Scripts *D' '$d/l0.txt' && ! grep -q 'Finish Script *-' '$d/l0.txt'"
+    check "Start Script:  its key, its name" "grep -q 'Script on F6, its name:  hi' '$d/l1.txt'"
+    check "while learning:  Learning F6, Finish -, Cancel C" "grep -q 'Learning:  F6' '$d/l2.txt' && grep -q 'Finish Script *-' '$d/l2.txt' && grep -q 'Cancel Script *C' '$d/l2.txt'"
+    check "Finish:  23 keys on F6" "grep -q 'Script hi:  23 keys on F6' '$d/l3.txt'"
+    check "F6 twice:  the script typed and run twice, F6 itself not given to the program" "[ \"$(file learn L.TXT | grep -c '^learned')\" = 3 ] && ! grep -q '\\^Z' '$d/l4.txt'"
+    check "Display Scripts:  hi on F6" "grep -q 'hi *F6' '$d/list.txt'"
+    check "Save Scripts:  MAXVIEW.SCR" "grep -q '1 script(s) saved in MAXVIEW.SCR' '$d/saved.txt' && mtype -i '$d/test.img@@32256' ::/MAXVIEW.SCR | grep -q MVSCR1"
+    check "DOS works afterwards" "grep -q '^learn end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

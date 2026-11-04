@@ -188,6 +188,8 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_share_
         public  mvk_peek_
         public  mvk_putkey_
+        public  mvk_keytap_
+        public  mvk_keyget_
         public  mvk_datasize_
         public  mvk_tune_
 
@@ -233,6 +235,16 @@ wantsw   dw     0               ; scheduler:  switch tasks
 yieldf   dw     0               ; scheduler:  the task waits
 altpend  dw     0               ; Alt pressed, no other key since
 dvkey    dw     0               ; Alt alone:  task 0
+; Learn (MAXVIEW's scripts):  keys taken from the task with the keys
+; (script keys), its keys recorded, events for task 0 (mvk_keyget)
+KEVN     equ    64
+nskeys   dw     0               ; script keys
+skeys    dw     16 dup (0)
+krec     dw     0               ; recording
+kev_in   dw     0               ; the event ring
+kev_out  dw     0
+kev_t    db     KEVN dup (0)    ; 1 recorded, 2 script key, 3 Learn key
+kev_k    dw     KEVN dup (0)
 dvcol    dw     0               ; DESQview's window colours (fgpal), off:
                                 ; programs show their own colours
 fgss     dw     0
@@ -2111,7 +2123,18 @@ i15_key:
         jz      i15_chain
         cmp     cs:dvkey,0
         je      i15_chain
-        mov     cs:newfg,0
+        xor     bx,bx           ; with Shift:  the Learn key
+        mov     es,bx
+        test    byte ptr es:[417h],3
+        jz      @F
+        push    ax
+        push    cx
+        mov     al,3
+        xor     cx,cx
+        call    kevput
+        pop     cx
+        pop     ax
+@@:     mov     cs:newfg,0
         mov     cs:kfocus,0
         dbg     'A'
         jmp     short i15_chain
@@ -3126,7 +3149,14 @@ irqk_fg:
         mov     es,ax
         mov     bx,cs:kfocus
         cmp     bx,cs:cur
-        je      irqd_here
+        jne     irqk_other
+        push    word ptr es:[41Ch]      ; its tail before
+        pushf
+        call    dword ptr es:[si]
+        pop     cx
+        call    keytap
+        jmp     irqd_ret
+irqk_other:
         call    taskptr
         movzx   edi,bx
         mov     bx,cs:cur
@@ -3135,12 +3165,102 @@ irqk_fg:
         push    bx
         mov     bx,di
         call    kbdload
+        push    word ptr es:[41Ch]
         call    irqd_ctx
+        pop     cx
+        xor     ax,ax
+        mov     es,ax
+        call    keytap
         mov     bx,di
         call    kbdsave
         pop     bx
         call    kbdload
         jmp     irqd_ret
+
+; event AL (type) with the key CX into the ring for task 0 (full:  lost)
+kevput  proc near
+        push    bx
+        push    dx
+        mov     bx,cs:kev_in
+        lea     dx,[bx+1]
+        and     dx,KEVN-1
+        cmp     dx,cs:kev_out
+        je      @F
+        mov     cs:kev_t[bx],al
+        shl     bx,1
+        mov     cs:kev_k[bx],cx
+        mov     cs:kev_in,dx
+@@:     pop     dx
+        pop     bx
+        ret
+kevput  endp
+
+; the keys the task with the keys got from its INT 09h (ES = 0, its
+; buffer live, CX = the tail before):  script keys taken out (event 2),
+; the others recorded while recording (event 1)
+keytap  proc near
+        cmp     cs:kfocus,0
+        je      ktp_ret
+        cmp     cs:nskeys,0
+        jne     @F
+        cmp     cs:krec,0
+        je      ktp_ret
+@@:     cmp     cx,1Eh
+        jb      ktp_ret
+        cmp     cx,3Ch
+        ja      ktp_ret
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        mov     si,cx           ; read
+        mov     di,cx           ; write
+kt_next:
+        cmp     si,es:[41Ch]
+        je      kt_done
+        mov     cx,es:[si+400h]
+        add     si,2
+        cmp     si,3Eh
+        jb      @F
+        mov     si,1Eh
+@@:     xor     bx,bx
+kt_s:   cmp     bx,cs:nskeys
+        jae     kt_keep
+        mov     dx,bx
+        shl     dx,1
+        xchg    dx,bx
+        cmp     cx,cs:skeys[bx]
+        xchg    dx,bx
+        je      kt_script
+        inc     bx
+        jmp     kt_s
+kt_script:
+        mov     al,2
+        call    kevput
+        jmp     kt_next
+kt_keep:
+        cmp     cs:krec,0
+        je      @F
+        mov     al,1
+        call    kevput
+@@:     mov     es:[di+400h],cx
+        add     di,2
+        cmp     di,3Eh
+        jb      kt_next
+        mov     di,1Eh
+        jmp     kt_next
+kt_done:
+        mov     es:[41Ch],di
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+ktp_ret: ret
+keytap  endp
 
 ; the handler (vector ESI/4) of the TASK at DI in its context, on the IRQ
 ; stack (DS = DGROUP)
@@ -3674,6 +3794,62 @@ pu_ret: pop     ds
         pop     bx
         ret
 mvk_putkey_ endp
+
+; void mvk_keytap(const unsigned *keys, unsigned n, unsigned rec):  the
+; script keys (up to 16, DGROUP) taken from the keys of the task with them,
+; and its keys recorded (rec)
+mvk_keytap_ proc near
+        push    cx
+        push    si
+        push    di
+        push    es
+        pushf
+        cli
+        cmp     dx,16
+        jbe     @F
+        mov     dx,16
+@@:     mov     cs:krec,bx
+        mov     si,ax
+        push    cs
+        pop     es
+        mov     di,offset skeys
+        mov     cx,dx
+        cld
+        rep     movsw
+        mov     cs:nskeys,dx
+        popf
+        pop     es
+        pop     di
+        pop     si
+        pop     cx
+        ret
+mvk_keytap_ endp
+
+; unsigned mvk_keyget(unsigned *key):  the next event (0:  none; 1 a key
+; recorded, 2 a script key pressed, 3 the Learn key), its key in *key
+mvk_keyget_ proc near
+        push    bx
+        push    si
+        mov     si,ax
+        pushf
+        cli
+        mov     bx,cs:kev_out
+        xor     ax,ax
+        cmp     bx,cs:kev_in
+        je      kg_ret
+        mov     al,cs:kev_t[bx]
+        shl     bx,1
+        mov     bx,cs:kev_k[bx]
+        mov     [si],bx
+        mov     bx,cs:kev_out
+        inc     bx
+        and     bx,KEVN-1
+        mov     cs:kev_out,bx
+kg_ret: popf
+        pop     si
+        pop     bx
+        ret
+mvk_keyget_ endp
 
 ; unsigned mvk_fg(void):  the foreground task
 mvk_fg_ proc near
