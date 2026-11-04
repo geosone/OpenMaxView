@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video mark help dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr tune video mark help catalog dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer wobj menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -443,6 +443,25 @@ help)
     check "the page fits in 25 rows:  all of it shown, Down moves nothing" "grep -q 'while in front, the time slices' '$d/scrolled.txt' && grep -q 'Rearrange (R) changes the window' '$d/scrolled.txt'"
     check "Esc:  back to the topics, Esc:  the main menu" "! grep -q 'Position 1-9' '$d/back.txt' && grep -q 'Open Window *O' '$d/main2.txt'"
     check "DOS works afterwards" "grep -q '^help end' '$d/end.txt'"
+    ;;
+catalog)
+    echo "== catalog:  Open Window's Add, Change, Delete a Program (MAXVIEW.CFG)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:catalog_end:30" run catalog 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg" \
+        "wait:Open_Program:60 key:ret sleep:3 $M key:o wait:Add_a_Program:10 text:open key:f2 wait:Memory_(KB):10 key:ret sleep:1 text:formerr key:b,tab,t,i,c,k,b,tab key:shift-c,shift-semicolon,backslash,t,i,c,k,dot,e,x,e,spc,shift-c,shift-semicolon,backslash,t,b,dot,t,x,t key:tab,tab,1,2,8 sleep:1 text:form key:ret sleep:2 text:saved $M key:o wait:Add_a_Program:10 text:open2 key:b sleep:4 $M key:o wait:Add_a_Program:10 key:f3 wait:Change_which:10 key:b wait:Memory_(KB):10 text:change key:backspace,backspace,backspace,backspace,backspace,t,i,c,k,e,r,ret sleep:2 $M key:o wait:Add_a_Program:10 key:f4 wait:Delete_which:10 key:a wait:Are_you_sure:10 text:delconf key:y sleep:2 text:deleted $M key:o wait:Add_a_Program:10 text:open3 key:esc sleep:1 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_catalog_end"
+    d=$OUT/catalog
+    echo "  MAXVIEW.CFG:  $(file catalog MAXVIEW.CFG | tr '\n' ' ')"
+    check "Open Window:  Add F2, Change F3, Delete F4" "grep -q 'Add a Program *F2' '$d/open.txt' && grep -q 'Change a Program *F3' '$d/open.txt' && grep -q 'Delete a Program *F4' '$d/open.txt'"
+    check "Add:  an empty form is refused with its reason" "grep -q 'Key, Title and Program are needed' '$d/formerr.txt'"
+    check "Add:  the form filled in, kept" "grep -q 'tickb' '$d/form.txt' && grep -q 'tickb kept in MAXVIEW.CFG' '$d/saved.txt'"
+    check "the new program in Open Window, started from it (TB.TXT counts)" "grep -q 'tickb *B' '$d/open2.txt' && [ $(last catalog TB.TXT tick) -gt 0 ]"
+    check "Change:  the form with its values" "grep -q 'tickb' '$d/change.txt' && grep -q '128' '$d/change.txt' && grep -q 'tb.txt' '$d/change.txt'"
+    check "Delete:  asked first, then gone from Open Window" "grep -q 'TickA' '$d/delconf.txt' && grep -q 'TickA deleted' '$d/deleted.txt' && ! grep -q 'TickA *A' '$d/open3.txt' && grep -q 'ticker *B' '$d/open3.txt'"
+    check "MAXVIEW.CFG:  only the changed program" "[ \"$(file catalog MAXVIEW.CFG | grep -v '^#')\" = 'B|ticker|C:\\tick.exe C:\\tb.txt||64|128' ]"
+    check "DOS works afterwards" "grep -q '^catalog end' '$d/end.txt'"
     ;;
 dvapi)
     echo "== dvapi:  DESQview scheduling calls per task"

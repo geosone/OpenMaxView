@@ -1231,6 +1231,116 @@ static void help_draw(void)
         sput(top + rows, left + 70, 25, ATTR_ACTIVE);
 }
 
+/* Add a Program, Change a Program:  a form over the windows; Enter keeps
+ * it in MAXVIEW.CFG */
+#define FORM_FIELDS 5
+static odq_program form;
+static int form_index;                  /* -1:  a new one */
+static unsigned form_field;
+static char form_mem[6];                /* its memory (KB) as typed */
+static const char *form_msg = "";
+
+static char *form_text(unsigned f, unsigned *cap)
+{
+    static char key[2];
+
+    switch (f) {
+    case 0:
+        key[0] = form.hotkey > ' ' ? form.hotkey : '\0';
+        key[1] = '\0';
+        *cap = 1;
+        return key;
+    case 1:  *cap = ODQ_TITLE_LEN;   return form.title;
+    case 2:  *cap = ODQ_COMMAND_LEN; return form.command;
+    case 3:  *cap = ODQ_DIR_LEN;     return form.directory;
+    }
+    *cap = sizeof form_mem - 1;
+    return form_mem;
+}
+
+static void form_draw(unsigned *crow, unsigned *ccol)
+{
+    static const char *const label[FORM_FIELDS] = {
+        "Key", "Title", "Program", "Directory", "Memory (KB)"
+    };
+    const char *title = form_index < 0 ? "Add a Program" : "Change a Program";
+    unsigned top = (desk_rows - 14) / 2, left = (desk_cols - 72) / 2, r, c, f;
+
+    for (r = top; r < top + 14; ++r)
+        for (c = left; c < left + 72; ++c)
+            sput(r, c, r == top || r == top + 13 ? 205 :
+                 c == left || c == left + 71 ? 186 : ' ', ATTR_ACTIVE);
+    sput(top, left, 201, ATTR_ACTIVE);
+    sput(top, left + 71, 187, ATTR_ACTIVE);
+    sput(top + 13, left, 200, ATTR_ACTIVE);
+    sput(top + 13, left + 71, 188, ATTR_ACTIVE);
+    sput(top, left + 2, ' ', ATTR_ACTIVE);
+    swrite(top, left + 3, title, ATTR_ACTIVE);
+    sput(top, left + 3 + strlen(title), ' ', ATTR_ACTIVE);
+    for (f = 0; f < FORM_FIELDS; ++f) {
+        unsigned cap, len, from, row = top + 2 + 2 * f;
+        const char *text = form_text(f, &cap);
+        unsigned char a = f == form_field ? ATTR_DATA_HIGH : ATTR_DATA;
+
+        swrite(row, left + 3, label[f], ATTR_ACTIVE);
+        for (c = 0; c < 52; ++c)
+            sput(row, left + 17 + c, ' ', a);
+        len = strlen(text);
+        from = len > 51 ? len - 51 : 0;         /* its end in view */
+        swrite(row, left + 17, text + from, a);
+        if (f == form_field) {
+            *crow = row;
+            *ccol = left + 17 + len - from;
+        }
+    }
+    swrite(top + 12, left + 3, form_msg, ATTR_ACTIVE);
+}
+
+/* Enter:  the form into the catalogue and MAXVIEW.CFG; 0:  form_msg says
+ * why not */
+static int form_save(odq_catalog *catalog)
+{
+    unsigned i;
+    char *end;
+    unsigned long kb = strtoul(form_mem, &end, 10);
+
+    if (form.hotkey <= ' ' || form.title[0] == '\0' ||
+        form.command[0] == '\0') {
+        form_msg = "Key, Title and Program are needed.";
+        return 0;
+    }
+    if (*end != '\0' || kb > 640) {
+        form_msg = "Memory:  up to 640 KB (empty:  as much as there is).";
+        return 0;
+    }
+    form.max_kb = (unsigned)kb;
+    if (form.max_kb != 0 && form.min_kb > form.max_kb)
+        form.min_kb = form.max_kb;
+    for (i = 0; i < catalog->count; ++i)
+        if ((int)i != form_index &&
+            toupper(catalog->programs[i].hotkey) == toupper(form.hotkey)) {
+            form_msg = "Another program has this key.";
+            return 0;
+        }
+    if (!odq_program_valid(&form)) {
+        form_msg = "The character | cannot be used.";
+        return 0;
+    }
+    if (form_index < 0) {
+        if (catalog->count >= ODQ_MAX_PROGRAMS) {
+            form_msg = "The catalogue is full.";
+            return 0;
+        }
+        form_index = (int)catalog->count++;
+    }
+    catalog->programs[form_index] = form;
+    if (odq_catalog_save("MAXVIEW.CFG", catalog) != ODQ_CATALOG_OK) {
+        form_msg = "MAXVIEW.CFG could not be written.";
+        return 0;
+    }
+    return 1;
+}
+
 /* The windows on a black desk (each showing its program's own colours,
  * framed in Open 386MAX's), a message (status_line) on the bottom row;
  * MAXVIEW's menu over them while it has the keys (mode 0); mode 1, 2:
@@ -1355,13 +1465,14 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(desk_rows - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 7 && !(mode == 6 && status_line[0] != '\0')) {
+    if (mode >= 1 && mode <= 8 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
             " Move:  arrows, Enter done ", " Resize:  arrows, Enter done ",
             " Scroll:  arrows, Enter done ", " Position:  1-9 ",
             " Change Colors:  Left/Right text, Up/Down background, Enter done, Esc back ",
             " Mark:  arrows, B begin, M more, E end, Enter done, Esc back ",
-            " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics "
+            " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics ",
+            " Program:  type; Up/Down, Tab the field; Enter keeps it, Esc cancels "
         };
 
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
@@ -1370,6 +1481,10 @@ static void compose(int mode)
         dv_menu_draw();
     if (mode == 7)
         help_draw();
+    if (mode == 8) {
+        form_draw(&crow, &ccol);
+        cursor = 1;
+    }
     _fmemcpy(video, scr, desk_rows * desk_cols * sizeof scr[0]);
     set_cursor(crow, ccol, cursor);
 }
@@ -1529,7 +1644,8 @@ static int dv_find(int key, int scan)
 
         if (!dv_usable(i))
             continue;
-        if (scan == 59 && strcmp(k, "F1") == 0)
+        if (scan >= 59 && scan <= 67 && k[0] == 'F' && k[1] == '1' + scan - 59 &&
+            k[2] == '\0')
             return dv_items[i].act;
         if (scan == 0 && k[1] == '\0' && toupper(key) == k[0])
             return dv_items[i].act;
@@ -1540,14 +1656,18 @@ static int dv_find(int key, int scan)
 /* the menus (as DESQview 2.80's; what MaxView cannot do yet has no key) */
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
-    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP
+    DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
     A_RESIZE, A_YES, A_NO, A_SCROLL, A_POSITION, A_FREEZE, A_HIDE, A_ASIDE,
     A_COLORS, A_TUNE, A_BACKGROUND, A_SHARE, A_FGTICKS, A_BGTICKS,
-    A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
+    A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
+    A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
+
+static unsigned pick_for, del_index;    /* Open Window's list picks the
+                                         * program to change (1) or delete (2) */
 
 static void dv_build(unsigned menu, const odq_catalog *catalog)
 {
@@ -1555,7 +1675,8 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
 
     switch (menu) {
     case DV_OPEN:
-        dv_begin("Open Window", 22);
+        dv_begin(pick_for == 1 ? "Change which?" :
+                 pick_for == 2 ? "Delete which?" : "Open Window", 22);
         n = catalog->count < 17 ? catalog->count : 17;
         for (i = 0; i < n; ++i) {
             const odq_program *p = &catalog->programs[i];
@@ -1570,10 +1691,21 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         for (i = 0; i < n; ++i)
             if (dv_keys[i][0] <= ' ')
                 dv_items[i].key = " ";
+        if (pick_for != 0)
+            break;
         dv_add(DV_LINE, "", "", 0);
-        dv_add(DV_ITEM, "Add a Program", "", 0);
-        dv_add(DV_ITEM, "Delete a Program", "", 0);
-        dv_add(DV_ITEM, "Change a Program", "", 0);
+        dv_add(DV_ITEM, "Add a Program", "F2", A_ADDP);
+        dv_add(DV_ITEM, "Change a Program", catalog->count ? "F3" : "", A_CHANGEP);
+        dv_add(DV_ITEM, "Delete a Program", catalog->count ? "F4" : "", A_DELETEP);
+        break;
+    case DV_DELETE:
+        dv_begin("Delete a Program", 22);
+        sprintf(dv_labels[0], "%.20s", catalog->programs[del_index].title);
+        dv_add(DV_TEXT, dv_labels[0], "", 0);
+        dv_add(DV_TEXT, "Are you sure ?", "", 0);
+        dv_add(DV_BLANK, "", "", 0);
+        dv_add(DV_ITEM, "Yes", "Y", A_YES);
+        dv_add(DV_ITEM, "No", "N", A_NO);
         break;
     case DV_SWITCH:
         dv_begin("Switch Windows", 22);
@@ -1783,7 +1915,7 @@ static void to_window(unsigned t)
 /* the windows of the running programs, MAXVIEW's menu over them while it
  * has the keys (Alt), as DESQview's.  Returns 0:  no windows (to the
  * launcher), 2:  quit confirmed */
-static int windows_view(const odq_catalog *catalog, char *status)
+static int windows_view(odq_catalog *catalog, char *status)
 {
     unsigned long last = 0, now;
     int key, scan, act, mode = 0;
@@ -1894,6 +2026,9 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 if (scan == 80 && w->vtop + w->rows < SCREEN_ROWS) ++w->vtop;
                 if (scan == 75 && w->hoff > 0) --w->hoff;
                 if (scan == 77 && w->hoff + w->cols < SCREEN_COLS) ++w->hoff;
+            } else if (mode == 8) {     /* the form:  its field */
+                if (scan == 72) form_field = (form_field + FORM_FIELDS - 1) % FORM_FIELDS;
+                if (scan == 80) form_field = (form_field + 1) % FORM_FIELDS;
             } else if (mode == 7) {     /* Help:  its page */
                 if (scan == 72 && help_top > 0) --help_top;
                 if (scan == 80) ++help_top;     /* (help_draw limits it) */
@@ -1915,7 +2050,7 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 dv_bar(-1);
             else if (scan == 80)
                 dv_bar(1);
-            if (mode != 0 || scan != 59)
+            if (mode != 0 || scan < 59 || scan > 67)    /* F1-F9 */
                 continue;
         }
         if (mode == 4 && key >= '1' && key <= '9') {
@@ -1927,6 +2062,35 @@ static int windows_view(const odq_catalog *catalog, char *status)
             w->colors = saved.colors;
             w->fg = saved.fg;
             w->bg = saved.bg;
+        }
+        if (mode == 8) {
+            unsigned cap, len;
+            char *text = form_text(form_field, &cap);
+
+            len = strlen(text);
+            if (key == 27 || (key == 13 && form_save(catalog))) {
+                if (key == 13)
+                    sprintf(status, "%.40s kept in MAXVIEW.CFG.", form.title);
+                mode = 0;
+                menu = DV_MAIN;
+                fresh = 1;
+            } else if (key == 9)
+                form_field = (form_field + 1) % FORM_FIELDS;
+            else if (key == 8 && len > 0) {
+                if (form_field == 0)
+                    form.hotkey = ' ';
+                else
+                    text[len - 1] = '\0';
+            } else if (key >= ' ' && key < 127 && key != '|') {
+                form_msg = "";
+                if (form_field == 0)
+                    form.hotkey = (char)toupper(key);
+                else if (form_field == 4 ? isdigit(key) && len < cap : len < cap) {
+                    text[len] = (char)key;
+                    text[len + 1] = '\0';
+                }
+            }
+            continue;
         }
         if (mode == 7) {
             if (key == 13 || key == 27) {
@@ -1972,6 +2136,7 @@ static int windows_view(const odq_catalog *catalog, char *status)
             if (menu == DV_MAIN && t != 0)
                 to_window(t);
             menu = DV_MAIN;
+            pick_for = 0;
             fresh = 1;
             continue;
         }
@@ -1986,7 +2151,8 @@ static int windows_view(const odq_catalog *catalog, char *status)
         if (act <= 0)
             continue;
         if (t == 0 && act != A_OPEN && act != A_SWITCH && act != A_QUIT &&
-            act != A_HELP && menu != DV_HELP &&
+            act != A_HELP && menu != DV_HELP && menu != DV_OPEN &&
+            menu != DV_DELETE &&
             act < A_PROGRAM && menu != DV_QUIT) {
             strcpy(status, "No window in front.");
             continue;
@@ -1996,8 +2162,24 @@ static int windows_view(const odq_catalog *catalog, char *status)
             to_window(act - A_WINDOW);
             menu = DV_MAIN;
         } else if (act >= A_PROGRAM) {
+            unsigned i = act - A_PROGRAM;
+
             menu = DV_MAIN;
-            launch_task(&catalog->programs[act - A_PROGRAM], status);
+            if (pick_for == 1) {
+                form = catalog->programs[i];
+                form_index = (int)i;
+                sprintf(form_mem, "%u", form.max_kb);
+                if (form.max_kb == 0)
+                    form_mem[0] = '\0';
+                form_field = 1;
+                form_msg = "";
+                mode = 8;
+            } else if (pick_for == 2) {
+                del_index = i;
+                menu = DV_DELETE;
+            } else
+                launch_task(&catalog->programs[i], status);
+            pick_for = 0;
         } else
             switch (act) {
             case A_OPEN:
@@ -2109,9 +2291,38 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 if (front() != 0)
                     to_window(front());
                 break;
+            case A_ADDP:
+                memset(&form, 0, sizeof form);
+                form.hotkey = ' ';
+                form.min_kb = 64;
+                form_mem[0] = '\0';
+                form_index = -1;
+                form_field = 0;
+                form_msg = "";
+                mode = 8;
+                menu = DV_MAIN;
+                break;
+            case A_CHANGEP:
+            case A_DELETEP:
+                pick_for = act == A_CHANGEP ? 1 : 2;
+                menu = DV_OPEN;
+                break;
             case A_YES:
                 if (menu == DV_QUIT)
                     return 2;
+                if (menu == DV_DELETE) {
+                    sprintf(status, "%.40s deleted from MAXVIEW.CFG.",
+                            catalog->programs[del_index].title);
+                    memmove(&catalog->programs[del_index],
+                            &catalog->programs[del_index + 1],
+                            (catalog->count - del_index - 1) *
+                            sizeof catalog->programs[0]);
+                    --catalog->count;
+                    if (odq_catalog_save("MAXVIEW.CFG", catalog) != ODQ_CATALOG_OK)
+                        strcpy(status, "MAXVIEW.CFG could not be written.");
+                    menu = DV_MAIN;
+                    break;
+                }
                 mvk_kill(t);
                 sprintf(status, "%.40s is being closed.", task_title[t]);
                 menu = DV_MAIN;
@@ -2243,6 +2454,8 @@ int main(void)
 
             desk_set(video_cols, video_rows);
             rc = windows_view(&catalog, status);
+            if (selected >= catalog.count)      /* (programs deleted) */
+                selected = catalog.count ? catalog.count - 1 : 0;
             if (desk_rows != SCREEN_ROWS || desk_cols != SCREEN_COLS) {
                 desk_set(SCREEN_COLS, SCREEN_ROWS);     /* the launcher:
                                                          * 80x25 */
