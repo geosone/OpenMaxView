@@ -396,12 +396,12 @@ video)
     CONFIG="DOS=HIGH,UMB|DEVICE=C:\\MAX\\386MAX.SYS|DEVICE=C:\\MAXTEXT.SYS|FILES=40|BUFFERS=20|SHELL=C:\\COMMAND.COM C:\\ /E:1024 /P" \
     CMD="C:\\MAXVIEW" END="wait:video_end:30" run video 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg $MAXROOT/build/bin/MAXTEXT.SYS" \
-        "wait:Open_Program:60 key:ret sleep:3 $R key:v wait:Text_rows:10 text:vid $(rows r0) key:3 sleep:3 $(rows r1) $R key:2 sleep:2 mon:xp+/8000xb+0xb8000>half $M key:z sleep:3 $(rows rz) key:alt wait:Switch_Windows:20 sleep:2 $(rows r2) key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:3 $(rows r3) type:echo_video_end"
+        "wait:Open_Program:60 key:ret sleep:3 $R key:v wait:Text_modes:10 text:vid $(rows r0) key:3 sleep:3 $(rows r1) $R key:2 sleep:2 mon:xp+/8000xb+0xb8000>half $M key:z sleep:3 $(rows rz) key:alt wait:Switch_Windows:20 sleep:2 $(rows r2) key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:3 $(rows r3) type:echo_video_end"
     d=$OUT/video
     rv() { awk -F': ' '/^[0-9a-f]+:/ {print $2; exit}' "$d/$1.txt" 2>/dev/null | tr -dc '0-9a-fx'; }
     hc() { awk '/^[0-9a-f]+:/' "$d/half.txt" | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($1 * 80 + $2) * 2 + 1))p"; }
     echo "  rows (40:84):  $(rv r0) $(rv r1) zoomed $(rv rz) $(rv r2) launcher $(rv r3)"
-    check "Video Options:  MAXTEXT's modes, 80 x 25 in use" "grep -q 'Text rows (MAXTEXT)' '$d/vid.txt' && grep -q '80 x 25  \*' '$d/vid.txt' && grep -q '80 x 50 *3' '$d/vid.txt'"
+    check "Video Options:  MAXTEXT's modes, 80 x 25 in use" "grep -q 'Text modes (MAXTEXT)' '$d/vid.txt' && grep -q '80 x 25  \*' '$d/vid.txt' && grep -q '80 x 50 *3' '$d/vid.txt'"
     check "3:  the windows in 50 rows" "[ '$(rv r0) $(rv r1)' = '0x18 0x31' ]"
     check "Position 2 on 50 rows:  the bottom half (frame rows 26 / 49)" "[ '$(hc 26 0) $(hc 49 0) $(hc 49 79)' = '0xc9 0xc8 0xbc' ]"
     check "Zoom:  the program in its 25 rows, back:  50 again" "[ '$(rv rz) $(rv r2)' = '0x18 0x31' ]"

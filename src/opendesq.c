@@ -67,10 +67,13 @@ static unsigned nwin;
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
 
-/* the windows view:  desk_rows of 80 columns (Video Options:  25, 43, 50
- * or 60 through MAXTEXT); a task's screen stays 80x25 */
+/* the windows view:  desk_cols x desk_rows (Video Options:  80 or 132
+ * columns of 25, 43, 50 or 60 rows, as MAXTEXT offers them); a task's
+ * screen stays 80x25 */
 #define DESK_MAX_ROWS 60
+#define DESK_MAX_COLS 132
 static unsigned desk_rows = SCREEN_ROWS, video_rows = SCREEN_ROWS;
+static unsigned desk_cols = SCREEN_COLS, video_cols = SCREEN_COLS;
 
 static void put_cell(unsigned row, unsigned col, unsigned char ch,
                      unsigned char attr)
@@ -233,8 +236,10 @@ typedef struct mt_control {
 #pragma pack(pop)
 #define MT_SCRATCH_PARAS 0x1a00         /* 104 KiB for one switch */
 static int mt_handle = -1;
-static unsigned mt_modes;               /* 80x25 1, 80x43 2, 80x50 4, 80x60 8 */
-static const unsigned mt_rows[4] = { 25, 43, 50, 60 };
+static unsigned mt_modes;               /* bit n:  mt_cols[n] x mt_rows[n] */
+#define MT_NMODES 8
+static const unsigned mt_cols[MT_NMODES] = { 80, 80, 80, 80, 132, 132, 132, 132 };
+static const unsigned mt_rows[MT_NMODES] = { 25, 43, 50, 60, 25, 43, 50, 60 };
 
 static int mt_query(mt_status *st)
 {
@@ -270,12 +275,12 @@ static void mt_open(void)
         mt_handle = -1;
         return;
     }
-    mt_modes = st.modes & 15;
+    mt_modes = st.modes & 0xff;
 }
 
-/* 80 x rows through MAXTEXT, in a critical section (no task switch while
- * it changes the hardware); 0 or its result (-1:  no MAXTEXT, memory) */
-static int mt_set(unsigned rows)
+/* cols x rows through MAXTEXT, in a critical section (no task switch
+ * while it changes the hardware); 0 or its result (-1:  no MAXTEXT, memory) */
+static int mt_set(unsigned cols, unsigned rows)
 {
     union REGS r;
     struct SREGS sr;
@@ -283,16 +288,17 @@ static int mt_set(unsigned rows)
     mt_status st;
     unsigned seg, i, err;
 
-    for (i = 0; i < 4 && mt_rows[i] != rows; ++i)
+    for (i = 0; i < MT_NMODES && (mt_cols[i] != cols || mt_rows[i] != rows);
+         ++i)
         ;
-    if (mt_handle < 0 || i == 4 || !(mt_modes & 1u << i))
+    if (mt_handle < 0 || i == MT_NMODES || !(mt_modes & 1u << i))
         return -1;
     if (_dos_allocmem(MT_SCRATCH_PARAS, &seg) != 0)
         return -1;
     memset(&c, 0, sizeof c);
     memcpy(c.signature, "MXTC", 4);
     c.command = 1;
-    c.columns = SCREEN_COLS;
+    c.columns = cols;
     c.rows = rows;
     c.scratch_segment = seg;
     c.scratch_paragraphs = MT_SCRATCH_PARAS;
@@ -312,7 +318,7 @@ static int mt_set(unsigned rows)
         return c.result != 0 ? (int)c.result : -1;
     if (c.result != 0)
         return (int)c.result;
-    if (!mt_query(&st) || st.rows != rows || st.columns != SCREEN_COLS)
+    if (!mt_query(&st) || st.rows != rows || st.columns != cols)
         return -1;
     return 0;
 }
@@ -323,17 +329,33 @@ static unsigned bios_rows(void)
     return *(unsigned char far *)MK_FP(0x40, 0x84) + 1u;
 }
 
-/* the windows view in rows (from the display as it is); 0 or MAXTEXT's
- * result */
-static int desk_set(unsigned rows)
+/* the display's text columns (the BIOS's) */
+static unsigned bios_cols(void)
+{
+    return *(unsigned short far *)MK_FP(0x40, 0x4a);
+}
+
+/* a geometry the windows view can use */
+static int desk_fits(unsigned cols, unsigned rows)
+{
+    return cols >= SCREEN_COLS && cols <= DESK_MAX_COLS &&
+           rows >= SCREEN_ROWS && rows <= DESK_MAX_ROWS;
+}
+
+/* the windows view in cols x rows (from the display as it is); 0 or
+ * MAXTEXT's result */
+static int desk_set(unsigned cols, unsigned rows)
 {
     int rc = 0;
 
-    if (bios_rows() != rows)
-        rc = mt_set(rows);
+    if (bios_cols() != cols || bios_rows() != rows)
+        rc = mt_set(cols, rows);
+    desk_cols = bios_cols();
     desk_rows = bios_rows();
-    if (desk_rows > DESK_MAX_ROWS || desk_rows < SCREEN_ROWS)
+    if (!desk_fits(desk_cols, desk_rows)) {
+        desk_cols = SCREEN_COLS;
         desk_rows = SCREEN_ROWS;
+    }
     return rc;
 }
 
@@ -822,14 +844,14 @@ static void show_tasks(char *status)
     }
 }
 
-static unsigned short scr[DESK_MAX_ROWS * SCREEN_COLS];
+static unsigned short scr[DESK_MAX_ROWS * DESK_MAX_COLS];
 static unsigned short cells[SCREEN_ROWS * SCREEN_COLS];
 
 static void sput(unsigned row, unsigned col, unsigned char ch,
                  unsigned char attr)
 {
-    if (row < desk_rows && col < SCREEN_COLS)
-        scr[row * SCREEN_COLS + col] = (unsigned short)(attr << 8 | ch);
+    if (row < desk_rows && col < desk_cols)
+        scr[row * desk_cols + col] = (unsigned short)(attr << 8 | ch);
 }
 
 static void swrite(unsigned row, unsigned col, const char *text,
@@ -894,7 +916,7 @@ static void compose(int mode)
     int cursor = 0;
     char line[SCREEN_COLS + 1];
 
-    for (i = 0; i < desk_rows * SCREEN_COLS; ++i)
+    for (i = 0; i < desk_rows * desk_cols; ++i)
         scr[i] = 0x0720;
     for (i = 0; i < nwin; ++i) {
         mv_window *w;
@@ -933,8 +955,8 @@ static void compose(int mode)
                     w->top = (unsigned char)(desk_rows - 2 - w->rows);
                 if (w->left < 1)
                     w->left = 1;
-                if (w->left + w->cols > SCREEN_COLS - 1)
-                    w->left = (unsigned char)(SCREEN_COLS - 1 - w->cols);
+                if (w->left + w->cols > desk_cols - 1)
+                    w->left = (unsigned char)(desk_cols - 1 - w->cols);
             }
             vtop = gpos >> 8;
             hoff = gpos & 0xff;
@@ -982,7 +1004,7 @@ static void compose(int mode)
                     cell = (unsigned short)(win_color(w, cell >> 12) << 12 |
                                             win_color(w, cell >> 8 & 15) << 8 |
                                             (cell & 0xff));
-                scr[(w->top + r) * SCREEN_COLS + w->left + c] = cell;
+                scr[(w->top + r) * desk_cols + w->left + c] = cell;
             }
         }
         if (t == focus && (cur & 0xff) >= hoff &&
@@ -1005,7 +1027,7 @@ static void compose(int mode)
         swrite(desk_rows - 1, 0, hint[mode - 1], 0x70);
     } else if (focus == 0)
         dv_menu_draw();
-    _fmemcpy(video, scr, desk_rows * SCREEN_COLS * sizeof scr[0]);
+    _fmemcpy(video, scr, desk_rows * desk_cols * sizeof scr[0]);
     set_cursor(crow, ccol, cursor);
 }
 
@@ -1047,7 +1069,7 @@ static void dv_menu_draw(void)
 
     if (dv_title == NULL)
         return;
-    right = SCREEN_COLS - 3;            /* (the shadow beside it) */
+    right = desk_cols - 3;              /* (the shadow beside it) */
     left = right - dv_width - 1;
     bottom = dv_count + 1;
     for (r = 0; r <= bottom; ++r)
@@ -1070,10 +1092,10 @@ static void dv_menu_draw(void)
     sput(0, left + 3 + strlen(dv_title), ' ', MENU_ATTR);
     for (r = 1; r <= bottom + 1 && r < desk_rows; ++r)    /* the shadow */
         for (c = right + 1; c <= right + 2; ++c)
-            sput(r, c, (unsigned char)scr[r * SCREEN_COLS + c], 0x08);
+            sput(r, c, (unsigned char)scr[r * desk_cols + c], 0x08);
     if (bottom + 1 < desk_rows)
         for (c = left + 2; c <= right; ++c)
-            sput(bottom + 1, c, (unsigned char)scr[(bottom + 1) * SCREEN_COLS + c],
+            sput(bottom + 1, c, (unsigned char)scr[(bottom + 1) * desk_cols + c],
                  0x08);
     for (i = 0; i < dv_count; ++i) {
         const dv_item *it = &dv_items[i];
@@ -1250,10 +1272,11 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
     case DV_VIDEO:                      /* what MAXTEXT offers */
         dv_begin("Video Options", 22);
         dv_add(DV_TEXT, mt_handle < 0 ? "(MAXTEXT not loaded)"
-               : "Text rows (MAXTEXT)", "", 0);
-        for (i = 0; i < 4; ++i) {
-            sprintf(dv_labels[i], "80 x %u%s", mt_rows[i],
-                    mt_rows[i] == desk_rows ? "  *" : "");
+               : "Text modes (MAXTEXT)", "", 0);
+        for (i = 0; i < MT_NMODES; ++i) {
+            sprintf(dv_labels[i], "%u x %u%s", mt_cols[i], mt_rows[i],
+                    mt_cols[i] == desk_cols && mt_rows[i] == desk_rows ?
+                    "  *" : "");
             dv_keys[i][0] = (char)('1' + i);
             dv_keys[i][1] = '\0';
             dv_add(DV_ITEM, dv_labels[i], mt_modes & 1u << i ? dv_keys[i] : "",
@@ -1304,7 +1327,8 @@ static const unsigned char places[9][4] = {
     { 0, 41, 11, 79 }, { 13, 0, 24, 39 }, { 13, 41, 24, 79 }
 };
 
-/* a row of places on a desk of desk_rows (the halves meet in the middle) */
+/* a row, a column of places on a desk of desk_rows x desk_cols (the
+ * halves meet in the middle) */
 static unsigned place_row(unsigned r)
 {
     unsigned half = desk_rows / 2;
@@ -1316,17 +1340,31 @@ static unsigned place_row(unsigned r)
     return r * (desk_rows - 1) / 24;
 }
 
+static unsigned place_col(unsigned c)
+{
+    unsigned half = desk_cols / 2;
+
+    if (c == 39)
+        return half - 1;
+    if (c == 41)
+        return half + 1;
+    return c * (desk_cols - 1) / 79;
+}
+
 static void place(mv_window *w, unsigned n)
 {
     const unsigned char *p = places[n];
     unsigned top = place_row(p[0]), bottom = place_row(p[2]);
+    unsigned left = place_col(p[1]), right = place_col(p[3]);
 
     w->top = (unsigned char)(top + 1);
-    w->left = (unsigned char)(p[1] + 1);
+    w->left = (unsigned char)(left + 1);
     w->rows = (unsigned char)(bottom - top - 1);
-    if (w->rows > SCREEN_ROWS)          /* (a task's screen:  25 rows) */
+    if (w->rows > SCREEN_ROWS)          /* (a task's screen:  80x25) */
         w->rows = SCREEN_ROWS;
-    w->cols = (unsigned char)(p[3] - p[1] - 1);
+    w->cols = (unsigned char)(right - left - 1);
+    if (w->cols > SCREEN_COLS)
+        w->cols = SCREEN_COLS;
 }
 
 /* Hide, Put Aside:  window t off the screen (put aside:  held), under the
@@ -1404,9 +1442,11 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 dv_bar(0);
         }
         status_line = status;
-        if (mvk_fg() == 0 && bios_rows() != desk_rows &&
-            bios_rows() >= SCREEN_ROWS && bios_rows() <= DESK_MAX_ROWS)
-            desk_set(video_rows);       /* (back from a program full screen) */
+        if (mvk_fg() == 0 &&
+            (bios_rows() != desk_rows || bios_cols() != desk_cols) &&
+            desk_fits(bios_cols(), bios_rows()))
+            desk_set(video_cols, video_rows);   /* (back from a program
+                                                 * full screen) */
         now = *(unsigned long far *)MK_FP(0x40, 0x6c);
         if (now - last >= 2) {
             compose(mode);
@@ -1426,13 +1466,14 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 if (scan == 72 && w->top > 1) --w->top;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1) ++w->top;
                 if (scan == 75 && w->left > 1) --w->left;
-                if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->left;
+                if (scan == 77 && w->left + w->cols < desk_cols - 1) ++w->left;
             } else if (mode == 2) {
                 if (scan == 72 && w->rows > 3) --w->rows;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1 &&
                     w->rows < SCREEN_ROWS) ++w->rows;
                 if (scan == 75 && w->cols > 10) --w->cols;
-                if (scan == 77 && w->left + w->cols < SCREEN_COLS - 1) ++w->cols;
+                if (scan == 77 && w->left + w->cols < desk_cols - 1 &&
+                    w->cols < SCREEN_COLS) ++w->cols;
             } else if (mode == 5) {     /* Change Colors */
                 w->colors = 1;
                 if (scan == 75) w->fg = (unsigned char)((w->fg + 15) & 15);
@@ -1596,14 +1637,16 @@ static int windows_view(const odq_catalog *catalog, char *status)
                 menu = DV_MAIN;
                 break;
             default:
-                if (act >= A_ROWS && act < A_ROWS + 4) {
-                    int rc = desk_set(mt_rows[act - A_ROWS]);
+                if (act >= A_ROWS && act < A_ROWS + MT_NMODES) {
+                    unsigned m = act - A_ROWS;
+                    int rc = desk_set(mt_cols[m], mt_rows[m]);
 
-                    if (rc == 0)
+                    if (rc == 0) {
+                        video_cols = desk_cols;
                         video_rows = desk_rows;
-                    else
-                        sprintf(status, "MAXTEXT:  80x%u not set (%d).",
-                                mt_rows[act - A_ROWS], rc);
+                    } else
+                        sprintf(status, "MAXTEXT:  %ux%u not set (%d).",
+                                mt_cols[m], mt_rows[m], rc);
                     menu = DV_MAIN;
                 } else if (act >= A_PLACE && act < A_PLACE + 9) {
                     place(w, act - A_PLACE);
@@ -1711,10 +1754,12 @@ int main(void)
         if (mv_on && view_windows && tasks_open() != 0) {
             int rc;
 
-            desk_set(video_rows);
+            desk_set(video_cols, video_rows);
             rc = windows_view(&catalog, status);
-            if (desk_rows != SCREEN_ROWS) { /* the launcher:  25 rows */
-                desk_set(SCREEN_ROWS);
+            if (desk_rows != SCREEN_ROWS || desk_cols != SCREEN_COLS) {
+                desk_set(SCREEN_COLS, SCREEN_ROWS);     /* the launcher:
+                                                         * 80x25 */
+                desk_cols = SCREEN_COLS;
                 desk_rows = SCREEN_ROWS;
             }
             if (rc == 2)
