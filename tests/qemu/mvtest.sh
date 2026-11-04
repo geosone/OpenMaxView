@@ -575,7 +575,7 @@ ntf)
     R="$M key:r wait:Tune_Performance:10"
     CMD="C:\\MAXVIEW" END="wait:ntf_end:30" run ntf 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
-        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $M text:menu $R key:m key:right,down sleep:1 key:ret sleep:2 $R key:r key:left,up sleep:1 key:ret sleep:2 $M key:f1 sleep:2 text:phelp $M key:o wait:Change_a_Program:20 key:d sleep:5 $M key:s sleep:1 key:1 sleep:2 $R key:h sleep:2 $M key:s sleep:1 key:1 sleep:2 $M text:menuq key:q sleep:1 key:c wait:Are_you_sure:10 key:y sleep:2 text:closed key:x sleep:3 $M text:menuq2 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_ntf_end"
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $M text:menu $R key:m key:right,down sleep:1 key:ret sleep:2 $R key:r key:left,up sleep:1 key:ret sleep:2 $R key:s key:right,right,left,down,up sleep:1 key:ret sleep:2 text:scroll $M key:f1 sleep:2 text:phelp $M key:o wait:Change_a_Program:20 key:d sleep:5 $M key:s sleep:1 key:1 sleep:2 $R key:h sleep:2 $M key:s sleep:1 key:1 sleep:2 $M text:menuq key:q sleep:1 key:c wait:Are_you_sure:10 key:y sleep:2 text:closed key:x sleep:3 $M text:menuq2 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_ntf_end"
     d=$OUT/ntf
     n1=$(file ntf N1.TXT)
     msgs=$(echo "$n1" | grep '^  a ' | cut -c5-)
@@ -588,6 +588,7 @@ ntf)
     check "Move right:  40h (7 bytes), its row and column" "[ \"\$(l 40)\" = 0000:0007 ] && [ -n \"\$(ev 40)\" ]"
     check "Move down:  41h, the row one more than 40h's, the same column" "(set -- \$(ev 40) \$(ev 41); [ \$((0x\$3)) = \$((0x\$1 + 1)) ] && [ \$2 = \$4 ])"
     check "Resize narrower:  42h (7 bytes), then lower:  43h with a row less" "[ \"\$(l 42)\" = 0000:0007 ] && (set -- \$(ev 42) \$(ev 43); [ \$((0x\$3)) = \$((0x\$1 - 1)) ] && [ \$2 = \$4 ])"
+    check "Scroll:  per arrow 44h (right, left) / 45h (down, up), 9 bytes, 00 00 00 and the step 01h / FFh; the view stays" "[ \"\$(l 44)\" = 0000:0009 ] && [ \"\$(echo \"\$msgs\" | grep '^4[45] $h' | cut -d' ' -f1,6-9 | tr '\\n' '|')\" = '44 00 00 00 01|44 00 00 00 01|44 00 00 00 FF|45 00 00 00 01|45 00 00 00 FF|' ] && grep -q 'ntfprb ready' '$d/scroll.txt'"
     check "F1:  48h (8 bytes) to the program, MaxView's help not shown" "[ \"\$(l 48)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^48 $h 00 00 00' && ! grep -q 'Keys and Menus' '$d/phelp.txt'"
     check "another window in front:  4Bh, back in front:  4Ah, Hide:  47h (1 byte each)" "echo \"\$msgs\" | grep -q '^4B' && echo \"\$msgs\" | grep -q '^4A' && echo \"\$msgs\" | grep -q '^47' && [ \"\$(l 47)\" = 0000:0001 ]"
     check "Close Yes:  46h (8 bytes), the program told, its window kept" "[ \"\$(l 46)\" = 0000:0008 ] && echo \"\$msgs\" | grep -q '^46 $h 00 00 00' && grep -q 'is told to close' '$d/closed.txt' && grep -q 'ntfprb ready' '$d/closed.txt'"

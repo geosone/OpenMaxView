@@ -1091,6 +1091,23 @@ static void notify(unsigned t, unsigned ev, unsigned len, unsigned a,
     mvhost_note(t, msg, len, len > 1);
 }
 
+/* Scroll with the program asking for 44h (left, right) or 45h (up, down):
+ * per arrow the event, its window's handle, 00 00 00 and the step (01h,
+ * FFh back), 9 bytes, as DESQview 2.80 (measured); the view stays, the
+ * program scrolls itself.  0:  it did not ask */
+static int notify_scroll(unsigned t, unsigned ev, int step)
+{
+    unsigned char msg[9];
+
+    if (t == 0 || !(mvhost_notify(t) & 1ul << (ev - 0x40)))
+        return 0;
+    memset(msg, 0, sizeof msg);
+    msg[0] = (unsigned char)ev;
+    msg[8] = (unsigned char)step;
+    mvhost_note(t, msg, sizeof msg, 1);
+    return 1;
+}
+
 /* a program asks to be told of Close:  Quit is not offered (DESQview's) */
 static int close_asked(void)
 {
@@ -2633,7 +2650,13 @@ static int windows_view(odq_catalog *catalog, char *status)
                 if (scan == 80) w->bg = (unsigned char)((w->bg + 1) & 7);
                 if (w->fg == 7 && w->bg == 0)
                     w->colors = 0;
-            } else if (mode == 3) {     /* the view over its 80x25 screen */
+            } else if (mode == 3 && (scan == 75 || scan == 77) &&
+                       notify_scroll(t, 0x44, scan == 77 ? 1 : -1))
+                ;
+            else if (mode == 3 && (scan == 72 || scan == 80) &&
+                     notify_scroll(t, 0x45, scan == 80 ? 1 : -1))
+                ;
+            else if (mode == 3) {       /* the view over its 80x25 screen */
                 if (!w->scrolled) {
                     w->scrolled = 1;
                     w->vtop = w->hoff = 0;
