@@ -63,8 +63,12 @@ executes an unknown file; review entries before applying them.
 
 ## Settings, memory and files
 
-`MAXVSET` edits global launcher preferences. It exposes only settings already
-honoured by the current implementation.
+`MAXVSET` edits global preferences on pages:  Global (the launcher's own
+options), and as DESQview's Advanced Setup Auto Dialer, Keyboard (Learn),
+Performance (ticks), Swapping (on or off, the directory) and Window Positions
+(where windows 1-9 open).  The page's letter (G, A, K, P, S, W) or PgUp and
+PgDn switch pages, the arrows select a field, Space toggles, Enter changes a
+number or text, F2 saves.  It exposes only settings MaxView honours.
 
 `MAXVMEM` reports DOS, EMS, XMS, VCPI, the resident API, its common-memory
 pool and the Open 386MAX backend. `N/A` means the value cannot be obtained

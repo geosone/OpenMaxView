@@ -157,9 +157,14 @@ program has been tested.
 
 ## Configure Open MaxView
 
-Run `MAXVSET` to change global preferences. Every displayed setting is used
-by the current launcher; settings for future schedulers or V86 contexts are
-not shown prematurely. The exact keys and defaults are documented in
+Run `MAXVSET` to change global preferences. Its pages are Global (the
+launcher's own options) and, as in DESQview's Advanced Setup, Auto Dialer
+(port, baud rate, dial and hang-up commands, access codes), Keyboard (Learn
+on or off), Performance (foreground and background ticks), Swapping (on or
+off, the swap directory) and Window Positions (row, column, height and width
+of windows 1-9:  where a window opens whose program has no starting window).
+G, A, K, P, S and W or PgUp/PgDn choose a page, Enter changes a field, F2
+saves.  MAXVIEW reads them when it starts.  Every displayed setting is used. The exact keys and defaults are documented in
 [Configuration](CONFIGURATION.md).
 
 ## Included services

@@ -16,7 +16,7 @@ DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
 	TROUBLE.TXT ARCHITEC.TXT HELP.TXT BBSGUIDE.TXT PROGDEV.TXT QUICK.TXT \
 	CONFORM.TXT
 
-DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -w4 -i=include -i=$(WATCOM)/h
+DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -zm -w4 -i=include -i=$(WATCOM)/h
 
 .PHONY: all package setup-package release-check test test-dos books book-html book-pdf book-epub clean
 
@@ -65,7 +65,7 @@ $(BUILD)/maxbackend.obj: kernel/maxbackend.asm | $(BUILD)
 	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
 
 $(BUILD)/MAXVIEW.EXE: $(BUILD)/opendesq.obj $(BUILD)/catalog.obj $(BUILD)/settings.obj $(BUILD)/scheduler.obj $(BUILD)/mvprocess.obj $(BUILD)/vmtask.obj $(BUILD)/vmbackend.obj $(BUILD)/maxbackend.obj $(BUILD)/mvhost.obj $(BUILD)/mvkern.obj $(BUILD)/dvp.obj
-	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,mvprocess.obj,vmtask.obj,vmbackend.obj,maxbackend.obj,mvhost.obj,mvkern.obj,dvp.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
+	cd $(BUILD) && $(JWLINK) format dos name MAXVIEW.EXE option quiet option map=MAXVIEW.MAP option stack=16384 option nofarcalls option eliminate file opendesq.obj,catalog.obj,settings.obj,scheduler.obj,mvprocess.obj,vmtask.obj,vmbackend.obj,maxbackend.obj,mvhost.obj,mvkern.obj,dvp.obj libpath $(WATCOM)/lib286/dos libpath $(WATCOM)/lib286
 
 MVDEBUG ?= 0
 $(BUILD)/mvkern.obj: kernel/mvkern.asm | $(BUILD)

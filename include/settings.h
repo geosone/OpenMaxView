@@ -16,6 +16,16 @@ typedef struct odq_settings {
     char dial[16];
     char hangup[16];
     char access[3][24];
+    unsigned dial_baud;         /* 0 left as is, 1-6:  300-9600 baud */
+    /* as DESQview's Setup:  Performance's ticks (1-15), Swapping and its
+     * directory (blank:  the current one), Keyboard's Learn, the Window
+     * Positions of windows 1-9 (row, column, height, width) */
+    unsigned fg_ticks;
+    unsigned bg_ticks;
+    unsigned swapping;
+    char swap_dir[64];
+    unsigned learn;
+    unsigned char window[9][4];
 } odq_settings;
 
 enum odq_settings_result {

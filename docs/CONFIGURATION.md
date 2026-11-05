@@ -75,8 +75,10 @@ their byte-sized DVP ranges are rejected rather than guessed.
 
 ## MAXVSET.INI
 
-The version-1 settings file contains `KEY=YES` or `KEY=NO` records, and
-the text records of Mark's Auto Dialer:
+The version-1 settings file contains `KEY=YES` or `KEY=NO` records, the
+text records of Mark's Auto Dialer, and the options of DESQview's Advanced
+Setup that MaxView has (`MAXVSET`'s pages Auto Dialer, Keyboard,
+Performance, Swapping and Window Positions):
 
 | Key | Default | Effect |
 |---|---:|---|
@@ -91,6 +93,13 @@ the text records of Mark's Auto Dialer:
 | `DIAL` | ATDT | The command before a number (up to 15 characters; `ATDP` for pulse dialling). |
 | `HANGUP` | ATZ | The command Talk sends:  the modem off the line. |
 | `ACCESS1`..`ACCESS3` | (none) | Access codes put before a number (Dial's Access Code 1-3), up to 23 characters, for example `9,`. |
+| `DIAL_BAUD` | 0 | The modem port's speed before dialling:  0 left as is, 1-6 300, 600, 1200, 2400, 4800, 9600 baud (8 data bits, no parity, 1 stop bit; INT 14h 00h). |
+| `FOREGROUND` | 6 | Clock ticks of the window in front (1-15) when MAXVIEW starts. |
+| `BACKGROUND` | 2 | Clock ticks of each other window (1-15). |
+| `SWAPPING` | YES | NO:  windows are never swapped out (Tune Performance's system Allow swapping out N at start). |
+| `SWAP_DIR` | (none) | The directory of the `MVSWAPnn.TMP` files; blank:  the current one. |
+| `LEARN` | YES | NO:  Shift+Alt does not open Learn (scripts already learned still play). |
+| `WINDOW1`..`WINDOW9` | DESQview's | Where window 1-9 opens when its program has no starting window:  row, column, height, width of its contents (frame around them), for example `WINDOW1=1,1,10,78`.  The defaults are DESQview 2.80's (measured). |
 
 Unknown, duplicate or malformed records are validation errors rather than
 silently accepted future settings. Use `MAXVSET /CHECK` after hand editing.

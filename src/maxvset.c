@@ -2,85 +2,206 @@
 /* Global Open MaxView settings editor. */
 #include <conio.h>
 #include <ctype.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "mvui.h"
 #include "settings.h"
 
-#define OPTION_COUNT 7
+/* the pages:  MaxView's own options, then those of DESQview's Advanced
+ * Setup that MaxView has (letters as DESQview's) */
+#define PAGES 6
+static const char *page_names[PAGES] = {
+    "Global", "Auto Dialer", "Keyboard", "Performance", "Swapping",
+    "Window Positions"
+};
+static const char page_keys[PAGES] = { 'G', 'A', 'K', 'P', 'S', 'W' };
 
-static const char *option_names[OPTION_COUNT] = {
-    "Load resident API automatically",
-    "Load ANSI console automatically",
-    "Confirm before leaving MaxView",
-    "Reload program catalogue after a child",
-    "Show memory limits in program list",
-    "Launch programs by red hotkey",
-    "Show the Quick Help instructions"
+enum { F_BOOL, F_NUM, F_BYTE, F_TEXT };
+
+typedef struct field {
+    unsigned char page, row, col, type;
+    unsigned low, high;         /* F_NUM, F_BYTE; F_TEXT:  high its size */
+    unsigned offset;            /* in odq_settings */
+    const char *label;          /* at column 4 (F_BOOL:  after its box) */
+} field;
+
+#define AT(member) (unsigned)offsetof(odq_settings, member)
+
+static const field fixed[] = {
+    { 0, 5, 6, F_BOOL, 0, 1, AT(auto_tsr), "Load resident API automatically" },
+    { 0, 7, 6, F_BOOL, 0, 1, AT(auto_ansi), "Load ANSI console automatically" },
+    { 0, 9, 6, F_BOOL, 0, 1, AT(confirm_exit), "Confirm before leaving MaxView" },
+    { 0, 11, 6, F_BOOL, 0, 1, AT(reload_catalog),
+      "Reload program catalogue after a child" },
+    { 0, 13, 6, F_BOOL, 0, 1, AT(show_memory),
+      "Show memory limits in program list" },
+    { 0, 15, 6, F_BOOL, 0, 1, AT(hotkey_launch), "Launch programs by red hotkey" },
+    { 0, 17, 6, F_BOOL, 0, 1, AT(quick_help), "Show the Quick Help instructions" },
+    { 1, 5, 24, F_NUM, 1, 4, AT(modem_port), "Dialer port (COM)" },
+    { 1, 7, 24, F_NUM, 0, 6, AT(dial_baud), "Dialer baud rate" },
+    { 1, 9, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->dial), AT(dial),
+      "Dial command" },
+    { 1, 11, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->hangup), AT(hangup),
+      "Hang up command" },
+    { 1, 14, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->access[0]), AT(access[0]),
+      "Access code 1" },
+    { 1, 16, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->access[1]), AT(access[1]),
+      "Access code 2" },
+    { 1, 18, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->access[2]), AT(access[2]),
+      "Access code 3" },
+    { 2, 6, 6, F_BOOL, 0, 1, AT(learn), "Use Learn (Shift+Alt)" },
+    { 3, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
+    { 3, 9, 30, F_NUM, 1, 15, AT(bg_ticks), "Background ticks" },
+    { 4, 6, 6, F_BOOL, 0, 1, AT(swapping),
+      "Swap programs out as needed" },
+    { 4, 9, 4, F_TEXT, 0, 41, AT(swap_dir), "" }     /* (40 shown) */
 };
 
-static unsigned *option_value(odq_settings *settings, unsigned index)
+#define FIXED (sizeof fixed / sizeof fixed[0])
+#define FIELDS (FIXED + 36)
+static field fields[FIELDS];
+
+/* the Window Positions' grid:  row, column, height, width of windows 1-9 */
+static void fields_init(void)
 {
-    switch (index) {
-    case 0: return &settings->auto_tsr;
-    case 1: return &settings->auto_ansi;
-    case 2: return &settings->confirm_exit;
-    case 3: return &settings->reload_catalog;
-    case 4: return &settings->show_memory;
-    case 5: return &settings->hotkey_launch;
-    default: return &settings->quick_help;
-    }
+    static const unsigned low[4] = { 0, 0, 1, 1 }, high[4] = { 23, 79, 23, 78 };
+    unsigned i, j;
+
+    memcpy(fields, fixed, sizeof fixed);
+    for (i = 0; i < 9; ++i)
+        for (j = 0; j < 4; ++j) {
+            field *f = &fields[FIXED + i * 4 + j];
+
+            f->page = 5;
+            f->row = (unsigned char)(6 + i);
+            f->col = (unsigned char)(17 + j * 8);
+            f->type = F_BYTE;
+            f->low = low[j];
+            f->high = high[j];
+            f->offset = AT(window[0][0]) + i * 4 + j;
+            f->label = "";
+        }
 }
 
-static unsigned option_enabled(const odq_settings *settings, unsigned index)
+static void *value_of(odq_settings *settings, const field *f)
 {
-    switch (index) {
-    case 0: return settings->auto_tsr;
-    case 1: return settings->auto_ansi;
-    case 2: return settings->confirm_exit;
-    case 3: return settings->reload_catalog;
-    case 4: return settings->show_memory;
-    case 5: return settings->hotkey_launch;
-    default: return settings->quick_help;
-    }
+    return (char *)settings + f->offset;
 }
 
-static void draw(const odq_settings *settings, unsigned selected,
-                 const char *status)
+static unsigned number_of(odq_settings *settings, const field *f)
 {
-    unsigned index, row;
+    if (f->type == F_BYTE)
+        return *(unsigned char *)value_of(settings, f);
+    return *(unsigned *)value_of(settings, f);
+}
+
+static unsigned field_width(const field *f)
+{
+    if (f->type == F_TEXT)
+        return f->high - 1 > 40 ? 40 : f->high - 1;
+    return 3;
+}
+
+static const char *baud_names[7] = {
+    "Leave as is", "300", "600", "1200", "2400", "4800", "9600"
+};
+
+/* the field's value as shown */
+static void field_text(odq_settings *settings, const field *f, char *text)
+{
+    if (f->type == F_BOOL)
+        strcpy(text, number_of(settings, f) ? "[X]" : "[ ]");
+    else if (f->type == F_TEXT)
+        sprintf(text, "%-*.*s", (int)field_width(f), (int)field_width(f),
+                (char *)value_of(settings, f));
+    else
+        sprintf(text, "%3u", number_of(settings, f));
+}
+
+static void draw(odq_settings *settings, unsigned page, unsigned selected,
+                 const char *status, const char *edit)
+{
+    unsigned i, col = 1;
+    char text[48];
 
     mvui_fill(0, 0, MVUI_ROWS - 1, MVUI_COLS - 1, 219, MVUI_BACKGROUND);
     mvui_fill(0, 0, 0, 79, ' ', MVUI_MENU);
-    mvui_write(0, 1, "Setup", MVUI_MENU);
-    mvui_put(0, 1, 'S', MVUI_MENU_TRIGGER);
-    mvui_write(0, 61, "MaxView Settings", MVUI_MENU_TRIGGER);
+    for (i = 0; i < PAGES; ++i) {       /* the pages, their letters red */
+        const char *name = page_names[i];
+        unsigned k = (unsigned)(strchr(name, page_keys[i]) - name);
+
+        mvui_fill(0, col - 1, 0, col + (unsigned)strlen(name),
+                  ' ', i == page ? MVUI_ACTIVE : MVUI_MENU);
+        mvui_write(0, col, name, i == page ? MVUI_ACTIVE : MVUI_MENU);
+        mvui_put(0, col + k, (unsigned char)page_keys[i],
+                 i == page ? MVUI_TRIGGER : MVUI_MENU_TRIGGER);
+        col += (unsigned)strlen(name) + 2;
+    }
     mvui_fill(2, 1, 21, 55, ' ', MVUI_DATA);
     mvui_shadow(2, 1, 21, 55);
     mvui_fill(2, 59, 21, 77, ' ', MVUI_QUICK);
     mvui_shadow(2, 59, 21, 77);
-    mvui_write(3, 18, "Global Options", MVUI_DATA_HIGH);
-    for (index = 0; index < OPTION_COUNT; ++index) {
-        unsigned char attr = index == selected ? MVUI_ACTIVE : MVUI_DATA;
-        row = 5 + index * 2;
-        mvui_fill(row, 4, row, 52, ' ', attr);
-        mvui_write(row, 6, option_enabled(settings, index) ? "[X]" : "[ ]",
-                   attr);
-        mvui_write(row, 11, option_names[index], attr);
-        if (index == selected)
-            mvui_put(row, 7, option_enabled(settings, index) ? 'X' : ' ',
+    mvui_write(3, (unsigned)(28 - strlen(page_names[page]) / 2),
+               page_names[page], MVUI_DATA_HIGH);
+    switch (page) {
+    case 1:
+        mvui_write(7, 29, baud_names[settings->dial_baud], MVUI_DATA);
+        mvui_write(13, 4, "Long distance:  put before a number", MVUI_DATA);
+        break;
+    case 2:
+        mvui_write(8, 4, "Off:  Shift+Alt does not open Learn.", MVUI_DATA);
+        break;
+    case 3:
+        mvui_write(5, 4, "Time slices in clock ticks (1-15)", MVUI_DATA);
+        mvui_write(12, 4, "Tune Performance changes them while", MVUI_DATA);
+        mvui_write(13, 4, "MaxView runs.", MVUI_DATA);
+        break;
+    case 4:
+        mvui_write(8, 4, "Swapping directory:", MVUI_DATA);
+        mvui_write(11, 4, "Blank:  the current directory.", MVUI_DATA);
+        break;
+    case 5:
+        mvui_write(5, 6, "Window     Row  Column  Height   Width", MVUI_DATA);
+        for (i = 0; i < 9; ++i) {
+            sprintf(text, "%u", i + 1);
+            mvui_write(6 + i, 9, text, MVUI_DATA);
+        }
+        mvui_write(16, 4, "Where a window opens whose program", MVUI_DATA);
+        mvui_write(17, 4, "has no starting position.", MVUI_DATA);
+        break;
+    }
+    for (i = 0; i < FIELDS; ++i) {
+        const field *f = &fields[i];
+        unsigned char attr = i == selected ? MVUI_ACTIVE : MVUI_DATA;
+
+        if (f->page != page)
+            continue;
+        if (f->type == F_BOOL) {
+            mvui_fill(f->row, 4, f->row, 52, ' ', attr);
+            mvui_write(f->row, 11, f->label, attr);
+        } else if (*f->label != '\0')
+            mvui_write(f->row, 4, f->label, MVUI_DATA);
+        if (i == selected && edit != NULL)
+            sprintf(text, "%-*s", (int)field_width(f), edit);
+        else
+            field_text(settings, f, text);
+        mvui_write(f->row, f->col, text, attr);
+        if (i == selected && f->type == F_BOOL)
+            mvui_put(f->row, f->col + 1, (unsigned char)text[1],
                      MVUI_TRIGGER);
     }
     mvui_write(4, 61, "Quick Help", MVUI_QUICK_HIGH);
-    mvui_write(6, 61, "Up/Down Select", MVUI_QUICK);
-    mvui_write(7, 61, "Space   Toggle", MVUI_QUICK);
-    mvui_write(8, 61, "F2/S    Save", MVUI_QUICK);
-    mvui_write(9, 61, "Esc     Exit", MVUI_QUICK);
-    mvui_write(13, 61, "Status:", MVUI_QUICK_HIGH);
-    mvui_write(14, 61, status, MVUI_QUICK);
-    mvui_write(18, 5, "Backend scheduling options appear only when supported.",
-               MVUI_DATA);
+    mvui_write(6, 61, "G A K P S W Page", MVUI_QUICK);
+    mvui_write(7, 61, "Arrows  Select", MVUI_QUICK);
+    mvui_write(8, 61, "Space   Toggle", MVUI_QUICK);
+    mvui_write(9, 61, "Enter   Change", MVUI_QUICK);
+    mvui_write(10, 61, "F2      Save", MVUI_QUICK);
+    mvui_write(11, 61, "Esc     Exit", MVUI_QUICK);
+    mvui_write(14, 61, "Status:", MVUI_QUICK_HIGH);
+    mvui_write(15, 61, status, MVUI_QUICK);
     mvui_button(24, 1, 12, "Exit Esc");
     mvui_button(24, 15, 14, "Toggle Space");
     mvui_button(24, 31, 12, "Save F2");
@@ -97,13 +218,108 @@ static int save_settings(const char *path, const odq_settings *settings,
     return 1;
 }
 
+static unsigned first_field(unsigned page)
+{
+    unsigned i;
+
+    for (i = 0; i < FIELDS && fields[i].page != page; ++i)
+        ;
+    return i;
+}
+
+/* the field on page above (dir -1) or below (+1) the selected one:  on the
+ * nearest row, the nearest column */
+static unsigned field_near(unsigned selected, int dir)
+{
+    const field *s = &fields[selected];
+    unsigned i, best = selected, row = 0, dist = 0;
+
+    for (i = 0; i < FIELDS; ++i) {
+        const field *f = &fields[i];
+        unsigned d = f->col > s->col ? f->col - s->col : s->col - f->col;
+
+        if (f->page != s->page ||
+            (dir < 0 ? f->row >= s->row : f->row <= s->row))
+            continue;
+        if (best == selected || (dir < 0 ? f->row > row : f->row < row) ||
+            (f->row == row && d < dist)) {
+            best = i;
+            row = f->row;
+            dist = d;
+        }
+    }
+    return best;
+}
+
+/* the selected field's next (+1) or previous (-1) one on its page */
+static unsigned field_step(unsigned selected, int dir)
+{
+    unsigned i = selected;
+
+    do
+        i = (unsigned)((int)i + dir + (int)FIELDS) % FIELDS;
+    while (fields[i].page != fields[selected].page);
+    return i;
+}
+
+/* Enter:  the number or text typed in its place (Enter takes, Esc not);
+ * 1:  changed */
+static int field_edit(odq_settings *settings, unsigned page,
+                      unsigned selected, char *status)
+{
+    const field *f = &fields[selected];
+    unsigned size = f->type == F_TEXT ? f->high : 4, n;
+    char edit[64];
+    int key;
+
+    if (f->type == F_TEXT)
+        strcpy(edit, (char *)value_of(settings, f));
+    else
+        sprintf(edit, "%u", number_of(settings, f));
+    for (;;) {
+        n = (unsigned)strlen(edit);
+        draw(settings, page, selected, status, edit);
+        key = getch();
+        if (key == 0 || key == 0xe0) {
+            getch();
+            continue;
+        }
+        if (key == 27)
+            return 0;
+        if (key == 8 && n != 0)
+            edit[n - 1] = '\0';
+        else if (key == 13)
+            break;
+        else if (key >= ' ' && key < 127 && n + 1 < size &&
+                 (f->type == F_TEXT || isdigit(key))) {
+            edit[n] = (char)(f->type == F_TEXT ? toupper(key) : key);
+            edit[n + 1] = '\0';
+        }
+    }
+    if (f->type == F_TEXT) {
+        strcpy((char *)value_of(settings, f), edit);
+        return 1;
+    }
+    n = (unsigned)atoi(edit);
+    if (edit[0] == '\0' || n < f->low || n > f->high) {
+        sprintf(status, "From %u to %u.", f->low, f->high);
+        return 0;
+    }
+    if (f->type == F_BYTE)
+        *(unsigned char *)value_of(settings, f) = (unsigned char)n;
+    else
+        *(unsigned *)value_of(settings, f) = n;
+    return 1;
+}
+
 static int interactive(const char *path)
 {
     odq_settings settings;
-    unsigned selected = 0, error_line = 0;
+    unsigned page = 0, selected = 0, error_line = 0, i;
     int result, key, dirty = 0;
     char status[32];
 
+    fields_init();
     result = odq_settings_load(path, &settings, &error_line);
     if (result == ODQ_SETTINGS_IO) {
         odq_settings_defaults(&settings);
@@ -117,15 +333,22 @@ static int interactive(const char *path)
 
     mvui_init();
     for (;;) {
-        draw(&settings, selected, status);
+        draw(&settings, page, selected, status, NULL);
         key = getch();
         if (key == 0 || key == 0xe0) {
             key = getch();
-            if (key == 72 && selected > 0)
-                --selected;
-            else if (key == 80 && selected + 1 < OPTION_COUNT)
-                ++selected;
-            else if (key == 60 && save_settings(path, &settings, status))
+            if (key == 72)
+                selected = field_near(selected, -1);
+            else if (key == 80)
+                selected = field_near(selected, 1);
+            else if (key == 75)
+                selected = field_step(selected, -1);
+            else if (key == 77)
+                selected = field_step(selected, 1);
+            else if (key == 73 || key == 81) {          /* PgUp, PgDn */
+                page = (page + (key == 73 ? PAGES - 1 : 1)) % PAGES;
+                selected = first_field(page);
+            } else if (key == 60 && save_settings(path, &settings, status))
                 dirty = 0;
             continue;
         }
@@ -135,13 +358,26 @@ static int interactive(const char *path)
                 continue;
             break;
         }
-        if (key == ' ' || key == 13) {
-            unsigned *value = option_value(&settings, selected);
+        if (key == 9) {
+            selected = field_step(selected, 1);
+            continue;
+        }
+        for (i = 0; i < PAGES && page_keys[i] != key; ++i)
+            ;
+        if (i < PAGES) {
+            page = i;
+            selected = first_field(page);
+        } else if (fields[selected].type == F_BOOL &&
+                   (key == ' ' || key == 13)) {
+            unsigned *value = value_of(&settings, &fields[selected]);
+
             *value = !*value;
             dirty = 1;
             strcpy(status, "Changed; save F2.");
-        } else if (key == 'S' && save_settings(path, &settings, status)) {
-            dirty = 0;
+        } else if (fields[selected].type != F_BOOL && key == 13 &&
+                   field_edit(&settings, page, selected, status)) {
+            dirty = 1;
+            strcpy(status, "Changed; save F2.");
         }
     }
     mvui_restore();
@@ -150,6 +386,8 @@ static int interactive(const char *path)
 
 static void print_settings(const odq_settings *settings)
 {
+    unsigned index;
+
     printf("AUTO_TSR=%s\n", settings->auto_tsr ? "YES" : "NO");
     printf("AUTO_ANSI=%s\n", settings->auto_ansi ? "YES" : "NO");
     printf("CONFIRM_EXIT=%s\n", settings->confirm_exit ? "YES" : "NO");
@@ -164,6 +402,16 @@ static void print_settings(const odq_settings *settings)
     printf("ACCESS1=%s\n", settings->access[0]);
     printf("ACCESS2=%s\n", settings->access[1]);
     printf("ACCESS3=%s\n", settings->access[2]);
+    printf("DIAL_BAUD=%u\n", settings->dial_baud);
+    printf("FOREGROUND=%u\n", settings->fg_ticks);
+    printf("BACKGROUND=%u\n", settings->bg_ticks);
+    printf("SWAPPING=%s\n", settings->swapping ? "YES" : "NO");
+    printf("SWAP_DIR=%s\n", settings->swap_dir);
+    printf("LEARN=%s\n", settings->learn ? "YES" : "NO");
+    for (index = 0; index < 9; ++index)
+        printf("WINDOW%u=%u,%u,%u,%u\n", index + 1,
+               settings->window[index][0], settings->window[index][1],
+               settings->window[index][2], settings->window[index][3]);
 }
 
 int main(int argc, char **argv)

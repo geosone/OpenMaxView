@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -132,6 +132,11 @@ file() {    # case, file:  a file of the run's C:
 
 last() {    # case, file, word:  the number after the last "word"
     file "$1" "$2" | awk -v w="$3" '$1 == w {n = $2 + 0} END {print n + 0}'
+}
+
+oldwin() {  # MAXVSET.INI:  windows 1 and 2 smaller (room to move them right)
+    printf 'WINDOW1=2,2,10,50\r\nWINDOW2=5,8,10,50\r\n' > "$OUT/MAXVSET.INI"
+    echo "$OUT/MAXVSET.INI"
 }
 
 check() {   # description, condition
@@ -325,7 +330,7 @@ win)
     printf 'A|Probe A|C:\\KEYPROBE.COM C:\\W1.TXT D||64|640\r\nB|Probe B|C:\\KEYPROBE.COM C:\\W2.TXT B||64|640\r\n' > "$cfg"
     M="key:alt wait:Switch_Windows:20"
     CMD="C:\\MAXVIEW" END="wait:win_end:30" run win 0 "" \
-        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg $(oldwin)" \
         "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 $M key:o wait:Change_a_Program:20 key:b wait:keyprobe_B_ready:20 $M sleep:1 text:two key:s wait:Probe_B:10 key:1 sleep:1 key:a,b sleep:2 text:typed $M key:r wait:Tune_Performance:10 text:rearr key:m key:right,right,right,down sleep:1 key:ret sleep:1 text:moved mon:xp+/4000xb+0xb8000>mvram $M key:z sleep:2 text:full $M key:c wait:Are_you_sure:10 key:y wait:Probe_A_ended:20 text:closed key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_win_end"
     d=$OUT/win
     w1=$(file win W1.TXT)
@@ -418,6 +423,28 @@ dvpwin)
     check "the window's contents at row 4, column 2, 9 x 40 (its frame around them)" "[ '$(corners v1)' = '0xc9 0xc8 0xbb 0xbc' ]"
     check "Resize:  not past its Maximum Height and Width" "[ '$(corners v2)' = '0xc9 0xc8 0xbb 0xbc' ]"
     check "DOS works afterwards" "grep -q '^dvpwin end' '$d/end.txt'"
+    ;;
+setup)
+    echo "== setup:  MAXVSET's pages (DESQview's Advanced Setup):  Performance, Swapping, Keyboard, Window Positions, Auto Dialer; MAXVIEW with them"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    E="key:ret key:backspace,backspace"
+    CMD="C:\\MAXVSET" END="wait:setup_end:30" run setup 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/MAXVSET.EXE $cfg" \
+        "wait:Load_resident:60 key:p wait:Foreground_ticks:10 $E type:9 sleep:1 text:perf key:s wait:Swapping_directory:10 key:spc key:down key:ret type:C:\\SW sleep:1 text:swap key:k wait:Use_Learn:10 key:spc key:w wait:Window_Positions:10 $E type:3 key:right $E type:10 key:right $E type:8 key:right $E type:40 sleep:1 text:wpos key:a wait:Dialer_baud:10 key:down $E type:4 sleep:1 text:dial key:f2 wait:Settings_saved:10 key:esc sleep:3 type:MAXVSET_/LIST_>C:\\SL.TXT sleep:3 type:MAXVIEW wait:Open_Program:60 key:ret sleep:5 key:shift-alt sleep:3 text:sa $M sleep:1 mon:xp+/4000xb+0xb8000>v1 key:r wait:Tune_Performance:10 key:t wait:This_Window:10 sleep:1 text:tune key:esc,esc sleep:2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_setup_end"
+    d=$OUT/setup
+    sl=$(file setup SL.TXT | tr '\n' ' ')
+    echo "  /LIST:  $sl"
+    vc() { awk '/^[0-9a-f]+:/' "$d/$1.txt" 2>/dev/null | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($2 * 80 + $3) * 2 + 1))p"; }
+    corners="$(vc v1 2 9) $(vc v1 11 9) $(vc v1 2 50) $(vc v1 11 50)"
+    echo "  frame corners (2,9) (11,9) (2,50) (11,50):  $corners"
+    check "the pages:  Performance, Swapping, Window Positions, Auto Dialer (2400 shown)" "grep -q 'Foreground ticks *9' '$d/perf.txt' && grep -q 'C:.SW' '$d/swap.txt' && grep -q 'Height' '$d/wpos.txt' && grep -q '2400' '$d/dial.txt'"
+    check "saved:  FOREGROUND 9, SWAPPING NO, SWAP_DIR, LEARN NO, WINDOW1 3,10,8,40, DIAL_BAUD 4" "echo '$sl' | grep -q 'FOREGROUND=9 ' && echo '$sl' | grep -q 'SWAPPING=NO ' && echo '$sl' | grep -q 'SWAP_DIR=C:.SW ' && echo '$sl' | grep -q 'LEARN=NO ' && echo '$sl' | grep -q 'WINDOW1=3,10,8,40 ' && echo '$sl' | grep -q 'WINDOW2=14,1,10,78 ' && echo '$sl' | grep -q 'DIAL_BAUD=4 '"
+    check "MAXVIEW:  window 1 (no starting window of its own) at Setup's position (row 3, column 10, 8 x 40)" "[ '$corners' = '0xc9 0xc8 0xbb 0xbc' ]"
+    check "MAXVIEW:  Learn N (Shift+Alt opens nothing)" "! grep -q 'Display Scripts' '$d/sa.txt'"
+    check "MAXVIEW:  Tune Performance with Setup's 9 foreground ticks, swapping N" "grep -q 'Foreground ticks *\[ 9\]' '$d/tune.txt' && grep -q 'Background ticks *\[ 2\]' '$d/tune.txt' && grep -q 'Allow swapping out *\[N\]' '$d/tune.txt'"
+    check "DOS works afterwards" "grep -q '^setup end' '$d/end.txt'"
     ;;
 mvlaunch)
     echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"
@@ -672,7 +699,7 @@ ntf)
     M="key:alt wait:Switch_Windows:20"
     R="$M key:r wait:Tune_Performance:10"
     CMD="C:\\MAXVIEW" END="wait:ntf_end:30" run ntf 0 "" \
-        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg $(oldwin)" \
         "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $M text:menu $R key:m key:right,down sleep:1 key:ret sleep:2 $R key:r key:left,up sleep:1 key:ret sleep:2 $R key:s key:right,right,left,down,up sleep:1 key:ret sleep:2 text:scroll $M key:f1 sleep:2 text:phelp $M key:o wait:Change_a_Program:20 key:d sleep:5 $M key:s sleep:1 key:1 sleep:2 $R key:h sleep:2 $M key:s sleep:1 key:1 sleep:2 $M text:menuq key:q sleep:1 key:c wait:Are_you_sure:10 key:y sleep:2 text:closed key:x sleep:3 $M text:menuq2 key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_ntf_end"
     d=$OUT/ntf
     n1=$(file ntf N1.TXT)

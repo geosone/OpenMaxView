@@ -177,9 +177,8 @@ restoration before full-table commit and out-of-order release fail closed.
 basename prevents its `.NEW` and `.BAK` files from colliding with catalogue
 updates.  The current options control resident-API and ANSI-console autoload,
 exit confirmation, catalogue reload after children, memory-limit display,
-program hotkeys and the Quick Help text.  Scheduler, swapping and per-VM
-settings are deliberately not offered until the Open 386MAX backend advertises
-those capabilities.  For automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and
+program hotkeys and the Quick Help text, and, as DESQview's Advanced Setup,
+the Auto Dialer, Learn, the time slices, swapping and the window positions.  For automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and
 optional `/F:file`.
 
 `MAXVAUTO.EXE` detects known DOS programs in the current directory and every

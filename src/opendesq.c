@@ -68,11 +68,13 @@ typedef struct mv_window {
     unsigned char noclose;      /* its program:  Allow Close Window N */
     unsigned char maxrows, maxcols;     /* its program's Maximum Height,
                                          * Width (Resize), 0:  none */
+    unsigned char number;       /* as DESQview's:  1-9, the lowest free */
 } mv_window;
 static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
 static unsigned char tune_noswap;       /* Tune's system Allow swapping N */
 static mv_window win[MVK_MAXTASK];
 static unsigned char zorder[MVK_MAXTASK];
+static const odq_settings *mv_settings;
 static unsigned nwin;
 
 static unsigned short far *video = (unsigned short far *)0xb8000000UL;
@@ -682,14 +684,27 @@ static unsigned tasks_open(void)
     return n;
 }
 
+static void win_place(mv_window *w, unsigned row, unsigned col,
+                      unsigned rows, unsigned cols);
+
+/* a new window:  as DESQview's, at Setup's Window Position for its number
+ * (the lowest not in use; its program's start window, if any, later) */
 static void win_add(unsigned t)
 {
-    unsigned k = nwin % 5;
+    unsigned i, n;
+    const unsigned char *pos;
 
-    win[t].top = (unsigned char)(2 + 3 * k);
-    win[t].left = (unsigned char)(2 + 6 * k);
-    win[t].rows = 10;
-    win[t].cols = 50;
+    for (n = 1; n <= 9; ++n) {
+        for (i = 0; i < nwin && win[zorder[i]].number != n; ++i)
+            ;
+        if (i == nwin)
+            break;
+    }
+    if (n > 9)
+        n = nwin % 9 + 1;
+    win[t].number = (unsigned char)n;
+    pos = mv_settings->window[n - 1];
+    win_place(&win[t], pos[0], pos[1], pos[2], pos[3]);
     win[t].gpos = win[t].gsize = 0;
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
     win[t].exclusive = win[t].colors = win[t].swapped = win[t].noswap = 0;
@@ -747,6 +762,8 @@ static void start_multitasking(char *status)
 
     if (rc == 0)
         rc = mvk_start(2);
+    if (rc == 0)
+        mvk_tune(tune_fg, tune_bg);
     if (rc != 0) {
         mvk_stop();
         sprintf(status, "One program at a time: %.40s.", mvhost_error(rc));
@@ -763,16 +780,22 @@ static void start_multitasking(char *status)
 static unsigned char __far swap_buf[4096];
 static const char *swap_msg;            /* for the status line */
 
+/* in Setup's swapping directory (blank:  the current one) */
 static void swap_name(unsigned t, char *name)
 {
-    sprintf(name, "MVSWAP%02u.TMP", t);
+    const char *dir = mv_settings->swap_dir;
+    size_t n = strlen(dir);
+
+    sprintf(name, "%s%sMVSWAP%02u.TMP", dir,
+            n != 0 && dir[n - 1] != '\\' && dir[n - 1] != ':' ? "\\" : "",
+            t);
 }
 
 static int swap_out(unsigned t)
 {
     unsigned n = mvk_swapcheck(t), i, done;
     int fd, ok = 1;
-    char name[16];
+    char name[80];
 
     if (n == 0 || win[t].swapped)
         return 0;
@@ -831,7 +854,7 @@ static int swap_in(unsigned t)
 {
     unsigned i, done;
     int fd, rc, ok = 1;
-    char name[16];
+    char name[80];
 
     if (!win[t].swapped)
         return 1;
@@ -868,7 +891,7 @@ static void stop_multitasking(void)
 {
     unsigned long start;
     unsigned t, pass;
-    char name[16];
+    char name[80];
 
     for (pass = 0; pass < 2; ++pass) {
         for (t = 1; t < MVK_MAXTASK; ++t)
@@ -1269,7 +1292,6 @@ static unsigned long play_until;
 /* Mark's Auto Dialer:  the number marked (as shown, and what is dialled),
  * the settings with the modem's port and commands */
 static char phone_shown[24], phone[24];
-static const odq_settings *mv_settings;
 
 static int phone_char(char ch)
 {
@@ -1327,6 +1349,15 @@ static void phone_dial(int code, char *status)
 {
     char line[96];
 
+    if (mv_settings->dial_baud != 0) {  /* Setup's Dialer Baud Rate:  300-
+                                         * 9600, 8 data bits, no parity */
+        union REGS r;
+
+        r.h.ah = 0x00;
+        r.h.al = (unsigned char)((mv_settings->dial_baud + 1) << 5 | 0x03);
+        r.x.dx = mv_settings->modem_port - 1;
+        int86(0x14, &r, &r);
+    }
     sprintf(line, "%s%s%s;\r", mv_settings->dial,
             code ? mv_settings->access[code - 1] : "", phone);
     if (modem_send(line))
@@ -2473,8 +2504,9 @@ enum {
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
     A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
     A_LFIXED, A_LVAR, A_LDELAY, A_SCISSORS, A_SCOPY, A_SCUT, A_PHELP,
-    A_REVIVE, A_WSWAP, A_SSWAP, A_SPASTE,
-    A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
+    A_REVIVE, A_WSWAP, A_SSWAP, A_SPASTE,       /* (below A_PLACE) */
+    A_PLACE = 50, A_ROWS = 60, A_HELPPAGE = 80, A_PROGRAM = 100,
+    A_WINDOW = 200
 };
 
 static unsigned pick_for, del_index;    /* Open Window's list picks the
@@ -2856,8 +2888,8 @@ static int windows_view(odq_catalog *catalog, char *status)
                     scripts_tap();
                 } else if (ev == 2 && script_find(k) >= 0)
                     script_play((unsigned)script_find(k));
-                else if (ev == 3 && mode == 0)
-                    learn_req = 1;
+                else if (ev == 3 && mode == 0 && mv_settings->learn)
+                    learn_req = 1;              /* (Setup:  Learn Y) */
         }
         xfer_feed();
         if (swap_msg != NULL) {         /* (swapping could not) */
@@ -3772,6 +3804,9 @@ int main(void)
 
     reload_settings(&settings);
     mv_settings = &settings;
+    tune_fg = settings.fg_ticks;        /* Setup's Performance, Swapping */
+    tune_bg = settings.bg_ticks;
+    tune_noswap = (unsigned char)!settings.swapping;
 
     apply_resident_services(&settings, status);
     mt_open();

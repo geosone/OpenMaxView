@@ -41,6 +41,13 @@ static int parse_boolean(const char *text, unsigned *value)
     return 0;
 }
 
+/* DESQview 2.80's Window Positions (measured) */
+static const unsigned char default_window[9][4] = {
+    { 1, 1, 10, 78 }, { 14, 1, 10, 78 }, { 5, 16, 15, 48 },
+    { 1, 1, 23, 38 }, { 1, 42, 23, 37 }, { 1, 1, 10, 38 },
+    { 1, 42, 10, 37 }, { 14, 1, 10, 38 }, { 14, 42, 10, 37 }
+};
+
 void odq_settings_defaults(odq_settings *settings)
 {
     memset(settings, 0, sizeof *settings);
@@ -54,6 +61,53 @@ void odq_settings_defaults(odq_settings *settings)
     settings->modem_port = 1;
     strcpy(settings->dial, "ATDT");
     strcpy(settings->hangup, "ATZ");
+    settings->fg_ticks = 6;
+    settings->bg_ticks = 2;
+    settings->swapping = 1;
+    settings->learn = 1;
+    memcpy(settings->window, default_window, sizeof settings->window);
+}
+
+/* a number from low to high */
+static int parse_number(const char *text, unsigned low, unsigned high,
+                        unsigned *value)
+{
+    unsigned long number = 0;
+
+    if (*text == '\0')
+        return 0;
+    for (; *text != '\0'; ++text) {
+        if (!isdigit((unsigned char)*text))
+            return 0;
+        number = number * 10 + (unsigned)(*text - '0');
+        if (number > high)
+            return 0;
+    }
+    if (number < low)
+        return 0;
+    *value = (unsigned)number;
+    return 1;
+}
+
+/* WINDOWn:  row,column,height,width */
+static int parse_window(char *text, unsigned char *window)
+{
+    static const unsigned high[4] = { 23, 79, 23, 78 };
+    unsigned i, value;
+    char *comma;
+
+    for (i = 0; i < 4; ++i) {
+        comma = strchr(text, ',');
+        if ((comma == NULL) != (i == 3))
+            return 0;
+        if (comma != NULL)
+            *comma = '\0';
+        if (!parse_number(trim(text), i < 2 ? 0 : 1, high[i], &value))
+            return 0;
+        window[i] = (unsigned char)value;
+        text = comma + 1;
+    }
+    return 1;
 }
 
 /* a text setting:  up to size - 1 characters */
@@ -112,6 +166,24 @@ int odq_settings_load(const char *path, odq_settings *settings,
             destination = &parsed.hotkey_launch;
         else if (equal_text(name, "QUICK_HELP"))
             destination = &parsed.quick_help;
+        else if (equal_text(name, "SWAPPING"))
+            destination = &parsed.swapping;
+        else if (equal_text(name, "LEARN"))
+            destination = &parsed.learn;
+        else if (equal_text(name, "DIAL_BAUD")) {
+            if (!parse_number(value, 0, 6, &parsed.dial_baud))
+                goto syntax_error;
+            continue;
+        } else if (equal_text(name, "FOREGROUND")) {
+            if (!parse_number(value, 1, 15, &parsed.fg_ticks))
+                goto syntax_error;
+            continue;
+        } else if (equal_text(name, "BACKGROUND")) {
+            if (!parse_number(value, 1, 15, &parsed.bg_ticks))
+                goto syntax_error;
+            continue;
+        } else if (equal_text(name, "SWAP_DIR"))
+            text = parsed.swap_dir, text_size = sizeof parsed.swap_dir;
         else if (equal_text(name, "MODEM_PORT")) {
             if (value[0] < '1' || value[0] > '4' || value[1] != '\0')
                 goto syntax_error;
@@ -127,7 +199,15 @@ int odq_settings_load(const char *path, odq_settings *settings,
             text = parsed.access[1], text_size = sizeof parsed.access[1];
         else if (equal_text(name, "ACCESS3"))
             text = parsed.access[2], text_size = sizeof parsed.access[2];
-        else
+        else if (strlen(name) == 7 && name[6] >= '1' && name[6] <= '9') {
+            unsigned index = (unsigned)(name[6] - '1');
+
+            name[6] = '\0';
+            if (!equal_text(name, "WINDOW") ||
+                !parse_window(value, parsed.window[index]))
+                goto syntax_error;
+            continue;
+        } else
             goto syntax_error;
         if (text != NULL) {
             if (!parse_text(value, text, text_size))
@@ -153,6 +233,7 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     const char *slash, *dot;
     size_t stem_length;
     int had_original;
+    unsigned index;
 
     slash = strrchr(path, '\\');
     if (strrchr(path, '/') != NULL &&
@@ -192,6 +273,16 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     fprintf(stream, "ACCESS1=%s\n", settings->access[0]);
     fprintf(stream, "ACCESS2=%s\n", settings->access[1]);
     fprintf(stream, "ACCESS3=%s\n", settings->access[2]);
+    fprintf(stream, "DIAL_BAUD=%u\n", settings->dial_baud);
+    fprintf(stream, "FOREGROUND=%u\n", settings->fg_ticks);
+    fprintf(stream, "BACKGROUND=%u\n", settings->bg_ticks);
+    fprintf(stream, "SWAPPING=%s\n", settings->swapping ? "YES" : "NO");
+    fprintf(stream, "SWAP_DIR=%s\n", settings->swap_dir);
+    fprintf(stream, "LEARN=%s\n", settings->learn ? "YES" : "NO");
+    for (index = 0; index < 9; ++index)
+        fprintf(stream, "WINDOW%u=%u,%u,%u,%u\n", index + 1,
+                settings->window[index][0], settings->window[index][1],
+                settings->window[index][2], settings->window[index][3]);
     if (fclose(stream) != 0)
         return ODQ_SETTINGS_IO;
 
