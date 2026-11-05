@@ -553,7 +553,7 @@ scis)
     M="key:alt wait:Switch_Windows:20"
     CMD="C:\\MAXVIEW" END="wait:scis_end:30" run scis 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
-        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT wait:ntfprb_ready:30 sleep:1 $M text:menu key:x wait:Paste:10 text:scis key:c wait:Mark_Begin:10 key:down,down,right,right key:b key:right,right,down sleep:1 text:marking key:e sleep:2 text:copied $M text:menu2 key:x wait:Paste:10 key:u wait:Mark_Begin:10 key:b,right key:e sleep:2 key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_scis_end"
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT_R wait:ntfprb_ready:30 sleep:1 $M text:menu key:x wait:Paste:10 text:scis key:c wait:Mark_Begin:10 key:down,down,right,right key:b key:right,right,down sleep:1 text:marking key:e sleep:2 text:copied $M text:menu2 key:x wait:Paste:10 key:u wait:Mark_Begin:10 key:b,right key:e sleep:2 key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_scis_end"
     d=$OUT/scis
     n1=$(file scis N1.TXT)
     echo "$n1" | sed 's/^/  /'
@@ -564,8 +564,9 @@ scis)
     check "Copy:  Mark Begin B, Mark End E after it, the hint" "grep -q 'Mark End *E' '$d/marking.txt' && grep -q 'B begin, E end (to the program)' '$d/marking.txt'"
     check "Copy told:  2 x 3" "grep -q 'Copy:  2 x 3 to the program' '$d/copied.txt'"
     check "the DESQ key (50h) and its end (51h), as 1-byte messages in the own mailbox" "echo \"\$n1\" | grep -q '^  a 50' && echo \"\$n1\" | grep -q '^  a 51'"
-    check "Copy:  4Eh, the window's handle ($h), row 2, column 2, 2 rows, 3 columns (14 bytes)" "echo \"\$n1\" | grep -A1 '0000:000E' | grep -q '^  a 4E $h 02 02 00 00 00 00 00 02 03'"
-    check "Cut:  4Dh, row 0, column 0, 1 row, 2 columns" "echo \"\$n1\" | grep -q '^  a 4D $h 00 00 00 00 00 00 00 01 02'"
+    check "Copy:  4Eh, the window's handle ($h), row 2, column 2, 2 rows, 3 columns (14 bytes)" "echo \"\$n1\" | grep -A1 '0000:000E' | grep -q '^  a 4E $h 02 02 00 00 00 .. .. 02 03'"
+    check "its DWORD a window of 2 x 3 holding the area:  READ gives its first row, cro (3 bytes, as DESQview 2.80)" "echo \"\$n1\" | grep -A2 '^  a 4E' | grep -q '^  r 8 0000:0003 ' && echo \"\$n1\" | grep -q '^  t 63 72 6F '"
+    check "Cut:  4Dh, row 0, column 0, 1 row, 2 columns" "echo \"\$n1\" | grep -q '^  a 4D $h 00 00 00 .. .. .. .. 01 02' && echo \"\$n1\" | grep -A2 '^  a 4D' | grep -q '^  r 8 0000:0002 '"
     check "the messages come from the own mailbox (HANDLE 03h)" "m=\$(echo \"\$n1\" | sed -n 's/^mbx //p'); [ -n \"\$m\" ] && echo \"\$n1\" | grep -q \"^q \$m\""
     check "the program read its x and ended, DOS works afterwards" "grep -q '^scis end' '$d/end.txt'"
     ;;

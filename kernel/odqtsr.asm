@@ -162,7 +162,7 @@ MUX_NOTIFY     equ 0D70Eh
 MUX_DENY       equ 0D711h
 MUX_MOUSE      equ 0D712h
 MUX_CLIP       equ 0D713h
-WREAD_SIZE     equ 2000                ; READ of a window object
+WREAD_SIZE     equ 80                  ; READ of a window object:  a row
 MUX_NOTE       equ 0D70Fh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
@@ -10135,9 +10135,9 @@ capture_done:
         popf
         ret
 
-; READ of window object wread_obj:  its characters, row by
-; row (rows * columns, at most WREAD_SIZE), as DESQview 2.80 gives a
-; Paste's window (measured).
+; READ of window object wread_obj:  the characters of its cursor's row
+; (its columns; none below its rows), as DESQview 2.80 gives Copy's, Cut's
+; and Paste's windows (measured:  one row of a 2 x 3 Copy).
 int15_message_wobj_read:
         push    bp
         mov     bp,sp
@@ -10149,12 +10149,18 @@ int15_message_wobj_read:
         push    di
         push    es
         mov     ax,word ptr cs:wobj_size[si]
-        mul     ah
-        cmp     ax,WREAD_SIZE
-        jbe     short wobj_read_len
-        mov     ax,WREAD_SIZE
+        mov     dx,word ptr cs:wobj_cursor[si]
+        xor     cx,cx
+        cmp     dh,ah                 ; (below its rows:  none)
+        jae     short wobj_read_len
+        mov     cl,al                 ; its columns
+        mov     al,dh
+        mul     cl                    ; the row's first cell
+        shl     ax,1
+        add     ax,word ptr cs:wobj_buf[si]
 wobj_read_len:
-        mov     cx,ax
+        mov     dx,ax
+        mov     ax,cx
         mov     word ptr cs:message_result_len_lo,ax
         mov     word ptr cs:message_result_len_hi,0
         mov     word ptr cs:message_result_ptr_off,offset wread_buf
@@ -10164,7 +10170,7 @@ wobj_read_len:
         pop     ds
         push    cs
         pop     es
-        mov     si,word ptr cs:wobj_buf[si]
+        mov     si,dx
         add     si,offset wobj_pool
         mov     di,offset wread_buf
         cld

@@ -3011,9 +3011,12 @@ static int windows_view(odq_catalog *catalog, char *status)
                 mark_bcol = mark_col;
             } else if (key == 'E' && mark_on || key == 13 || key == 27) {
                 if (key == 'E') {       /* the program told:  event, its
-                                         * window, row, column, 0, no
-                                         * scrap object, rows, columns */
+                                         * window, row, column, 0, a
+                                         * window of the area's size (here
+                                         * holding its characters), rows,
+                                         * columns */
                     unsigned char msg[14];
+                    unsigned r, c, seg;
 
                     memset(msg, 0, sizeof msg);
                     msg[0] = (unsigned char)scis_event;
@@ -3023,6 +3026,15 @@ static int windows_view(odq_catalog *catalog, char *status)
                                                                    : mark_row - mark_brow) + 1);
                     msg[13] = (unsigned char)((mark_bcol > mark_col ? mark_bcol - mark_col
                                                                    : mark_col - mark_bcol) + 1);
+                    if (mvk_peek(t, cells) != 0xffff) {
+                        for (r = 0; r < msg[12]; ++r)
+                            for (c = 0; c < msg[13]; ++c)
+                                paste_text[r * msg[13] + c] = (char)
+                                    cells[(msg[5] + r) * SCREEN_COLS + msg[6] + c];
+                        seg = mvhost_clip(t, msg[12], msg[13], paste_text);
+                        msg[10] = (unsigned char)seg;
+                        msg[11] = (unsigned char)(seg >> 8);
+                    }
                     if (mvhost_note(t, msg, sizeof msg, 1))
                         sprintf(status, "%s:  %u x %u to the program.",
                                 scis_event == 0x4e ? "Copy" : "Cut",

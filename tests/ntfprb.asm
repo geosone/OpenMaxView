@@ -5,7 +5,7 @@
 ;   C:  on 4Eh / 4Dh WRITE "CLIPDATA" to the message's DWORD (bytes 8-11),
 ;   then "  w B d1" what that call left; then the manager stream CCh to
 ;   it, win_paste's, "  p B d1"; on 4Fh READ of that DWORD:  "  r B d1 d2" and
-;   32 bytes at the address, "  t ...")
+;   32 bytes at the address, "  t ..."; R:  READ on 4Dh, 4Eh and 4Fh)
 ;   API level 2.01; a manager stream (type 10h) to the own window asks for
 ;   the notifications 40h-51h; "win", "kbd", "obq", "mbx" the handles (HANDLE
 ;   01h, 05h, 07h, 03h); "ntfprb ready" on the screen.  Then, up to 48 times:  READ
@@ -169,16 +169,26 @@ rd_dw_done:
         call    dump
         pop     ds
         call    putnl
+        cmp     vflag,'r'             ; R:  every one of them READ
+        je      @F
         cmp     vflag,'c'             ; C:  the Copy / Cut object written
-        jne     no_clip
-        push    ds
+        je      @F
+        jmp     no_clip
+@@:     push    ds
         lds     si,[bp+4]
         mov     al,[si]
         mov     dx,[si+8]
         mov     cx,[si+10]
         pop     ds
         cmp     al,4Fh
+        je      to_clip_read
+        cmp     vflag,'r'
         jne     not_paste
+        cmp     al,4Eh
+        je      to_clip_read
+        cmp     al,4Dh
+        jne     not_paste
+to_clip_read:
         jmp     clip_read
 not_paste:
         cmp     al,4Eh
