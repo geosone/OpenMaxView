@@ -162,7 +162,8 @@ DESQview does.  What it showed so far:  DESQview reports version 0250h
 now); PAUSE gave the other task more under DESQview (x4 against x2:
 it favours the foreground; the core now gives the task with the keys
 three times the slice, MVRUN /Tf,b, and comes to x4.6); its DOS window cannot show its menu over a VGA graphics
-program; and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
+program (on QEMM 97 it can:  GFXPROBE behind a second window is held there
+the whole time and draws again when back, as in MaxView); and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
 DESQview hung on EMS 47h/48h), fixed there.  Opening DOS windows (128K) until
 DESQview refused ("Not enough DESQview common memory", its default
 setup) gave 13 windows on Open 386MAX and 14 on QEMM 97:  MaxView has
