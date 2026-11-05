@@ -173,11 +173,11 @@ saves.  MAXVIEW reads them when it starts.  Every displayed setting is used. The
 
 Load the network drivers (for example Novell's LSL, the card's ODI driver,
 IPXODI and NETBIOS) before MaxView and MAXVTSR.  MAXVTSR then gives every
-program IPX and NETBIOS through itself:  a program in a window that is not in
-front keeps receiving, and its event service or POST routine runs in its own
-window, as with DESQview's "Multitask IPX" and "Multitask NETBIOS".  Up to 8
-IPX and 8 NETBIOS commands can be outstanding at a time (buffers up to 576
-bytes).  SPX is not yet multitasked; run such programs in front.
+program IPX, SPX and NETBIOS through itself:  a program in a window that is
+not in front keeps receiving, and its event service or POST routine runs in
+its own window, as with DESQview's "Multitask IPX" and "Multitask NETBIOS".
+Up to 8 IPX or SPX and 8 NETBIOS commands can be outstanding at a time
+(buffers up to 576 bytes).
 
 Novell Client32 for DOS (NIOS and its NLMs, with its own NETBIOS) works
 the same way; it needs Open 386MAX from commit fd4fdac on (newer than

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx netbios mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx netbios spx mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/NBPRB.COM build/MVTEST.PLB || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/NBPRB.COM build/SPXPRB.COM build/MVTEST.PLB || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -482,10 +482,14 @@ lefthand)
     check "right button pressed:  left (01h); left pressed:  right (02h)" "[ '$st' = '01 02 ' ]"
     check "DOS works afterwards" "grep -q '^lefthand end' '$OUT/lefthand/end.txt'"
     ;;
-ipx|netbios)
+ipx|netbios|spx)
+    to=""
     if [ "$c" = ipx ]; then
         echo "== ipx:  IPX in a window behind a busy one (Novell ODI, NE2000, a second VM sending; DESQview's Multitask IPX)"
         prb=IPXPRB; ready=ipxprb_ready; nb=""; ftxt=I.TXT
+    elif [ "$c" = spx ]; then
+        echo "== spx:  SPX (Novell's IPXODI) in a window behind a busy one:  a connection, sequenced packets, its termination (DESQview's Multitask IPX)"
+        prb=SPXPRB; ready=spxprb_ready; nb=""; ftxt=P.TXT; to=" 52540012340A"
     else
         echo "== netbios:  NETBIOS (Novell's, over IPX) in a window behind a busy one:  no-wait receives with a POST routine (DESQview's Multitask NETBIOS)"
         prb=NBPRB; ready=nbprb_ready; nb='C:\NETBIOS|'; ftxt=N.TXT
@@ -504,9 +508,9 @@ ipx|netbios)
         STEPS="wait:Open_Program:120 key:ret wait:$ready:30 sleep:2 $M key:o wait:Change_a_Program:20 key:t sleep:140 $M sleep:2 text:menu key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_${c}_end wait:${c}_end:30 text:end" \
         TESTDIR="$d" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/$c.log" 2>&1 &
     pa=$!
-    sleep 2
+    for i in $(seq 1 120); do ss -ltn | grep -q "127.0.0.1:$port " && break; sleep 1; done
     KEEP=1 ACCEL="-accel tcg" XFILES="$NF" \
-        AUTO="@ECHO OFF|C:\\LSL|C:\\NE2000|C:\\IPXODI|${nb}CHOICE /T:N,60 /N /C:NY|C:\\$prb C:\\$ftxt S 30|ECHO b done" \
+        AUTO="@ECHO OFF|C:\\LSL|C:\\NE2000|C:\\IPXODI|${nb}CHOICE /T:N,60 /N /C:NY|C:\\$prb C:\\$ftxt S 30$to|ECHO b done" \
         QEMU_EXTRA="$(nic 0b connect=127.0.0.1:$port)" STEPS="wait:b_done:300 text:b" \
         TESTDIR="$d-b" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/$c-b.log" 2>&1
     wait $pa
@@ -516,6 +520,10 @@ ipx|netbios)
     if [ "$c" = ipx ]; then
         check "IPX entry MAXVTSR's (the driver's kept)" "echo '$i' | grep -q '^ipx ' && echo '$i' | grep -q '^open 00'"
         check "behind the busy window:  all 30 received, each ESR in the program's own task (none wrong)" "echo '$i' | grep -q '^end 30 esr 30 bad 0'"
+    elif [ "$c" = spx ]; then
+        check "SPX there, the connection listened for and established (the sender's ESTABLISH answered)" "echo '$i' | grep -q '^spx FF' && echo '$i' | grep -q '^conn 00' && echo '$s' | grep -q '^c 00'"
+        check "behind the busy window:  all 30 received in order, each ESR in the program's own task (none wrong), the termination seen" "echo '$i' | grep -q '^r 30 00 esr 30' && echo '$i' | grep -q '^end 30 esr 31 bad 0 term 1'"
+        check "the sender's termination acknowledged" "echo '$s' | grep -q '^t 00'"
     else
         check "NETBIOS there, the name added" "echo '$i' | grep -q '^nb 03' && echo '$i' | grep -q '^name 00 '"
         check "behind the busy window:  all 30 received, each POST in the program's own task (the 31st:  the cancelled receive's), none wrong" "echo '$i' | grep -q '^r 30 00 post 30' && echo '$i' | grep -q '^end 30 post 31 bad 0'"

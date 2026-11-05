@@ -285,6 +285,16 @@ video_known:
         mov     ax,255Ch
         int     21h
 no_netbios:
+        push    es                    ; the QPI entry (386MAX, QEMM):  the
+        mov     ah,3Fh                ; page table a result may go to
+        mov     cx,5145h
+        mov     dx,4D4Dh
+        int     67h
+        or      ah,ah
+        jnz     short no_qpi
+        mov     word ptr qpi_entry,di
+        mov     word ptr qpi_entry+2,es
+no_qpi: pop     es
 
         mov     dx,offset installed_msg
         mov     ah,09h
@@ -10710,10 +10720,14 @@ int2f_chain:
 ; shadow ECB with one fragment, a buffer here (shared, below the task
 ; base); its completion (ipx_esr) waits for the program's task:  its ECB
 ; filled (completion code, immediate address, the data into its fragments),
-; then its ESR called (ES:SI its ECB, AL FFh, interrupts off).
+; then its ESR called (ES:SI its ECB, AL FFh, interrupts off).  SPX the
+; same way:  ESTABLISH CONNECTION, TERMINATE CONNECTION and SEND SEQUENCED
+; PACKET (11h, 13h, 16h) as sends, LISTEN FOR CONNECTION and LISTEN FOR
+; SEQUENCED PACKET (12h, 17h) as listens (the IPX workspace back too:  the
+; connection); the others (10h, 14h, 15h) straight to SPX.
 ; ---------------------------------------------------------------------------
 IPXN    equ     8                     ; shadows
-IPXECB  equ     36                    ; an ECB with one fragment
+IPXECB  equ     42                    ; an ECB with one fragment (24h + 6)
 IPXBUF  equ     576                   ; the largest IPX packet
 
 int2f_ipx:                            ; 7A00h:  the driver's, then ours
@@ -10741,14 +10755,73 @@ ipx_shim:
         cmp     bx,06h
         je      short ipx_shim_cancel
         cmp     bx,0Ah
-        jne     short ipx_shim_pass
-        call    ipx_deliver_mine      ; RELINQUISH:  results first
+        je      short ipx_shim_relinquish
+        cmp     bx,11h
+        jb      short ipx_shim_pass
+        cmp     bx,13h
+        jbe     short ipx_shim_ecb
+        cmp     bx,16h
+        jb      short ipx_shim_pass
+        cmp     bx,17h
+        jbe     short ipx_shim_ecb
 ipx_shim_pass:
+        jmp     dword ptr cs:ipx_real
+ipx_shim_relinquish:
+        call    ipx_deliver_mine      ; RELINQUISH:  results first
         jmp     dword ptr cs:ipx_real
 ipx_shim_ecb:
         jmp     ipx_ecb_call
 ipx_shim_cancel:
         jmp     ipx_cancel
+
+; function AL a send (03h, 11h, 13h, 16h):  ZF=1
+ipx_is_send:
+        cmp     al,03h
+        je      short @F
+        cmp     al,11h
+        je      short @F
+        cmp     al,13h
+        je      short @F
+        cmp     al,16h
+@@:     ret
+
+; function AL a listen (04h, 12h, 17h):  ZF=1
+ipx_is_listen:
+        cmp     al,04h
+        je      short @F
+        cmp     al,12h
+        je      short @F
+        cmp     al,17h
+@@:     ret
+
+; AX = the page table active now (QPI 07h), 0 without QPI; the others kept
+cur_ctx:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        xor     dx,dx
+        mov     ax,word ptr cs:qpi_entry
+        or      ax,word ptr cs:qpi_entry+2
+        jz      short @F
+        mov     ax,0700h
+        call    dword ptr cs:qpi_entry
+        jnc     short @F
+        xor     dx,dx
+@@:     mov     ax,dx
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        ret
 
 ; DI = shadow ECB AX (0 ..)
 ipx_ecbof:
@@ -10762,7 +10835,8 @@ ipx_ecbof:
         pop     ax
         ret
 
-; 03h SEND, 04h LISTEN, 05h EVENT (AX ticks):  ES:SI the program's ECB
+; 03h SEND, 04h LISTEN, 05h EVENT (AX ticks), SPX's 11h-13h, 16h, 17h
+; (AL, AH, DX theirs):  ES:SI the program's ECB
 ipx_ecb_call:
         push    ax
         push    bx
@@ -10807,6 +10881,10 @@ ipx_ecb_slot:
         shl     bx,1
         mov     dx,word ptr cs:task_handle_segment
         mov     word ptr cs:ipx_owner[bx],dx
+        push    ax
+        call    cur_ctx               ; (its memory:  this page table's)
+        mov     word ptr cs:ipx_ctx[bx],ax
+        pop     ax
         shl     bx,1
         mov     dx,word ptr [bp+8]
         mov     word ptr cs:ipx_tecb[bx],dx
@@ -10834,15 +10912,16 @@ ipx_ecb_slot:
         mov     ax,word ptr [si+20h]
         mov     word ptr es:[di+20h],ax
         mov     byte ptr [si+9],0     ; the program's:  in use
-        mov     al,0FFh               ; (sending)
-        cmp     byte ptr [bp+14],03h
+        mov     al,byte ptr [bp+14]
+        mov     ah,0FFh               ; (sending)
+        call    ipx_is_send
         je      short ipx_ecb_inuse
-        dec     al                    ; (listening)
-        cmp     byte ptr [bp+14],04h
+        dec     ah                    ; (listening)
+        call    ipx_is_listen
         je      short ipx_ecb_inuse
-        dec     al                    ; (an event)
+        dec     ah                    ; (an event)
 ipx_ecb_inuse:
-        mov     byte ptr [si+8],al
+        mov     byte ptr [si+8],ah
         cmp     byte ptr [bp+14],05h
         je      short ipx_ecb_go
         mov     ax,word ptr cs:ipx_slot ; one fragment:  the buffer
@@ -10871,7 +10950,8 @@ ipx_ecb_frag:
         jbe     short @F
         mov     cx,ax
 @@:     add     dx,cx
-        cmp     byte ptr [bp+14],03h
+        mov     al,byte ptr [bp+14]
+        call    ipx_is_send
         jne     short ipx_ecb_nocopy
         lds     si,dword ptr [bx]
         rep     movsb
@@ -10893,19 +10973,23 @@ ipx_ecb_go:
         mov     si,di                 ; IPX with the shadow
         mov     ax,word ptr [bp+16]
         mov     bx,word ptr [bp+14]
+        mov     dx,word ptr [bp+10]
         push    bp                    ; (IPX keeps no register)
         call    dword ptr cs:ipx_real
         pop     bp
         mov     byte ptr cs:ipx_result,al
+        mov     word ptr cs:ipx_rdx,dx
         cmp     byte ptr [bp+14],04h
+        je      short @F
+        cmp     byte ptr [bp+14],11h
         jne     short ipx_ecb_done
-        or      al,al
+@@:     or      al,al
         jz      short ipx_ecb_done
-        mov     bx,word ptr cs:ipx_slot ; a listen refused:  the program's
-        mov     byte ptr cs:ipx_state[bx],0 ; ECB done with its code
+        mov     bx,word ptr cs:ipx_slot ; a listen or a connection refused:
+        mov     byte ptr cs:ipx_state[bx],0 ; the program's ECB done with
         mov     es,word ptr [bp]
         mov     di,word ptr [bp+8]
-        mov     byte ptr es:[di+9],al
+        mov     byte ptr es:[di+9],al ; its code
         mov     byte ptr es:[di+8],0
 ipx_ecb_done:
         pop     es
@@ -10918,7 +11002,11 @@ ipx_ecb_done:
         pop     bx
         pop     ax
         cmp     bx,04h
+        je      short ipx_ecb_al
+        cmp     bx,11h
         jne     short @F
+        mov     dx,word ptr cs:ipx_rdx ; (ESTABLISH:  the connection)
+ipx_ecb_al:
         mov     al,byte ptr cs:ipx_result
 @@:     retf
 
@@ -10937,6 +11025,8 @@ ipx_cancel:
         xor     bx,bx
 ipx_cancel_find:
         cmp     byte ptr cs:ipx_state[bx],0
+        je      short ipx_cancel_next
+        cmp     byte ptr cs:ipx_state[bx],4
         je      short ipx_cancel_next
         mov     di,bx
         shl     di,1
@@ -11010,7 +11100,11 @@ ipx_esr:
         cmp     ax,IPXN
         jae     short ipx_esr_ret
         mov     bx,ax
-        cmp     byte ptr cs:ipx_state[bx],1
+        cmp     byte ptr cs:ipx_state[bx],4
+        jne     short @F
+        mov     byte ptr cs:ipx_state[bx],0 ; an ended task's:  free now
+        jmp     short ipx_esr_ret
+@@:     cmp     byte ptr cs:ipx_state[bx],1
         jne     short ipx_esr_ret
         mov     byte ptr cs:ipx_state[bx],2
         call    ipx_deliver_mine
@@ -11035,7 +11129,9 @@ ipx_deliver_mine:
         cli
         cmp     word ptr cs:task_handle_segment,0
         je      short ipx_mine_done
-        xor     bx,bx
+        call    cur_ctx               ; only where the program's memory is
+        mov     word ptr cs:dlv_ctx,ax ; (an IRQ may come while the kernel
+        xor     bx,bx                 ; or another task is mapped)
 ipx_mine_loop:
         cmp     byte ptr cs:ipx_state[bx],2
         jne     short ipx_mine_next
@@ -11043,6 +11139,9 @@ ipx_mine_loop:
         shl     si,1
         mov     ax,word ptr cs:ipx_owner[si]
         cmp     ax,word ptr cs:task_handle_segment
+        jne     short ipx_mine_next
+        mov     ax,word ptr cs:ipx_ctx[si]
+        cmp     ax,word ptr cs:dlv_ctx
         jne     short ipx_mine_next
         push    bx
         call    ipx_deliver
@@ -11059,6 +11158,9 @@ nb_mine_loop:
         shl     si,1
         mov     ax,word ptr cs:nb_owner[si]
         cmp     ax,word ptr cs:task_handle_segment
+        jne     short nb_mine_next
+        mov     ax,word ptr cs:nb_ctx[si]
+        cmp     ax,word ptr cs:dlv_ctx
         jne     short nb_mine_next
         push    bx
         call    nb_deliver
@@ -11094,7 +11196,14 @@ ipx_deliver:
         shr     bx,1
         mov     al,byte ptr cs:[si+9] ; its completion code
         mov     byte ptr es:[di+9],al
-        cmp     cl,04h
+        cmp     cl,11h
+        jb      short @F
+        mov     ax,word ptr cs:[si+0Ch] ; SPX's:  the IPX workspace
+        mov     word ptr es:[di+0Ch],ax
+        mov     ax,word ptr cs:[si+0Eh]
+        mov     word ptr es:[di+0Eh],ax
+@@:     mov     al,cl
+        call    ipx_is_listen
         jne     short ipx_deliver_free
         mov     ax,word ptr cs:[si+1Ch] ; a listen's:  immediate address,
         mov     word ptr es:[di+1Ch],ax ; the data into its fragments
@@ -11168,6 +11277,8 @@ ipx_task_end:
 ipx_end_loop:
         cmp     byte ptr cs:ipx_state[bx],0
         je      short ipx_end_next
+        cmp     byte ptr cs:ipx_state[bx],4
+        je      short ipx_end_next
         mov     si,bx
         shl     si,1
         cmp     dx,word ptr cs:ipx_owner[si]
@@ -11185,6 +11296,10 @@ ipx_end_loop:
         call    dword ptr cs:ipx_real
         pop     dx
         pop     bx
+        or      al,al
+        jz      short ipx_end_free
+        mov     byte ptr cs:ipx_state[bx],4 ; not cancelled (an SPX send):
+        jmp     short ipx_end_next    ; free when its ESR comes
 ipx_end_free:
         mov     byte ptr cs:ipx_state[bx],0
 ipx_end_next:
@@ -11311,6 +11426,10 @@ nb_slot:
         shl     bx,1
         mov     dx,word ptr cs:task_handle_segment
         mov     word ptr cs:nb_owner[bx],dx
+        push    ax
+        call    cur_ctx
+        mov     word ptr cs:nb_ctx[bx],ax
+        pop     ax
         shl     bx,1
         mov     word ptr cs:nb_tncb[bx],si
         mov     word ptr cs:nb_tncb[bx+2],ds
@@ -11597,6 +11716,7 @@ nb_result      db 0
 nb_state       db NBN dup(0)          ; 0 free, 1 at NETBIOS, 2 done, 3 delivering
 nb_cl          db NBN dup(0)          ; its class (nb_classes)
 nb_owner       dw NBN dup(0)
+nb_ctx         dw NBN dup(0)          ; its page table (QPI 07h)
 nb_tncb        dd NBN dup(0)          ; the program's NCB
 nb_tmp         db NCBSZ dup(0)
 nb_ncbs        db NBN * NCBSZ dup(0)
@@ -11604,9 +11724,14 @@ nb_ncbs        db NBN * NCBSZ dup(0)
 ipx_real       dd 0                   ; the driver's entry (7A00h)
 ipx_slot       dw 0
 ipx_result     db 0
-ipx_state      db IPXN dup(0)         ; 0 free, 1 at IPX, 2 done, 3 delivering
-ipx_kind       db IPXN dup(0)         ; 03h, 04h, 05h
+ipx_rdx        dw 0                   ; DX from IPX (11h:  the connection)
+ipx_state      db IPXN dup(0)         ; 0 free, 1 at IPX, 2 done, 3 delivering,
+                                      ; 4 its task ended, IPX still has it
+ipx_kind       db IPXN dup(0)         ; 03h-05h, 11h-13h, 16h, 17h
 ipx_owner      dw IPXN dup(0)         ; its task (handle segment)
+ipx_ctx        dw IPXN dup(0)         ; its page table (QPI 07h)
+qpi_entry      dd 0
+dlv_ctx        dw 0                   ; the page table active (delivery)
 ipx_tecb       dd IPXN dup(0)         ; the program's ECB
 ipx_ecbs       db IPXN * IPXECB dup(0)
 netseg         dw 0                   ; IPX's, then NETBIOS's buffers
