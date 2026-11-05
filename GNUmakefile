@@ -236,6 +236,12 @@ $(BUILD)/ipxprb.obj: tests/ipxprb.asm | $(BUILD)
 $(BUILD)/IPXPRB.COM: $(BUILD)/ipxprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name IPXPRB.COM option quiet option map=IPXPRB.MAP file ipxprb.obj
 
+$(BUILD)/nbprb.obj: tests/nbprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/NBPRB.COM: $(BUILD)/nbprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name NBPRB.COM option quiet option map=NBPRB.MAP file nbprb.obj
+
 $(BUILD)/MVTEST.PLB: tests/panels/mkplb.py | $(BUILD)
 	python3 $< $@
 

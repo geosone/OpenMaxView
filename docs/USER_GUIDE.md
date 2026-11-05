@@ -171,12 +171,13 @@ saves.  MAXVIEW reads them when it starts.  Every displayed setting is used. The
 
 ## Networks
 
-Load the network drivers (for example Novell's LSL, the card's ODI driver
-and IPXODI) before MaxView.  MAXVTSR then gives every program IPX through
-itself:  a program in a window that is not in front keeps receiving, and its
-event service routine runs in its own window, as with DESQview's "Multitask
-IPX".  Up to 8 sends, listens or IPX events can be outstanding at a time.
-SPX and NETBIOS are not yet multitasked; run such programs in front.
+Load the network drivers (for example Novell's LSL, the card's ODI driver,
+IPXODI and NETBIOS) before MaxView and MAXVTSR.  MAXVTSR then gives every
+program IPX and NETBIOS through itself:  a program in a window that is not in
+front keeps receiving, and its event service or POST routine runs in its own
+window, as with DESQview's "Multitask IPX" and "Multitask NETBIOS".  Up to 8
+IPX and 8 NETBIOS commands can be outstanding at a time (buffers up to 576
+bytes).  SPX is not yet multitasked; run such programs in front.
 
 ## Included services
 

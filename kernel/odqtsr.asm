@@ -94,6 +94,13 @@
 ;                                    its result and ESR reach the program
 ;                                    in its own task (at once if it runs,
 ;                                    else at its next tick or IPX call)
+;   INT 5Ch                          NETBIOS (when loaded before MAXVTSR,
+;                                    as DESQview's Network option
+;                                    "Multitask NETBIOS"):  a command's
+;                                    NCB and buffer shadowed here, a
+;                                    no-wait one's result and POST
+;                                    routine reach the program in its own
+;                                    task, as IPX's (7A00h)
 ;   INT 2Fh AX=D714h, BL             from the host:  Setup's mouse (bit 0:
 ;                                    no mouse for DESQview's pointers and
 ;                                    select fields; bit 1:  left-handed,
@@ -267,14 +274,37 @@ video_known:
         mov     ax,252Fh
         int     21h
 
+        mov     ax,355Ch              ; NETBIOS (loaded before):  ours
+        int     21h                   ; in front
+        mov     word ptr old5c,bx
+        mov     word ptr old5c+2,es
+        mov     ax,es
+        or      ax,bx
+        jz      short no_netbios
+        mov     dx,offset int5c_handler
+        mov     ax,255Ch
+        int     21h
+no_netbios:
+
         mov     dx,offset installed_msg
         mov     ah,09h
         int     21h
 
-        mov     dx,offset resident_end
-        add     dx,15
+        mov     bx,offset resident_end ; the network buffers:  a block
+        add     bx,15                 ; of their own (shared, as this)
         mov     cl,4
-        shr     dx,cl
+        shr     bx,cl
+        push    bx
+        push    cs
+        pop     es
+        mov     ah,4Ah
+        int     21h
+        mov     ah,48h
+        mov     bx,(IPXN * IPXBUF + NBN * NBBUF + 15) / 16
+        int     21h
+        jc      short @F              ; (none:  IPX, NETBIOS not shadowed)
+        mov     word ptr netseg,ax
+@@:     pop     dx
         mov     ax,3100h
         int     21h
 
@@ -10702,6 +10732,8 @@ int2f_ipx_ret:
 
 ; MAXVTSR's IPX entry (far, BX the function)
 ipx_shim:
+        cmp     word ptr cs:netseg,0
+        je      short ipx_shim_pass
         cmp     bx,03h
         jb      short ipx_shim_pass
         cmp     bx,05h
@@ -10816,13 +10848,15 @@ ipx_ecb_inuse:
         mov     ax,word ptr cs:ipx_slot ; one fragment:  the buffer
         mov     dx,IPXBUF
         mul     dx
-        add     ax,offset ipx_bufs
         mov     word ptr es:[di+22h],1
         mov     word ptr es:[di+24h],ax
-        mov     word ptr es:[di+26h],cs
+        mov     dx,word ptr cs:netseg
+        mov     word ptr es:[di+26h],dx
         mov     cx,word ptr [si+22h]  ; its fragments' bytes (up to 576),
         xor     dx,dx                 ; a send's gathered
         push    di
+        push    es
+        mov     es,word ptr cs:netseg
         mov     di,ax
         lea     bx,[si+24h]
 ipx_ecb_frag:
@@ -10852,13 +10886,16 @@ ipx_ecb_copied:
         dec     cx
         jmp     short ipx_ecb_frag
 ipx_ecb_fragged:
+        pop     es
         pop     di
         mov     word ptr es:[di+28h],dx
 ipx_ecb_go:
         mov     si,di                 ; IPX with the shadow
         mov     ax,word ptr [bp+16]
         mov     bx,word ptr [bp+14]
+        push    bp                    ; (IPX keeps no register)
         call    dword ptr cs:ipx_real
+        pop     bp
         mov     byte ptr cs:ipx_result,al
         cmp     byte ptr [bp+14],04h
         jne     short ipx_ecb_done
@@ -10933,7 +10970,9 @@ ipx_cancel_it:
         pop     es
         mov     si,di
         mov     bx,06h
+        push    bp
         call    dword ptr cs:ipx_real
+        pop     bp
         or      al,al
         jnz     short ipx_cancel_done
         mov     bx,word ptr cs:ipx_slot
@@ -11012,6 +11051,22 @@ ipx_mine_next:
         inc     bx
         cmp     bx,IPXN
         jb      short ipx_mine_loop
+        xor     bx,bx                 ; NETBIOS's too
+nb_mine_loop:
+        cmp     byte ptr cs:nb_state[bx],2
+        jne     short nb_mine_next
+        mov     si,bx
+        shl     si,1
+        mov     ax,word ptr cs:nb_owner[si]
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short nb_mine_next
+        push    bx
+        call    nb_deliver
+        pop     bx
+nb_mine_next:
+        inc     bx
+        cmp     bx,NBN
+        jb      short nb_mine_loop
 ipx_mine_done:
         pop     es
         pop     ds
@@ -11068,8 +11123,7 @@ ipx_deliver_frag:
 @@:     sub     dx,cx
         les     di,dword ptr [bx]
         push    ds
-        push    cs
-        pop     ds
+        mov     ds,word ptr cs:netseg
         rep     movsb
         pop     ds
         pop     es
@@ -11109,6 +11163,7 @@ ipx_task_end:
         push    ds
         push    es
         mov     dx,ax
+        call    nb_task_end
         xor     bx,bx
 ipx_end_loop:
         cmp     byte ptr cs:ipx_state[bx],0
@@ -11147,6 +11202,405 @@ ipx_end_next:
         pop     ax
         ret
 
+
+; ---------------------------------------------------------------------------
+; NETBIOS for tasks (DESQview's "Multitask NETBIOS"):  as IPX's above.  A
+; command's NCB (64 bytes) and buffer (up to 576 bytes) are shadowed here;
+; a wait command's results are copied back when it returns, a no-wait
+; one's (and its POST routine:  ES:BX its NCB, AL its code, as an
+; interrupt) when its task runs.  CANCEL of a shadowed NCB cancels the
+; shadow.  RESET, chain sends, UNLINK and a longer buffer go straight on.
+; ---------------------------------------------------------------------------
+NBN     equ     8
+NCBSZ   equ     64
+NBBUF   equ     576
+
+; DI = shadow NCB AX
+nb_ncbof:
+        push    ax
+        push    dx
+        mov     dx,NCBSZ
+        mul     dx
+        add     ax,offset nb_ncbs
+        mov     di,ax
+        pop     dx
+        pop     ax
+        ret
+
+; the commands shadowed:  bit 0 with a buffer, bit 1 its data sent (copied
+; out), bit 2 received (copied back)
+nb_class:
+        push    bx
+        mov     bx,offset nb_classes
+nb_class_loop:
+        cmp     byte ptr cs:[bx],0FFh
+        je      short nb_class_none
+        cmp     al,byte ptr cs:[bx]
+        je      short nb_class_found
+        add     bx,2
+        jmp     short nb_class_loop
+nb_class_found:
+        mov     ah,byte ptr cs:[bx+1]
+        pop     bx
+        clc
+        ret
+nb_class_none:
+        pop     bx
+        stc
+        ret
+
+int5c_handler:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     bp,sp                 ; [bp] ES, [bp+14] BX
+        call    ipx_deliver_mine
+        cmp     word ptr cs:netseg,0
+        jne     short @F
+        jmp     nb_pass
+@@:     mov     ds,word ptr [bp]
+        mov     si,word ptr [bp+14]   ; DS:SI the program's NCB
+        mov     al,byte ptr [si]
+        and     al,7Fh
+        cmp     al,35h
+        jne     short @F
+        jmp     nb_cancel
+@@:     call    nb_class
+        jc      short nb_pass
+        test    ah,1
+        jz      short nb_go
+        cmp     word ptr [si+8],NBBUF
+        ja      short nb_pass
+nb_go:  mov     byte ptr cs:nb_cls,ah
+        cmp     word ptr cs:task_handle_segment,0
+        jne     short @F
+        call    task_handle_init
+@@:     cli
+        xor     bx,bx
+nb_find:
+        cmp     byte ptr cs:nb_state[bx],0
+        je      short nb_slot
+        inc     bx
+        cmp     bx,NBN
+        jb      short nb_find
+        sti
+nb_pass:
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     dword ptr cs:old5c
+nb_slot:
+        mov     byte ptr cs:nb_state[bx],1
+        sti
+        mov     word ptr cs:nb_slot_n,bx
+        mov     al,byte ptr cs:nb_cls
+        mov     byte ptr cs:nb_cl[bx],al
+        mov     ax,bx
+        shl     bx,1
+        mov     dx,word ptr cs:task_handle_segment
+        mov     word ptr cs:nb_owner[bx],dx
+        shl     bx,1
+        mov     word ptr cs:nb_tncb[bx],si
+        mov     word ptr cs:nb_tncb[bx+2],ds
+        call    nb_ncbof              ; the shadow:  a copy
+        push    cs
+        pop     es
+        push    si
+        push    di
+        mov     cx,NCBSZ / 2
+        rep     movsw
+        pop     di
+        pop     si
+        mov     word ptr es:[di+44],0 ; POST:  ours (no-wait)
+        mov     word ptr es:[di+46],0
+        test    byte ptr [si],80h
+        jz      short nb_nopost
+        mov     word ptr es:[di+44],offset nb_post
+        mov     word ptr es:[di+46],cs
+        mov     byte ptr [si+1],0FFh  ; the program's:  pending
+        mov     byte ptr [si+49],0FFh
+nb_nopost:
+        test    byte ptr cs:nb_cls,1
+        jz      short nb_call
+        mov     ax,word ptr cs:nb_slot_n ; the buffer here
+        mov     dx,NBBUF
+        mul     dx
+        add     ax,IPXN * IPXBUF
+        mov     word ptr es:[di+4],ax
+        mov     dx,word ptr cs:netseg
+        mov     word ptr es:[di+6],dx
+        test    byte ptr cs:nb_cls,2
+        jz      short nb_call
+        push    si                    ; data to send:  copied
+        push    di
+        push    ds
+        push    es
+        mov     es,dx
+        mov     cx,word ptr [si+8]
+        mov     di,ax
+        lds     si,dword ptr [si+4]
+        rep     movsb
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+nb_call:
+        mov     bx,di                 ; NETBIOS with the shadow
+        push    bp
+        pushf
+        call    dword ptr cs:old5c
+        pop     bp
+        mov     ds,word ptr [bp]
+        mov     si,word ptr [bp+14]
+        mov     byte ptr cs:nb_result,al
+        mov     bx,word ptr cs:nb_slot_n
+        test    byte ptr [si],80h
+        jz      short nb_sync
+        or      al,al                 ; no-wait:  refused at once?
+        jz      short nb_ret
+        cli
+        cmp     byte ptr cs:nb_state[bx],1
+        jne     short nb_ret_sti
+nb_sync:
+        call    nb_copyback           ; a wait command:  its results
+        mov     byte ptr cs:nb_state[bx],0
+nb_ret_sti:
+        sti
+nb_ret: pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        mov     al,byte ptr cs:nb_result
+        iret
+
+; CANCEL (DS:SI its NCB, its buffer the NCB to cancel):  a shadowed one's
+; shadow cancelled
+nb_cancel:
+        push    ds
+        lds     di,dword ptr [si+4]   ; the NCB to cancel
+        mov     ax,ds
+        pop     ds
+        xor     bx,bx
+nb_cancel_find:
+        cmp     byte ptr cs:nb_state[bx],1
+        jne     short nb_cancel_next
+        push    bx
+        shl     bx,1
+        shl     bx,1
+        cmp     di,word ptr cs:nb_tncb[bx]
+        jne     short @F
+        cmp     ax,word ptr cs:nb_tncb[bx+2]
+@@:     pop     bx
+        je      short nb_cancel_it
+nb_cancel_next:
+        inc     bx
+        cmp     bx,NBN
+        jb      short nb_cancel_find
+        jmp     nb_pass
+nb_cancel_it:
+        push    cs                    ; a copy of the CANCEL NCB, its
+        pop     es                    ; buffer the shadow
+        mov     di,offset nb_tmp
+        push    si
+        mov     cx,NCBSZ / 2
+        rep     movsw
+        pop     si
+        mov     ax,bx
+        call    nb_ncbof
+        mov     word ptr cs:nb_tmp+4,di
+        mov     word ptr cs:nb_tmp+6,cs
+        mov     byte ptr cs:nb_tmp,35h ; (wait)
+        mov     bx,offset nb_tmp
+        push    bp
+        pushf
+        call    dword ptr cs:old5c
+        pop     bp
+        mov     ds,word ptr [bp]
+        mov     si,word ptr [bp+14]
+        mov     byte ptr [si+1],al
+        mov     byte ptr [si+49],al
+        mov     byte ptr cs:nb_result,al
+        call    ipx_deliver_mine      ; (the cancelled one's POST)
+        jmp     short nb_ret
+
+; NETBIOS's POST for a shadow (ES:BX, as an interrupt)
+nb_post:
+        push    ax
+        push    bx
+        push    dx
+        mov     ax,bx
+        sub     ax,offset nb_ncbs
+        xor     dx,dx
+        mov     bx,NCBSZ
+        div     bx
+        cmp     ax,NBN
+        jae     short nb_post_ret
+        mov     bx,ax
+        cmp     byte ptr cs:nb_state[bx],1
+        jne     short nb_post_ret
+        mov     byte ptr cs:nb_state[bx],2
+        call    ipx_deliver_mine
+nb_post_ret:
+        pop     dx
+        pop     bx
+        pop     ax
+        iret
+
+; shadow BX's results to the program's NCB (and a receive's data to its
+; buffer); ES:DI that NCB
+nb_copyback:
+        push    ax
+        push    cx
+        push    si
+        push    ds
+        mov     ax,bx
+        push    di
+        call    nb_ncbof
+        mov     si,di
+        pop     di
+        push    bx
+        shl     bx,1
+        shl     bx,1
+        les     di,dword ptr cs:nb_tncb[bx]
+        pop     bx
+        push    cs
+        pop     ds                    ; DS:SI the shadow
+        mov     ax,word ptr [si+1]    ; code, LSN, number
+        mov     word ptr es:[di+1],ax
+        mov     al,byte ptr [si+3]
+        mov     byte ptr es:[di+3],al
+        push    si                    ; length, names, timeouts (8-43)
+        push    di
+        add     si,8
+        add     di,8
+        mov     cx,(44 - 8) / 2
+        rep     movsw
+        pop     di
+        pop     si
+        push    si                    ; LANA, done, the rest (48-63)
+        push    di
+        add     si,48
+        add     di,48
+        mov     cx,(64 - 48) / 2
+        rep     movsw
+        pop     di
+        pop     si
+        test    byte ptr cs:nb_cl[bx],4
+        jz      short nb_copyback_ret
+        mov     cx,word ptr [si+8]    ; a receive:  its data
+        cmp     cx,NBBUF
+        jbe     short @F
+        mov     cx,NBBUF
+@@:     push    di
+        push    es
+        mov     si,word ptr [si+4]
+        les     di,dword ptr es:[di+4]
+        mov     ds,word ptr cs:netseg
+        rep     movsb
+        pop     es
+        pop     di
+nb_copyback_ret:
+        pop     ds
+        pop     si
+        pop     cx
+        pop     ax
+        ret
+
+; shadow BX (done):  its results, then its POST routine (interrupts off)
+nb_deliver:
+        mov     byte ptr cs:nb_state[bx],3
+        call    nb_copyback           ; ES:DI the program's NCB
+        mov     byte ptr cs:nb_state[bx],0
+        mov     ax,word ptr es:[di+44]
+        or      ax,word ptr es:[di+46]
+        jz      short nb_deliver_ret
+        push    word ptr es:[di+46]
+        push    word ptr es:[di+44]
+        mov     bp,sp
+        mov     bx,di
+        mov     al,byte ptr es:[di+1]
+        pushf
+        cli
+        call    dword ptr ss:[bp]
+        add     sp,4
+nb_deliver_ret:
+        ret
+
+; task DX (its handle segment) ended:  its NETBIOS shadows cancelled, freed
+nb_task_end:
+        push    ax
+        push    bx
+        push    di
+        push    es
+        xor     bx,bx
+nb_end_loop:
+        cmp     byte ptr cs:nb_state[bx],0
+        je      short nb_end_next
+        mov     di,bx
+        shl     di,1
+        cmp     dx,word ptr cs:nb_owner[di]
+        jne     short nb_end_next
+        cmp     byte ptr cs:nb_state[bx],1
+        jne     short nb_end_free
+        mov     ax,bx                 ; CANCEL of the shadow
+        call    nb_ncbof
+        mov     byte ptr cs:nb_tmp,35h
+        mov     word ptr cs:nb_tmp+4,di
+        mov     word ptr cs:nb_tmp+6,cs
+        push    bx
+        push    cs
+        pop     es
+        mov     bx,offset nb_tmp
+        pushf
+        call    dword ptr cs:old5c
+        pop     bx
+nb_end_free:
+        mov     byte ptr cs:nb_state[bx],0
+nb_end_next:
+        inc     bx
+        cmp     bx,NBN
+        jb      short nb_end_loop
+        pop     es
+        pop     di
+        pop     bx
+        pop     ax
+        ret
+
+;                  CALL LISTEN HANG UP SEND RECEIVE RECEIVE ANY SEND
+;                  DATAGRAM, RECEIVE DATAGRAM, BROADCAST, RECEIVE
+;                  BROADCAST, ADD NAME, DELETE NAME, STATUS, SESSION
+;                  STATUS, ADD GROUP NAME, SEND NO ACK
+nb_classes     db 10h,0, 11h,0, 12h,0, 14h,3, 15h,5, 16h,5, 20h,3, 21h,5
+               db 22h,3, 23h,5, 30h,0, 31h,0, 33h,5, 34h,5, 36h,0, 71h,3
+               db 0FFh
+old5c          dd 0
+nb_slot_n      dw 0
+nb_cls         db 0
+nb_result      db 0
+nb_state       db NBN dup(0)          ; 0 free, 1 at NETBIOS, 2 done, 3 delivering
+nb_cl          db NBN dup(0)          ; its class (nb_classes)
+nb_owner       dw NBN dup(0)
+nb_tncb        dd NBN dup(0)          ; the program's NCB
+nb_tmp         db NCBSZ dup(0)
+nb_ncbs        db NBN * NCBSZ dup(0)
+
 ipx_real       dd 0                   ; the driver's entry (7A00h)
 ipx_slot       dw 0
 ipx_result     db 0
@@ -11155,7 +11609,7 @@ ipx_kind       db IPXN dup(0)         ; 03h, 04h, 05h
 ipx_owner      dw IPXN dup(0)         ; its task (handle segment)
 ipx_tecb       dd IPXN dup(0)         ; the program's ECB
 ipx_ecbs       db IPXN * IPXECB dup(0)
-ipx_bufs       db IPXN * IPXBUF dup(0)
+netseg         dw 0                   ; IPX's, then NETBIOS's buffers
 
 old10          dd 0
 old15          dd 0
