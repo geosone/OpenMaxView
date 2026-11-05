@@ -1815,9 +1815,12 @@ static int scripts_load(void)
 
 /* Add a Program, Change a Program:  a form over the windows; Enter keeps
  * it in MAXVIEW.CFG */
-#define FORM_FIELDS 10
+#define FORM_FIELDS 16
+#define FORM_NUM0 5             /* then the window's numbers:  starting */
+#define FORM_NUM 6              /* height, width, row, column, maximum
+                                 * height, width */
 #define FORM_YN 5               /* the last ones:  Y, N or blank */
-#define FORM_ROWS 20
+#define FORM_ROWS 22
 static odq_program form;
 static int form_index;                  /* -1:  a new one */
 static unsigned form_field;
@@ -1826,6 +1829,7 @@ static char form_yn[FORM_YN][2];        /* Can be swapped out, Close on
                                          * exit, Allow Close Window, Runs
                                          * in background, Share CPU:  Y, N,
                                          * "" */
+static char form_num[FORM_NUM][4];      /* the window's numbers as typed */
 static const char *form_msg = "";
 
 static char *form_text(unsigned f, unsigned *cap)
@@ -1846,16 +1850,35 @@ static char *form_text(unsigned f, unsigned *cap)
         *cap = 1;
         return form_yn[f - (FORM_FIELDS - FORM_YN)];
     }
+    if (f >= FORM_NUM0) {
+        *cap = 3;
+        return form_num[f - FORM_NUM0];
+    }
     *cap = sizeof form_mem - 1;
     return form_mem;
 }
 
 static void form_draw(unsigned *crow, unsigned *ccol)
 {
+    /* each field's row and column in the form, its width; a label at
+     * column 3 where there is one, else the text before it */
+    static const unsigned char frow[FORM_FIELDS] = {
+        2, 4, 6, 8, 10, 12, 12, 12, 12, 13, 13, 15, 16, 17, 18, 19
+    };
+    static const unsigned char fcol[FORM_FIELDS] = {
+        17, 17, 17, 17, 17, 24, 34, 42, 53, 24, 34, 17, 17, 17, 17, 17
+    };
+    static const unsigned char fwidth[FORM_FIELDS] = {
+        52, 52, 52, 52, 52, 3, 3, 3, 3, 3, 3, 1, 1, 1, 1, 1
+    };
     static const char *const label[FORM_FIELDS] = {
         "Key", "Title", "Program", "Directory", "Memory (KB)",
+        "Start window", "", "", "", "Maximum", "",
         "Swap out", "Close on exit", "Close Window", "In background",
         "Share CPU"
+    };
+    static const char *const before[FORM_NUM] = {
+        "Height", "Width", "Row", "Column", "Height", "Width"
     };
     static const char *const hint[FORM_YN] = {
         "Can be swapped out (Y, N, blank)", "Close on exit (Y, N, blank)",
@@ -1877,29 +1900,29 @@ static void form_draw(unsigned *crow, unsigned *ccol)
     sput(top, left + 2, ' ', ATTR_ACTIVE);
     swrite(top, left + 3, title, ATTR_ACTIVE);
     sput(top, left + 3 + strlen(title), ' ', ATTR_ACTIVE);
+    swrite(top + 13, left + 46, "(0:  none)", ATTR_ACTIVE);
     for (f = 0; f < FORM_FIELDS; ++f) {
-        unsigned cap, len, from, row, width = 52;
+        unsigned cap, len, from, row = top + frow[f], col = left + fcol[f];
+        unsigned width = fwidth[f];
         const char *text = form_text(f, &cap);
         unsigned char a = f == form_field ? ATTR_DATA_HIGH : ATTR_DATA;
 
-        if (f < FORM_FIELDS - FORM_YN)
-            row = top + 2 + 2 * f;
-        else {                  /* (one per row) */
-            row = top + 2 + 2 * (FORM_FIELDS - FORM_YN) +
-                  (f - (FORM_FIELDS - FORM_YN));
-            width = 1;
-            swrite(row, left + 21,
-                   hint[f - (FORM_FIELDS - FORM_YN)], ATTR_ACTIVE);
-        }
         swrite(row, left + 3, label[f], ATTR_ACTIVE);
+        if (f >= FORM_NUM0 && f < FORM_NUM0 + FORM_NUM) {
+            const char *b = before[f - FORM_NUM0];
+
+            swrite(row, col - 1 - (unsigned)strlen(b), b, ATTR_ACTIVE);
+        } else if (f >= FORM_FIELDS - FORM_YN)
+            swrite(row, left + 21, hint[f - (FORM_FIELDS - FORM_YN)],
+                   ATTR_ACTIVE);
         for (c = 0; c < width; ++c)
-            sput(row, left + 17 + c, ' ', a);
+            sput(row, col + c, ' ', a);
         len = strlen(text);
         from = len > 51 ? len - 51 : 0;         /* its end in view */
-        swrite(row, left + 17, text + from, a);
+        swrite(row, col, text + from, a);
         if (f == form_field) {
             *crow = row;
-            *ccol = left + 17 + len - from;
+            *ccol = col + len - from;
         }
     }
     swrite(top + FORM_ROWS - 2, left + 3, form_msg, ATTR_ACTIVE);
@@ -1930,6 +1953,68 @@ static void form_yn_get(void)
     form_yn[4][0] = (char)(p->flags4 & 0x02 ? 'Y' : 'N');
 }
 
+/* the program a DVP 2.x profile of its own:  DESQview 2.80's defaults (its
+ * DVPs) */
+static void form_profile(void)
+{
+    odq_process_profile *p = &form.profile;
+
+    if (p->version != 0 && p->source_version >= 2)
+        return;
+    if (p->version == 0)
+        p->version = ODQ_PROFILE_VERSION;
+    p->source_version = 2;
+    p->flags1 = 0xe1;
+    p->flags3 = 0x28;
+    p->flags4 = 0xcf;
+}
+
+/* the window's numbers (DVP 180h, 181h, 0EBh, 0ECh, 0E9h, 0EAh) into
+ * form_num, and back (0 or empty:  none; 1, not over 255) */
+static void form_num_get(void)
+{
+    const odq_process_profile *p = &form.profile;
+    unsigned v[FORM_NUM], i;
+
+    v[0] = p->start_rows;
+    v[1] = p->start_cols;
+    v[2] = p->start_row;
+    v[3] = p->start_col;
+    v[4] = p->rows;
+    v[5] = p->columns;
+    for (i = 0; i < FORM_NUM; ++i)
+        if (v[i] != 0)
+            sprintf(form_num[i], "%u", v[i]);
+        else
+            form_num[i][0] = '\0';
+}
+
+static int form_num_put(void)
+{
+    odq_process_profile *p = &form.profile;
+    unsigned v[FORM_NUM], i, any = 0;
+
+    for (i = 0; i < FORM_NUM; ++i) {
+        v[i] = (unsigned)atoi(form_num[i]);
+        if (v[i] > 255) {
+            form_msg = "The window's numbers:  up to 255.";
+            return 0;
+        }
+        any |= v[i];
+    }
+    if (any == 0 && p->version == 0)
+        return 1;
+    if (p->version == 0)
+        form_profile();         /* (an older one's flags stay) */
+    p->start_rows = v[0];
+    p->start_cols = v[1];
+    p->start_row = v[2];
+    p->start_col = v[3];
+    p->rows = v[4];
+    p->columns = v[5];
+    return 1;
+}
+
 static void form_yn_put(void)
 {
     odq_process_profile *p = &form.profile;
@@ -1939,15 +2024,7 @@ static void form_yn_put(void)
         ;
     if (i == FORM_YN && (p->version == 0 || p->source_version < 2))
         return;                         /* (nothing asked:  as it was) */
-    if (p->version == 0 || p->source_version < 2) {
-        /* a profile of its own:  DESQview 2.80's defaults (its DVPs) */
-        if (p->version == 0)
-            p->version = ODQ_PROFILE_VERSION;
-        p->source_version = 2;
-        p->flags1 = 0xe1;
-        p->flags3 = 0x28;
-        p->flags4 = 0xcf;
-    }
+    form_profile();
     p->flags4 |= 0x40u;
     if (form_yn[0][0] != '\0') {
         p->flags4 &= ~0x40u;
@@ -1996,6 +2073,8 @@ static int form_save(odq_catalog *catalog)
         form_msg = "Memory:  up to 640 KB (empty:  as much as there is).";
         return 0;
     }
+    if (!form_num_put())
+        return 0;
     form.max_kb = (unsigned)kb;
     form_yn_put();
     if (form.max_kb != 0 && form.min_kb > form.max_kb)
@@ -3084,7 +3163,9 @@ static int windows_view(odq_catalog *catalog, char *status)
                         text[0] = (char)toupper(key);
                     else if (key == ' ')
                         text[0] = '\0';
-                } else if (form_field == 4 ? isdigit(key) && len < cap : len < cap) {
+                } else if (form_field == 4 || (form_field >= FORM_NUM0 &&
+                           form_field < FORM_NUM0 + FORM_NUM) ?
+                           isdigit(key) && len < cap : len < cap) {
                     text[len] = (char)key;
                     text[len + 1] = '\0';
                 }
@@ -3298,6 +3379,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                 if (form.max_kb == 0)
                     form_mem[0] = '\0';
                 form_yn_get();
+                form_num_get();
                 form_field = 1;
                 form_msg = "";
                 mode = 8;
@@ -3534,6 +3616,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                 form.min_kb = 64;
                 form_mem[0] = '\0';
                 form_yn_get();
+                form_num_get();
                 form_index = -1;
                 form_field = 0;
                 form_msg = "";
