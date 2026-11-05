@@ -47,7 +47,7 @@ does today. "As DV" means compared with DESQview 2.80 in a test.
 |---|---|---|
 | Add a Program, Delete a Program, Change a Program (all DVP options) | From Open Window:  a form with key, title, program, directory, memory and Can be swapped out (Swap:  Y, N or blank), kept in MAXVIEW.CFG (a changed program keeps its other settings); all options:  `MAXVAPP` (separate full-screen editor), `MAXVDVP` imports DVP files, `MAXVAUTO` finds programs | Partial:  the menu's form has the main settings, not every DVP option takes effect |
 | DOS Services | `MAXVFILE` | Partial |
-| Memory Status | `MAXVMEM` | Partial |
+| Memory Status | `MAXVMEM` (M in the catalogue), in a window:  DESQview 2.80's rows (measured):  Common Memory (MAXVTSR's, bytes), Conventional Memory (the window's own DOS memory), Expanded Memory, each total, available, largest available; also XMS and what new windows can still get (Open 386MAX's pool, which EMS shares) | Covered |
 | Learn (keyboard macros and scripts):  Shift+Alt, Start Script =, Finish -, Cancel C, pauses, Display D, Save S, Load L (measured) | Learn on Shift+Alt:  Start Script (the key, a name, then the keys typed into the window), Finish, Cancel, Fixed-Size Pause (played:  waits for as many keys of the user's as were typed while learning), Variable Pause (played:  the user's keys until Enter, which is taken), Time Delay (seconds), Display Scripts, Save / Load Scripts (MAXVIEW.SCR, loaded at start); the script's key in a window types its keys | Partial:  scripts are MaxView's, not per program |
 | Setup (DVSETUP) | `MAXVSET` | Partial |
 

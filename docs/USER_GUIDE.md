@@ -165,8 +165,11 @@ not shown prematurely. The exact keys and defaults are documented in
 ## Included services
 
 `MAXVFILE` supplies foreground file browsing and guarded copy, rename,
-directory creation and deletion. `MAXVMEM` reports conventional memory, EMS,
-XMS, VCPI, the resident API and the Open 386MAX backend. Unknown or unsafe to
+directory creation and deletion. `MAXVMEM` (Memory Status, M in the catalogue)
+shows DESQview's rows, Common, Conventional and Expanded Memory with total,
+available and largest available, then XMS and what new windows can still get
+(their pages come from Open 386MAX's pool, which EMS shares), VCPI, the
+resident API and the Open 386MAX backend. Unknown or unsafe to
 measure values are reported as `N/A` rather than guessed.
 
 All full-screen programs share a visual language derived from the GPL-licensed

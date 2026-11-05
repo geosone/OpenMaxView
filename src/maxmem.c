@@ -182,6 +182,8 @@ static void print_text(const memory_status *status)
         puts("DOS_AVAILABLE_KB=N/A");
         puts("DOS_LARGEST_KB=N/A");
     }
+    if (status->ems_present && status->backend_present)
+        printf("NEW_WINDOWS_KB=%lu\n", status->ems_available_kb);
     printf("EMS_PRESENT=%u\n", status->ems_present);
     if (status->ems_present)
         printf("EMS_TOTAL_KB=%lu\nEMS_AVAILABLE_KB=%lu\n",
@@ -252,31 +254,46 @@ static void draw(const memory_status *status)
     mvui_write(0, 1, "Memory", MVUI_MENU);
     mvui_put(0, 1, 'M', MVUI_MENU_TRIGGER);
     mvui_write(0, 63, "MaxView Status", MVUI_MENU_TRIGGER);
-    mvui_frame(2, 5, 20, 74, "Open MaxView Memory Status");
-    mvui_write(4, 9, "Memory type", MVUI_ACTIVE);
+    /* DESQview 2.80's Memory Status:  Common (bytes), Conventional and
+     * Expanded Memory (K), each total, available, largest available */
+    mvui_frame(2, 5, 20, 74, "Memory Status");
     mvui_write(4, 35, "Total", MVUI_ACTIVE);
     mvui_write(4, 49, "Available", MVUI_ACTIVE);
     mvui_write(4, 63, "Largest", MVUI_ACTIVE);
-    mvui_write(6, 9, "DOS conventional", MVUI_ACTIVE);
-    value_or_na(6, 35, 1, status->dos_total_kb);
-    value_or_na(6, 49, status->dos_valid, status->dos_available_kb);
-    value_or_na(6, 63, status->dos_valid, status->dos_largest_kb);
-    mvui_write(8, 9, "EMS expanded", MVUI_ACTIVE);
+    mvui_write(5, 35, "Memory", MVUI_ACTIVE);
+    mvui_write(5, 63, "Available", MVUI_ACTIVE);
+    mvui_write(6, 9, "Common Memory", MVUI_ACTIVE);
+    if (status->common_valid) {
+        sprintf(line, "%u", status->common_total_bytes);
+        mvui_write(6, 35, line, MVUI_ACTIVE);
+        sprintf(line, "%u", status->common_available_bytes);
+        mvui_write(6, 49, line, MVUI_ACTIVE);
+        sprintf(line, "%u", status->common_largest_bytes);
+        mvui_write(6, 63, line, MVUI_ACTIVE);
+    } else
+        mvui_write(6, 35, "N/A (no MAXVTSR)", MVUI_TRIGGER);
+    mvui_write(7, 9, "Conventional Memory", MVUI_ACTIVE);
+    value_or_na(7, 35, 1, status->dos_total_kb);
+    value_or_na(7, 49, status->dos_valid, status->dos_available_kb);
+    value_or_na(7, 63, status->dos_valid, status->dos_largest_kb);
+    mvui_write(8, 9, "Expanded Memory", MVUI_ACTIVE);
     value_or_na(8, 35, status->ems_present, status->ems_total_kb);
     value_or_na(8, 49, status->ems_present, status->ems_available_kb);
     value_or_na(8, 63, status->ems_present, status->ems_available_kb);
-    mvui_write(10, 9, "XMS extended (free)", MVUI_ACTIVE);
-    value_or_na(10, 35, status->xms_present, status->xms_total_kb);
-    value_or_na(10, 49, status->xms_present, status->xms_total_kb);
-    value_or_na(10, 63, status->xms_present, status->xms_largest_kb);
+    mvui_write(9, 9, "Extended Memory (XMS)", MVUI_ACTIVE);
+    value_or_na(9, 35, status->xms_present, status->xms_total_kb);
+    value_or_na(9, 49, status->xms_present, status->xms_total_kb);
+    value_or_na(9, 63, status->xms_present, status->xms_largest_kb);
 
-    if (status->common_valid)
-        sprintf(line, "MaxView common: %u total, %u free, %u largest bytes",
-                status->common_total_bytes, status->common_available_bytes,
-                status->common_largest_bytes);
+    /* a new window's pages come from Open 386MAX's pool, as EMS does */
+    if (status->ems_present && status->backend_present)
+        sprintf(line, "For new windows:  %lu K (Open 386MAX's pool, as EMS)",
+                status->ems_available_kb);
     else
-        strcpy(line, "MaxView common pool: unavailable");
-    mvui_write(12, 9, line, MVUI_ACTIVE);
+        strcpy(line, "For new windows:  N/A");
+    mvui_write(11, 9, line, MVUI_ACTIVE);
+    mvui_write(12, 9, "Conventional:  this window's DOS memory",
+               MVUI_ACTIVE);
 
     if (status->process_valid)
         sprintf(line, "Current task: %u DOS, %u system paragraphs",

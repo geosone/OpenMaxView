@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -387,6 +387,22 @@ tune)
     check "not sharing:  the window behind waited (A + 10 < B)" "[ -n '$a' ] && [ -n '$b' ] && [ $((a + 10)) -lt $b ]"
     check "Change Colors:  the program's 07h shown 18h (Down:  blue, Right:  dark grey)" "echo '$hb' | grep -q '0x6b 0x18 0x65 0x18 0x79 0x18 0x70 0x18'"
     check "DOS works afterwards" "grep -q '^tune end' '$d/end.txt'"
+    ;;
+memstat)
+    echo "== memstat:  Memory Status (MAXVMEM) in a window, DESQview's rows; less for new windows with another open"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'M|Memory Status|C:\\MAXVMEM.EXE||64|640\r\nD|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:memstat_end:30" run memstat 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/MAXVMEM.EXE $cfg" \
+        "wait:Open_Program:60 key:ret wait:For_new_windows:30 sleep:2 text:ms1 key:esc wait:Open_Program:30 sleep:2 key:down key:ret sleep:5 $M key:o wait:Change_a_Program:20 key:m wait:For_new_windows:30 sleep:2 text:ms2 key:esc sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_memstat_end"
+    d=$OUT/memstat
+    nw() { sed -n 's/.*For new windows: *\([0-9]*\) K.*/\1/p' "$d/$1.txt" | head -1; }
+    grep -v '^ *$' "$d/ms1.txt" | sed -n '3,12p' | sed 's/^/  /'
+    echo "  for new windows:  $(nw ms1) K, with a DOS window open:  $(nw ms2) K"
+    check "DESQview's rows:  Common, Conventional, Expanded Memory, each total, available, largest" "grep -q 'Common Memory' '$d/ms1.txt' && grep -q 'Conventional Memory' '$d/ms1.txt' && grep -q 'Expanded Memory' '$d/ms1.txt' && grep -q 'Largest' '$d/ms1.txt'"
+    check "for new windows:  less with another window open" "[ -n '$(nw ms1)' ] && [ -n '$(nw ms2)' ] && [ $(nw ms2 || echo 0) -lt $(nw ms1 || echo 0) ]"
+    check "DOS works afterwards" "grep -q '^memstat end' '$d/end.txt'"
     ;;
 video)
     echo "== video:  with MAXTEXT (Open 386MAX) the windows in its higher mode; Video Options"
