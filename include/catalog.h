@@ -61,6 +61,14 @@ int odq_program_swappable(const odq_program *program);
 /* Share EGA when foreground/zoomed (DVP 2.x):  flags4 bit 0, as DESQview
  * 2.80 writes it; 1 without a DVP profile */
 int odq_program_share_ega(const odq_program *program);
+/* Runs in background, Share CPU when foreground, Allow Close Window
+ * command (DVP 2.x, as DESQview 2.80 writes them):  0 when the profile
+ * says N, else 1 (Y, blank, no DVP profile).  Runs in background:  flags3
+ * (184h) bit 3 blank, else flags1 (16Fh) bit 6 clear Y; Share CPU:
+ * flags4 (18Bh) bit 1; Allow Close Window:  flags3 bit 4 set N */
+int odq_program_background(const odq_program *program);
+int odq_program_share_cpu(const odq_program *program);
+int odq_program_closable(const odq_program *program);
 
 #endif
 

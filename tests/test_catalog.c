@@ -130,6 +130,33 @@ int main(void)
     catalog.programs[0].profile.version = 0;
     if (!odq_program_share_ega(&catalog.programs[0]))
         fail("a program without a profile not sharing EGA");
+    /* Runs in background, Share CPU, Allow Close Window (DESQview 2.80,
+     * shipped:  16Fh E1h, 184h 28h, 18Bh CFh; bg Y:  16Fh A1h, 184h 20h;
+     * bg N:  184h 20h; Share CPU N:  18Bh CDh; Allow Close N:  184h 38h) */
+    if (!odq_program_background(&catalog.programs[0]) ||
+        !odq_program_share_cpu(&catalog.programs[0]) ||
+        !odq_program_closable(&catalog.programs[0]))
+        fail("a program without a profile restricted");
+    catalog.programs[0].profile.version = ODQ_PROFILE_VERSION;
+    catalog.programs[0].profile.flags1 = 0xe1;
+    catalog.programs[0].profile.flags3 = 0x28;
+    catalog.programs[0].profile.flags4 = 0xcf;
+    if (!odq_program_background(&catalog.programs[0]) ||
+        !odq_program_share_cpu(&catalog.programs[0]) ||
+        !odq_program_closable(&catalog.programs[0]))
+        fail("the shipped settings restricted");
+    catalog.programs[0].profile.flags3 = 0x20;
+    if (odq_program_background(&catalog.programs[0]))
+        fail("Runs in background N runs");
+    catalog.programs[0].profile.flags1 = 0xa1;
+    if (!odq_program_background(&catalog.programs[0]))
+        fail("Runs in background Y held");
+    catalog.programs[0].profile.flags4 = 0xcd;
+    if (odq_program_share_cpu(&catalog.programs[0]))
+        fail("Share CPU N sharing");
+    catalog.programs[0].profile.flags3 = 0x38;
+    if (odq_program_closable(&catalog.programs[0]))
+        fail("Allow Close Window N closable");
 
     puts("catalog tests passed");
     return 0;

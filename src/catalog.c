@@ -89,6 +89,33 @@ int odq_program_share_ega(const odq_program *program)
            (profile->flags4 & 0x01) != 0;
 }
 
+static int odq_dvp2(const odq_process_profile *profile)
+{
+    return profile->version != 0 && profile->source_version >= 2;
+}
+
+int odq_program_background(const odq_program *program)
+{
+    const odq_process_profile *profile = &program->profile;
+
+    return !odq_dvp2(profile) || (profile->flags3 & 0x08) != 0 ||
+           (profile->flags1 & 0x40) == 0;
+}
+
+int odq_program_share_cpu(const odq_program *program)
+{
+    const odq_process_profile *profile = &program->profile;
+
+    return !odq_dvp2(profile) || (profile->flags4 & 0x02) != 0;
+}
+
+int odq_program_closable(const odq_program *program)
+{
+    const odq_process_profile *profile = &program->profile;
+
+    return !odq_dvp2(profile) || (profile->flags3 & 0x10) == 0;
+}
+
 int odq_program_valid(const odq_program *program)
 {
     return isprint((unsigned char)program->hotkey) && program->hotkey != '|' &&

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -387,6 +387,20 @@ tune)
     check "not sharing:  the window behind waited (A + 10 < B)" "[ -n '$a' ] && [ -n '$b' ] && [ $((a + 10)) -lt $b ]"
     check "Change Colors:  the program's 07h shown 18h (Down:  blue, Right:  dark grey)" "echo '$hb' | grep -q '0x6b 0x18 0x65 0x18 0x79 0x18 0x70 0x18'"
     check "DOS works afterwards" "grep -q '^tune end' '$d/end.txt'"
+    ;;
+dvpopt)
+    echo "== dvpopt:  a DVP's Runs in background N, Share CPU N, Allow Close Window N (as DESQview 2.80 writes them)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\nN|TickN|C:\\TICK.EXE C:\\TN.TXT||64|640|1|2|0|0|0|0|0|0|0|0|0|0|0|225|0|48|205\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    CMD="C:\\MAXVIEW" END="wait:dvpopt_end:30" run dvpopt 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg" \
+        "wait:Open_Program:60 key:ret sleep:3 $M key:o wait:Change_a_Program:20 key:n sleep:3 $M text:menu $R key:t wait:This_Window:10 text:tune key:esc sleep:1 key:esc sleep:1 key:esc sleep:1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_dvpopt_end"
+    d=$OUT/dvpopt
+    check "Allow Close Window N:  Close Window without a key" "grep -q 'Close Window' '$d/menu.txt' && ! grep -q 'Close Window *C' '$d/menu.txt'"
+    check "Runs in background N, Share CPU N:  Tune shows them" "grep -q 'Run in background *\[N\]' '$d/tune.txt' && grep -q 'Share CPU in front *\[N\]' '$d/tune.txt'"
+    check "DOS works afterwards" "grep -q '^dvpopt end' '$d/end.txt'"
     ;;
 memstat)
     echo "== memstat:  Memory Status (MAXVMEM) in a window, DESQview's rows; less for new windows with another open"

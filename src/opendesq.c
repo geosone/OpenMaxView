@@ -65,6 +65,7 @@ typedef struct mv_window {
     unsigned char noswap;       /* its program:  Can be swapped out N, or
                                  * Tune's Allow swapping out N */
     unsigned char noega;        /* its program:  Share EGA N (shown only) */
+    unsigned char noclose;      /* its program:  Allow Close Window N */
 } mv_window;
 static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
 static unsigned char tune_noswap;       /* Tune's system Allow swapping N */
@@ -688,7 +689,7 @@ static void win_add(unsigned t)
     win[t].gpos = win[t].gsize = 0;
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
     win[t].exclusive = win[t].colors = win[t].swapped = win[t].noswap = 0;
-    win[t].noega = 0;
+    win[t].noega = win[t].noclose = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -927,6 +928,15 @@ static int launch_task(const odq_program *program, char *status)
     win_add(t);
     win[t].noswap = (unsigned char)!odq_program_swappable(program);
     win[t].noega = (unsigned char)!odq_program_share_ega(program);
+    win[t].noclose = (unsigned char)!odq_program_closable(program);
+    if (!odq_program_background(program)) {     /* Runs in background N */
+        win[t].frozen = 1;
+        mvk_freeze(t, 1);
+    }
+    if (!odq_program_share_cpu(program)) {      /* Share CPU N */
+        win[t].exclusive = 1;
+        mvk_share(t, 0);
+    }
     view_windows = 1;
     sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
     mvk_setfg(t);
@@ -2498,7 +2508,8 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_begin("MaxView", 22);
         dv_add(DV_ITEM, "Open Window", allowed("O", MVD_OPEN), A_OPEN);
         dv_add(DV_ITEM, "Switch Windows", allowed("S", MVD_SWITCH), A_SWITCH);
-        dv_add(DV_ITEM, "Close Window", allowed("C", MVD_CLOSE), A_CLOSE);
+        dv_add(DV_ITEM, "Close Window", win[front()].noclose ? "" :
+               allowed("C", MVD_CLOSE), A_CLOSE);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_ITEM, "Rearrange", "R", A_REARRANGE);
         dv_add(DV_ITEM, "Zoom", deny_mask & (MVD_HSIZE | MVD_VSIZE) ? "" : "Z",
