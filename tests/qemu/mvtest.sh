@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin mvlaunch memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -430,6 +430,24 @@ mvlaunch)
     d=$OUT/mvlaunch
     check "WORMS a window of its own, from LAUNCH (APP_START)" "grep -q 'Worms' '$d/sw.txt' && grep -q 'Launcher' '$d/sw.txt'"
     check "DOS works afterwards" "grep -q '^mvlaunch end' '$d/end.txt'"
+    ;;
+dossvc)
+    echo "== dossvc:  DOS Services (MAXVFILE):  Mark by Name, Only Marked, Copy, Append, Type, Move, Erase, Sort, Make Directory"
+    printf 'MD C:\\FT\r\nMD C:\\FT\\SUB\r\nECHO hello alpha> C:\\FT\\A.TXT\r\nECHO hello beta> C:\\FT\\B.TXT\r\nECHO data> C:\\FT\\C.DAT\r\nC:\\MAXVFILE /P:C:\\FT\r\nC:\r\nCD \\\r\nDIR /B C:\\FT > C:\\R1.TXT\r\nDIR /B C:\\FT\\SUB > C:\\R2.TXT\r\nECHO dossvc end\r\n' > "$OUT/DS.BAT"
+    CMD="C:\\DS.BAT" END="wait:dossvc_end:60" run dossvc 0 "" "$OUT/DS.BAT $ROOT/build/MAXVFILE.EXE" \
+        "wait:Commands:60 sleep:1 text:s0 key:n wait:Mark_by_Name:10 key:shift-8,dot,t,x,t,ret sleep:1 text:s1 key:o sleep:1 text:s2 key:o sleep:1 key:c wait:To_directory:10 key:s,u,b,ret sleep:2 text:s3 key:a wait:Append_to:10 key:a,l,l,dot,t,x,t,ret sleep:2 text:s4 key:u wait:Unmark_by_Name:10 key:shift-8,dot,shift-8,ret sleep:1 key:home,down,down sleep:1 key:t sleep:2 text:type key:esc sleep:1 key:end,up sleep:1 text:s5 key:m wait:To_directory:10 key:s,u,b,ret wait:Overwrite:10 text:ovr key:y sleep:2 text:s6 key:end sleep:1 key:e wait:Press_Y:10 key:y sleep:2 text:s7 key:s sleep:1 text:s8 key:shift-8 sleep:1 text:more key:m wait:Make_Directory:10 key:n,e,w,ret sleep:2 key:shift-8 sleep:1 key:esc sleep:3"
+    d=$OUT/dossvc
+    r1=$(file dossvc R1.TXT | tr '\n' ' '); r2=$(file dossvc R2.TXT | tr '\n' ' ')
+    echo "  C:\\FT:  $r1  SUB:  $r2"
+    check "the list:  name, size, date and time; the commands" "grep -q 'A.TXT .* [0-9]*-[0-9][0-9]-[0-9][0-9] *[0-9]*:[0-9][0-9][ap]' '$d/s0.txt' && grep -q 'Append *A' '$d/s0.txt' && grep -q 'More *\*' '$d/s0.txt'"
+    check "Mark by Name *.TXT:  2 marked; Only Marked:  C.DAT not shown" "grep -q '2 marked' '$d/s1.txt' && grep -q 'A.TXT' '$d/s2.txt' && ! grep -q 'C.DAT' '$d/s2.txt'"
+    check "Copy, Append of the marked files:  2 done each" "grep -q '2 done, 0 not' '$d/s3.txt' && grep -q '2 done, 0 not' '$d/s4.txt'"
+    check "Type:  the file's text" "grep -q 'hello alpha' '$d/type.txt'"
+    check "Move:  B.TXT there already, Overwrite asked" "grep -q 'Overwrite.*B.TXT' '$d/ovr.txt' && grep -q '1 done, 0 not' '$d/s6.txt'"
+    check "Move B.TXT to SUB, Erase C.DAT, Make Directory NEW" "grep -q 'B.TXT' '$d/s5.txt' && echo '$r1' | grep -q NEW && ! echo '$r1' | grep -q 'B.TXT' && ! echo '$r1' | grep -q C.DAT && echo '$r2' | grep -q B.TXT && echo '$r2' | grep -q A.TXT"
+    check "ALL.TXT:  A.TXT and B.TXT appended" "[ \"\$(file dossvc FT/ALL.TXT | tr '\n' ' ')\" = 'hello alpha hello beta ' ]"
+    check "Sort:  by extension; More:  Change, Make, Remove Directory, the diskette programs" "grep -q 'by extension' '$d/s8.txt' && grep -q 'Change Dir' '$d/more.txt' && grep -q 'Format Disk' '$d/more.txt' && grep -q 'Restore' '$d/more.txt'"
+    check "DOS works afterwards" "grep -q '^dossvc end' '$d/end.txt'"
     ;;
 memstat)
     echo "== memstat:  Memory Status (MAXVMEM) in a window, DESQview's rows; less for new windows with another open"

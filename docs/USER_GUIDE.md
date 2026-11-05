@@ -164,8 +164,16 @@ not shown prematurely. The exact keys and defaults are documented in
 
 ## Included services
 
-`MAXVFILE` supplies foreground file browsing and guarded copy, rename,
-directory creation and deletion. `MAXVMEM` (Memory Status, M in the catalogue)
+`MAXVFILE` (DOS Services) lists a directory's files with size, date and
+time.  Space marks a file, N and U mark and unmark by name (`*.TXT`), O
+shows only the marked ones, S changes the sort (name, extension, size,
+date).  Append (A), Copy (C, F5), Erase (E, F8), Move (M), Print (P) work on
+the marked files, else on the one selected; Rename (R, F6) and Type (T, a
+viewer) on the one selected.  `*` shows More:  Change (C), Make (M, F7) and
+Remove Directory (R), and Copy Diskette (K), Format Diskette (F), Backup
+(B), Restore (S), which run DOS's own DISKCOPY, FORMAT, BACKUP and RESTORE
+with the parameters typed.  Enter opens a directory, Backspace the parent,
+F9 reads it again, Esc leaves. `MAXVMEM` (Memory Status, M in the catalogue)
 shows DESQview's rows, Common, Conventional and Expanded Memory with total,
 available and largest available, then XMS and what new windows can still get
 (their pages come from Open 386MAX's pool, which EMS shares), VCPI, the
