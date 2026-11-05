@@ -66,6 +66,8 @@ typedef struct mv_window {
                                  * Tune's Allow swapping out N */
     unsigned char noega;        /* its program:  Share EGA N (shown only) */
     unsigned char noclose;      /* its program:  Allow Close Window N */
+    unsigned char maxrows, maxcols;     /* its program's Maximum Height,
+                                         * Width (Resize), 0:  none */
 } mv_window;
 static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
 static unsigned char tune_noswap;       /* Tune's system Allow swapping N */
@@ -575,9 +577,11 @@ static void show_program_info(const odq_program *program)
                 profile->idle_polls, profile->max_ems_kb,
                 profile->extra_system);
         write_at(14, 9, line, ATTR_ACTIVE);
-        sprintf(line, "Video %ux%u, text/graphics pages %u/%u",
+        sprintf(line, "Video %ux%u, pages %u/%u, window %ux%u at %u,%u",
                 profile->columns, profile->rows, profile->text_pages,
-                profile->graphics_pages);
+                profile->graphics_pages, profile->start_cols,
+                profile->start_rows, profile->start_row,
+                profile->start_col);
         write_at(15, 9, line, ATTR_ACTIVE);
         sprintf(line, "Serial mask %02X, protection %02X, flags %02X/%02X/%02X/%02X",
                 profile->serial_ports, profile->protection, profile->flags1,
@@ -690,7 +694,39 @@ static void win_add(unsigned t)
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
     win[t].exclusive = win[t].colors = win[t].swapped = win[t].noswap = 0;
     win[t].noega = win[t].noclose = 0;
+    win[t].maxrows = win[t].maxcols = 0;
     zorder[nwin++] = (unsigned char)t;
+}
+
+/* the window's contents at row, col, rows x cols, as DESQview's (its frame
+ * around them), within the desk */
+static void win_place(mv_window *w, unsigned row, unsigned col,
+                      unsigned rows, unsigned cols)
+{
+    if (rows > SCREEN_ROWS)
+        rows = SCREEN_ROWS;
+    if (cols > SCREEN_COLS)
+        cols = SCREEN_COLS;
+    if (rows > desk_rows - 2)
+        rows = desk_rows - 2;
+    if (cols > desk_cols - 2)
+        cols = desk_cols - 2;
+    if (rows < 3)
+        rows = 3;
+    if (cols < 10)
+        cols = 10;
+    if (row < 1)
+        row = 1;
+    if (row + rows > desk_rows - 1)
+        row = desk_rows - 1 - rows;
+    if (col < 1)
+        col = 1;
+    if (col + cols > desk_cols - 1)
+        col = desk_cols - 1 - cols;
+    w->top = (unsigned char)row;
+    w->left = (unsigned char)col;
+    w->rows = (unsigned char)rows;
+    w->cols = (unsigned char)cols;
 }
 
 static void win_remove(unsigned t)
@@ -929,6 +965,15 @@ static int launch_task(const odq_program *program, char *status)
     win[t].noswap = (unsigned char)!odq_program_swappable(program);
     win[t].noega = (unsigned char)!odq_program_share_ega(program);
     win[t].noclose = (unsigned char)!odq_program_closable(program);
+    if (program->profile.version != 0) {
+        const odq_process_profile *p = &program->profile;
+
+        win[t].maxrows = (unsigned char)p->rows;
+        win[t].maxcols = (unsigned char)p->columns;
+        if (p->start_rows != 0 && p->start_cols != 0)
+            win_place(&win[t], p->start_row, p->start_col, p->start_rows,
+                      p->start_cols);
+    }
     if (!odq_program_background(program)) {     /* Runs in background N */
         win[t].frozen = 1;
         mvk_freeze(t, 1);
@@ -2809,10 +2854,12 @@ static int windows_view(odq_catalog *catalog, char *status)
                     scan = 0;
                 if (scan == 72 && w->rows > 3) --w->rows;
                 if (scan == 80 && w->top + w->rows < desk_rows - 1 &&
-                    w->rows < SCREEN_ROWS) ++w->rows;
+                    w->rows < SCREEN_ROWS &&
+                    (w->maxrows == 0 || w->rows < w->maxrows)) ++w->rows;
                 if (scan == 75 && w->cols > 10) --w->cols;
                 if (scan == 77 && w->left + w->cols < desk_cols - 1 &&
-                    w->cols < SCREEN_COLS) ++w->cols;
+                    w->cols < SCREEN_COLS &&
+                    (w->maxcols == 0 || w->cols < w->maxcols)) ++w->cols;
                 if (w->cols != cols)
                     notify(t, 0x42, 7, w->rows, w->cols);
                 if (w->rows != rows)

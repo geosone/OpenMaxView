@@ -32,8 +32,16 @@ An imported DVP appends a versioned process profile:
 ```text
 |profile-version|source-version|system-kb|script-bytes|idle-polls|
 max-ems-kb|extra-system|rows|columns|text-pages|graphics-pages|
-serial-ports|protection|flags1|flags2|flags3|flags4
+serial-ports|protection|flags1|flags2|flags3|flags4[|start-row|start-col|
+start-rows|start-cols]
 ```
+
+The last four (DVP `0EBh`, `0ECh`, `180h`, `181h`, measured with DESQview
+2.80's Change a Program) are the window's contents at the start:  row,
+column, height and width.  They are written only when one is not 0; with a
+height or width of 0 MAXVIEW places the window itself.  MAXVIEW opens the
+window there (kept inside the screen, its frame around it) and Resize stops
+at `rows` and `columns` (Maximum Height and Width).
 
 The display above wraps the definition for readability; one catalogue record
 always occupies one physical line.

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -401,6 +401,22 @@ dvpopt)
     check "Allow Close Window N:  Close Window without a key" "grep -q 'Close Window' '$d/menu.txt' && ! grep -q 'Close Window *C' '$d/menu.txt'"
     check "Runs in background N, Share CPU N:  Tune shows them" "grep -q 'Run in background *\[N\]' '$d/tune.txt' && grep -q 'Share CPU in front *\[N\]' '$d/tune.txt'"
     check "DOS works afterwards" "grep -q '^dvpopt end' '$d/end.txt'"
+    ;;
+dvpwin)
+    echo "== dvpwin:  a DVP's starting window (row 4, column 2, 9 x 40) and its maximum (9 x 40) for Resize"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'W|Probe W|C:\\KEYPROBE.COM C:\\W1.TXT D||64|640|1|2|0|0|0|0|0|9|40|0|0|0|0|0|0|0|2|4|2|9|40\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:dvpwin_end:30" run dvpwin 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg" \
+        "wait:Open_Program:60 key:ret wait:keyprobe_D_ready:20 $M sleep:1 mon:xp+/4000xb+0xb8000>v1 key:r wait:Tune_Performance:10 key:r wait:Resize:__arrows:10 key:right,right,down,down sleep:1 key:ret sleep:1 mon:xp+/4000xb+0xb8000>v2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_dvpwin_end"
+    d=$OUT/dvpwin
+    vc() { awk '/^[0-9a-f]+:/' "$d/$1.txt" 2>/dev/null | grep -o "0x[0-9a-f][0-9a-f]" | sed -n "$((($2 * 80 + $3) * 2 + 1))p"; }
+    corners() { echo "$(vc $1 3 1) $(vc $1 13 1) $(vc $1 3 42) $(vc $1 13 42)"; }
+    echo "  frame corners (3,1) (13,1) (3,42) (13,42):  $(corners v1), after Resize:  $(corners v2)"
+    check "the window's contents at row 4, column 2, 9 x 40 (its frame around them)" "[ '$(corners v1)' = '0xc9 0xc8 0xbb 0xbc' ]"
+    check "Resize:  not past its Maximum Height and Width" "[ '$(corners v2)' = '0xc9 0xc8 0xbb 0xbc' ]"
+    check "DOS works afterwards" "grep -q '^dvpwin end' '$d/end.txt'"
     ;;
 memstat)
     echo "== memstat:  Memory Status (MAXVMEM) in a window, DESQview's rows; less for new windows with another open"

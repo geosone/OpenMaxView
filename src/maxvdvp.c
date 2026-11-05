@@ -304,7 +304,7 @@ int main(int argc, char **argv)
     const char *catalog_path = "MAXVIEW.CFG";
     char requested = 0;
     dvp_info info;
-    odq_catalog catalog;
+    static odq_catalog catalog;     /* (24 programs:  not on the stack) */
     odq_program program;
     int index, result;
 

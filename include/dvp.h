@@ -34,6 +34,10 @@ typedef struct dvp_info {
     unsigned flags4;
     unsigned serial_ports;
     unsigned protection;
+    unsigned start_row;         /* 0EBh, 0ECh:  the window's starting */
+    unsigned start_col;         /*   row and column */
+    unsigned start_rows;        /* 180h, 181h:  its starting height and */
+    unsigned start_cols;        /*   width (2.x) */
     int close_on_exit;          /* 17Ch:  the window goes with the program */
     int has_v20;
 } dvp_info;

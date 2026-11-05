@@ -24,12 +24,20 @@ int main(void)
     fputs("x|Example|EXAMPLE.EXE|C:\\EXAMPLE|64|256\n", stream);
     fputs("p|Profile|PROFILE.EXE||128|640|1|2|4|1000|7|2048|8|25|80|2|1|3|154|18|52|86|120\n",
           stream);
+    fputs("w|Window|WINDOW.EXE||128|640|1|2|0|0|0|0|0|9|54|0|0|0|0|0|0|0|0|1|1|9|54\n",
+          stream);
     fclose(stream);
 
     if (odq_catalog_load("build/test.cfg", &catalog, &line) != ODQ_CATALOG_OK)
         fail("valid catalogue rejected");
-    if (catalog.count != 3)
+    if (catalog.count != 4)
         fail("wrong entry count");
+    if (catalog.programs[3].profile.start_row != 1 ||
+        catalog.programs[3].profile.start_col != 1 ||
+        catalog.programs[3].profile.start_rows != 9 ||
+        catalog.programs[3].profile.start_cols != 54 ||
+        catalog.programs[2].profile.start_rows != 0)
+        fail("the window at the start parsed incorrectly");
     if (catalog.programs[1].hotkey != 'X')
         fail("hotkey was not normalised");
     if (strcmp(catalog.programs[1].directory, "C:\\EXAMPLE") != 0)
@@ -48,9 +56,12 @@ int main(void)
         fail("valid catalogue could not be saved");
     memset(&catalog, 0, sizeof(catalog));
     if (odq_catalog_load("build/test-saved.cfg", &catalog, &line) !=
-        ODQ_CATALOG_OK || catalog.count != 3 ||
+        ODQ_CATALOG_OK || catalog.count != 4 ||
         strcmp(catalog.programs[1].title, "Example") != 0 ||
-        catalog.programs[2].profile.max_ems_kb != 2048)
+        catalog.programs[2].profile.max_ems_kb != 2048 ||
+        catalog.programs[2].profile.start_rows != 0 ||
+        catalog.programs[3].profile.start_cols != 54 ||
+        catalog.programs[3].profile.start_row != 1)
         fail("saved catalogue did not round-trip");
     strcpy(catalog.programs[1].title, "Changed");
     if (odq_catalog_save("build/test-saved.cfg", &catalog) != ODQ_CATALOG_OK)

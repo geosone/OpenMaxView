@@ -29,6 +29,8 @@ static void make_sample(const char *path, int valid_checksum)
     data[0xe6] = 2;
     data[0xe9] = 25;
     data[0xea] = 80;
+    data[0xeb] = 4;
+    data[0xec] = 10;
     put_word(data, 0xed, 4);
     data[0x16f] = 0x12;
     data[0x170] = 0x34;
@@ -44,6 +46,8 @@ static void make_sample(const char *path, int valid_checksum)
     data[0x18a] = 3;
     data[0x18b] = 0x78;
     data[0x18c] = 0x9a;
+    data[0x180] = 17;
+    data[0x181] = 59;
     for (index = 2; index <= 0x170; ++index)
         checksum = (checksum + data[index]) & 0xff;
     data[1] = (unsigned char)(valid_checksum ? checksum : checksum + 1);
@@ -77,6 +81,9 @@ int main(int argc, char **argv)
     assert(program.profile.version == ODQ_PROFILE_VERSION);
     assert(program.profile.source_version == 2);
     assert(program.profile.system_kb == 4);
+    assert(program.profile.start_row == 4 && program.profile.start_col == 10);
+    assert(program.profile.start_rows == 17 &&
+           program.profile.start_cols == 59);
     assert(program.profile.script_bytes == 1000);
     assert(program.profile.idle_polls == 7);
     assert(program.profile.max_ems_kb == 2048);

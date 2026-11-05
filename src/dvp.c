@@ -85,6 +85,8 @@ int dvp_parse(const unsigned char *data, size_t length, dvp_info *info)
     info->text_pages = data[0xe6];
     info->rows = data[0xe9];
     info->columns = data[0xea];
+    info->start_row = data[0xeb];
+    info->start_col = data[0xec];
     info->system_kb = get_word(data, 0xed);
     info->flags1 = data[0x16f];
     info->flags2 = data[0x170];
@@ -104,6 +106,8 @@ int dvp_parse(const unsigned char *data, size_t length, dvp_info *info)
         info->serial_ports = data[0x18a];
         info->flags4 = data[0x18b];
         info->protection = data[0x18c];
+        info->start_rows = data[0x180];
+        info->start_cols = data[0x181];
         info->close_on_exit = data[0x17c] != 0;
     }
     return DVP_OK;
@@ -167,5 +171,9 @@ int dvp_make_program(const dvp_info *info, char hotkey,
     program->profile.flags2 = info->flags2;
     program->profile.flags3 = info->flags3;
     program->profile.flags4 = info->flags4;
+    program->profile.start_row = info->start_row;
+    program->profile.start_col = info->start_col;
+    program->profile.start_rows = info->start_rows;
+    program->profile.start_cols = info->start_cols;
     return odq_program_valid(program) ? DVP_OK : DVP_INVALID;
 }

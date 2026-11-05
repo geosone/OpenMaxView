@@ -328,6 +328,11 @@ int main(int argc, char **argv)
                        profile->graphics_pages, profile->serial_ports,
                        profile->protection, profile->flags1,
                        profile->flags2, profile->flags3, profile->flags4);
+                if (profile->start_rows != 0 || profile->start_cols != 0 ||
+                    profile->start_row != 0 || profile->start_col != 0)
+                    printf("|%u|%u|%u|%u", profile->start_row,
+                           profile->start_col, profile->start_rows,
+                           profile->start_cols);
             }
             putchar('\n');
         }

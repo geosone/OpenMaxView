@@ -26,6 +26,12 @@ typedef struct odq_process_profile {
     unsigned flags2;
     unsigned flags3;
     unsigned flags4;
+    /* the window at the start (DVP 0EBh, 0ECh, 180h, 181h):  its contents'
+     * row, column, rows and columns; 0 rows:  MAXVIEW's own */
+    unsigned start_row;
+    unsigned start_col;
+    unsigned start_rows;
+    unsigned start_cols;
 } odq_process_profile;
 
 typedef struct odq_program {
