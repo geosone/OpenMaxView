@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin mvlaunch memstat video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -417,6 +417,18 @@ dvpwin)
     check "the window's contents at row 4, column 2, 9 x 40 (its frame around them)" "[ '$(corners v1)' = '0xc9 0xc8 0xbb 0xbc' ]"
     check "Resize:  not past its Maximum Height and Width" "[ '$(corners v2)' = '0xc9 0xc8 0xbb 0xbc' ]"
     check "DOS works afterwards" "grep -q '^dvpwin end' '$d/end.txt'"
+    ;;
+mvlaunch)
+    echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'L|Launcher|C:\\LAUNCH.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:mvlaunch_end:30" run mvlaunch 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/LAUNCH.COM $ROOT/build/WORMS.COM $cfg" \
+        "wait:Open_Program:60 key:ret wait:choose_a_demo:30 sleep:1 key:w sleep:5 $M key:s sleep:2 text:sw key:esc sleep:1 key:esc sleep:1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_mvlaunch_end"
+    d=$OUT/mvlaunch
+    check "WORMS a window of its own, from LAUNCH (APP_START)" "grep -q 'Worms' '$d/sw.txt' && grep -q 'Launcher' '$d/sw.txt'"
+    check "DOS works afterwards" "grep -q '^mvlaunch end' '$d/end.txt'"
     ;;
 memstat)
     echo "== memstat:  Memory Status (MAXVMEM) in a window, DESQview's rows; less for new windows with another open"

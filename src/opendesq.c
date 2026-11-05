@@ -729,6 +729,8 @@ static void win_place(mv_window *w, unsigned row, unsigned col,
     w->cols = (unsigned char)cols;
 }
 
+static void win_program(unsigned t, const odq_program *program);
+
 static void win_remove(unsigned t)
 {
     unsigned i, j = 0;
@@ -907,6 +909,8 @@ static int poll_tasks(char *status)
         task_live[n] = 1;
         task_parent[n] = (unsigned char)from;
         win_add(n);
+        if (mvhost_approgram() != NULL)
+            win_program(n, mvhost_approgram());
         view_windows = 1;
         sprintf(status, "%.40s runs as task %d; Alt returns.", title, n);
         if (shown)
@@ -962,6 +966,16 @@ static int launch_task(const odq_program *program, char *status)
     mvhost_title(t, program->title);
     task_live[t] = 1;
     win_add(t);
+    win_program(t, program);
+    view_windows = 1;
+    sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
+    mvk_setfg(t);
+    return 0;
+}
+
+/* task t's window as its program's settings say (DVP options) */
+static void win_program(unsigned t, const odq_program *program)
+{
     win[t].noswap = (unsigned char)!odq_program_swappable(program);
     win[t].noega = (unsigned char)!odq_program_share_ega(program);
     win[t].noclose = (unsigned char)!odq_program_closable(program);
@@ -982,10 +996,6 @@ static int launch_task(const odq_program *program, char *status)
         win[t].exclusive = 1;
         mvk_share(t, 0);
     }
-    view_windows = 1;
-    sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
-    mvk_setfg(t);
-    return 0;
 }
 
 static void show_tasks(char *status)

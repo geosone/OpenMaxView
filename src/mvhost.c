@@ -164,11 +164,18 @@ struct appreq {
     unsigned char dvp[0x1a0];
 };
 
+static odq_program program;            /* mvhost_appstart's last */
+static int program_valid;
+
+const struct odq_program *mvhost_approgram(void)
+{
+    return program_valid ? &program : NULL;
+}
+
 int mvhost_appstart(unsigned *from, char *title, int *shown)
 {
     static unsigned char data[0x1a0];
     static dvp_info info;
-    static odq_program program;
     struct appreq far *q;
     union REGS r;
     struct SREGS s;
@@ -188,6 +195,7 @@ int mvhost_appstart(unsigned *from, char *title, int *shown)
     _fmemcpy(data, q->dvp, n);
     *from = q->from;
     *shown = 1;
+    program_valid = 0;
     if (dvp_parse(data, n, &info) == DVP_OK &&
         dvp_make_program(&info, info.menu_keys[0] != '\0' ?
                          info.menu_keys[0] : ' ', &program) == DVP_OK) {
@@ -195,8 +203,10 @@ int mvhost_appstart(unsigned *from, char *title, int *shown)
                           info.has_v20 && !info.close_on_exit);
         if (t < 0)
             t = 0;
-        else
+        else {
             mvhost_title(t, program.title);
+            program_valid = 1;
+        }
         if (title != NULL)
             strcpy(title, program.title);
         /* DESQview:  hidden without it (version 1 layouts) */
