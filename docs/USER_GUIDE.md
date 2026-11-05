@@ -99,7 +99,9 @@ DESQview that asks for its Copy and Cut (otherwise it is shown in dark
 grey, as in DESQview):  Copy (C) or Cut (U) put the mark's cursor at the
 window's top left, B begins the area, the arrows extend it and E ends it;
 the program is told the area and does the copying or cutting itself. Paste
-has no key yet. A message (a program that ended, for example) shows on the
+(P), for a program that asks for it, takes what Mark marked last:  it shows
+as a block at the window's top left, the arrows place it, Enter hands it to
+the program (Esc:  back). A message (a program that ended, for example) shows on the
 bottom row until the next key.
 
 A window shows the part of its program's 80x25 screen that holds the

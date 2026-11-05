@@ -1,7 +1,11 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
 ; Window notifications (measurement and tests/qemu):  NTFPRB file [V]
 ;   (V:  INT 10h modes 1 and 3 once the notifications are asked for;
-;   P:  a pointer object (NEW 0Fh) opened to the own window, ADDTO 0001h)
+;   P:  a pointer object (NEW 0Fh) opened to the own window, ADDTO 0001h;
+;   C:  on 4Eh / 4Dh WRITE "CLIPDATA" to the message's DWORD (bytes 8-11),
+;   then "  w B d1" what that call left; then the manager stream CCh to
+;   it, win_paste's, "  p B d1"; on 4Fh READ of that DWORD:  "  r B d1 d2" and
+;   32 bytes at the address, "  t ...")
 ;   API level 2.01; a manager stream (type 10h) to the own window asks for
 ;   the notifications 40h-51h; "win", "kbd", "obq", "mbx" the handles (HANDLE
 ;   01h, 05h, 07h, 03h); "ntfprb ready" on the screen.  Then, up to 48 times:  READ
@@ -165,6 +169,113 @@ rd_dw_done:
         call    dump
         pop     ds
         call    putnl
+        cmp     vflag,'c'             ; C:  the Copy / Cut object written
+        jne     no_clip
+        push    ds
+        lds     si,[bp+4]
+        mov     al,[si]
+        mov     dx,[si+8]
+        mov     cx,[si+10]
+        pop     ds
+        cmp     al,4Fh
+        jne     not_paste
+        jmp     clip_read
+not_paste:
+        cmp     al,4Eh
+        je      @F
+        cmp     al,4Dh
+        jne     no_clip
+@@:     push    bp
+        mov     si,offset t_w
+        call    puts
+        mov     clipsp,sp
+        push    ds
+        push    offset clip
+        push    0
+        push    clip_len
+        push    cx
+        push    dx
+        mov     ax,1200h
+        mov     bx,0500h
+        int     15h
+        mov     cx,clipsp
+        sub     cx,sp
+        mov     ax,cx
+        call    putdec
+        mov     bp,sp
+        jcxz    @F
+        mov     al,' '
+        stosb
+        mov     dx,[bp]
+        mov     ax,[bp+2]
+        call    putptr
+@@:     mov     sp,clipsp
+        call    putnl
+        push    ds                    ; CCh to it (win_paste)
+        lds     si,[bp+4]
+        mov     dx,[si+8]
+        mov     cx,[si+10]
+        pop     ds
+        mov     si,offset t_p
+        call    puts
+        mov     clipsp,sp
+        push    ds
+        push    offset s_paste
+        push    0
+        push    5
+        push    cx
+        push    dx
+        mov     ax,1200h
+        mov     bx,0500h
+        int     15h
+        mov     cx,clipsp
+        sub     cx,sp
+        mov     ax,cx
+        call    putdec
+        mov     sp,clipsp
+        call    putnl
+        pop     bp
+        jmp     short no_clip
+clip_read:                            ; 4Fh:  READ the object
+        push    bp
+        mov     si,offset t_r
+        call    puts
+        mov     clipsp,sp
+        push    cx
+        push    dx
+        mov     ax,1200h
+        mov     bx,0400h
+        int     15h
+        mov     cx,clipsp
+        sub     cx,sp
+        mov     ax,cx
+        call    putdec
+        mov     bp,sp
+        cmp     cx,8
+        jb      cr_done
+        mov     al,' '
+        stosb
+        mov     dx,[bp]
+        mov     ax,[bp+2]
+        call    putptr
+        mov     al,' '
+        stosb
+        mov     dx,[bp+4]
+        mov     ax,[bp+6]
+        call    putptr
+        call    putnl
+        mov     si,offset t_t
+        call    puts
+        push    ds
+        lds     si,[bp+4]
+        call    dump
+        call    dump
+        pop     ds
+cr_done:
+        mov     sp,clipsp
+        call    putnl
+        pop     bp
+no_clip:
         mov     ax,word ptr obj       ; the keyboard's "x":  the end
         cmp     ax,word ptr kbd
         jne     rd_end
@@ -321,6 +432,14 @@ t_b     db      '  b',0
 t_ready db      'ntfprb ready',13,10,'$'
 utext   db      'NTFPRB file',13,10,'$'
 vflag   db      0
+clipsp  dw      0
+clip    db      'CLIPDATA'
+clip_len equ $ - clip
+t_w     db      '  w ',0
+t_p     db      '  p ',0
+t_r     db      '  r ',0
+t_t     db      '  t',0
+s_paste db      1Bh,10h,1,0,0CCh
 handle  dw      0
 count   dw      0
 savsp   dw      0

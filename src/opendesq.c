@@ -1092,6 +1092,11 @@ static char __far mark_text[MARK_MAX];  /* the lines, '\n' between (far:
                                          * DGROUP is full) */
 static unsigned mark_len, mark_task, mark_row, mark_col, mark_brow, mark_bcol;
 static int mark_on, mark_more;          /* begun (B, M:  added) */
+/* Paste (Scissors, for a program asking for 4Fh):  the marked text as a
+ * block of paste_rows x paste_cols at paste_row, paste_col of the front
+ * program's screen, moved with the arrows (mode 12) */
+static char __far paste_text[SCREEN_ROWS * SCREEN_COLS];
+static unsigned paste_rows, paste_cols, paste_row, paste_col;
 /* Scissors:  the notifications the front window's program asked for, the
  * event of Copy (4Eh) or Cut (4Dh) while marking for it (Mark's mode, 0:
  * Mark itself); the task told of the DESQ key (50h) */
@@ -1262,6 +1267,32 @@ static void phone_dial(int code, char *status)
                 phone_shown, mv_settings->modem_port);
     else
         sprintf(status, "COM%u does not answer.", mv_settings->modem_port);
+}
+
+/* the marked text (mark_text) as Paste's block:  its lines padded with
+ * blanks to the longest; 0:  nothing marked */
+static int paste_build(void)
+{
+    unsigned i, r = 0, c = 0, cols = 0;
+
+    for (i = 0; i < mark_len; ++i)
+        if (mark_text[i] == '\n') {
+            ++r;
+            c = 0;
+        } else if (++c > cols)
+            cols = c;
+    if (mark_len == 0 || cols == 0)
+        return 0;
+    paste_rows = r + 1 <= SCREEN_ROWS ? r + 1 : SCREEN_ROWS;
+    paste_cols = cols <= SCREEN_COLS ? cols : SCREEN_COLS;
+    _fmemset(paste_text, ' ', paste_rows * paste_cols);
+    for (i = r = c = 0; i < mark_len && r < paste_rows; ++i)
+        if (mark_text[i] == '\n') {
+            ++r;
+            c = 0;
+        } else if (c < paste_cols)
+            paste_text[r * paste_cols + c++] = mark_text[i];
+    return 1;
 }
 
 /* cell r, c of mark_task's screen is marked */
@@ -1992,6 +2023,12 @@ static void compose(int mode)
                     cell = (unsigned short)((cell >> 4 & 0x0f00) |
                                             (cell << 4 & 0xf000) |
                                             (cell & 0xff));
+                if (mode == 12 && t == mark_task &&     /* Paste's block */
+                    vtop + r >= paste_row && vtop + r < paste_row + paste_rows &&
+                    hoff + c >= paste_col && hoff + c < paste_col + paste_cols)
+                    cell = (unsigned short)(0x7000 | (unsigned char)
+                        paste_text[(vtop + r - paste_row) * paste_cols +
+                                   hoff + c - paste_col]);
                 scr[(w->top + r) * desk_cols + w->left + c] = cell;
             }
         }
@@ -2012,7 +2049,7 @@ static void compose(int mode)
     }
     if (status_line[0] != '\0')
         swrite(desk_rows - 1, 0, status_line, 0x70);
-    if (mode >= 1 && mode <= 11 && !(mode == 6 && status_line[0] != '\0')) {
+    if (mode >= 1 && mode <= 12 && !(mode == 6 && status_line[0] != '\0')) {
         static const char *const hint[] = {
             " Move:  arrows; R resize, S scroll; Enter done ",
             " Resize:  arrows; M move, S scroll; Enter done ",
@@ -2022,7 +2059,8 @@ static void compose(int mode)
             " Help:  Up/Down, PgUp/PgDn scroll, Enter or Esc back to the topics ",
             " Program:  type; Up/Down, Tab the field; Enter keeps it, Esc cancels ",
             " Start Script:  press the key it is to have (Esc:  back) ",
-            learn_hint, learn_hint
+            learn_hint, learn_hint,
+            " Paste:  arrows, Enter to the program, Esc back "
         };
 
         if (mode == 11)
@@ -2218,7 +2256,7 @@ static int dv_find(int key, int scan)
 enum {
     DV_MAIN, DV_OPEN, DV_SWITCH, DV_CLOSE, DV_REARRANGE, DV_QUIT, DV_TUNE,
     DV_VIDEO, DV_MARK, DV_TRANSFER, DV_HELP, DV_DELETE, DV_MRS, DV_LEARN,
-    DV_SCRIPTS, DV_DIAL, DV_SCISSORS, DV_SMARK
+    DV_SCRIPTS, DV_DIAL, DV_SCISSORS, DV_SMARK, DV_PASTE
 };
 enum {
     A_OPEN = 1, A_SWITCH, A_CLOSE, A_REARRANGE, A_ZOOM, A_QUIT, A_MOVE,
@@ -2227,7 +2265,7 @@ enum {
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
     A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
     A_LFIXED, A_LVAR, A_LDELAY, A_SCISSORS, A_SCOPY, A_SCUT, A_PHELP,
-    A_REVIVE, A_WSWAP, A_SSWAP,
+    A_REVIVE, A_WSWAP, A_SSWAP, A_SPASTE,
     A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -2370,7 +2408,13 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         dv_begin("Scissors", 22);
         dv_add(DV_ITEM, "Copy", scis_mask & MVN_COPY ? "C" : "", A_SCOPY);
         dv_add(DV_ITEM, "Cut", scis_mask & MVN_CUT ? "U" : "", A_SCUT);
-        dv_add(DV_ITEM, "Paste", "", 0);
+        dv_add(DV_ITEM, "Paste", scis_mask & MVN_PASTE && mark_len ? "P" : "",
+               A_SPASTE);
+        break;
+    case DV_PASTE:                      /* (its keys:  windows_view) */
+        dv_begin("Paste", 22);
+        dv_add(DV_ITEM, "Done", "Enter", 0);
+        dv_add(DV_TEXT, "Arrows:  direction", "", 0);
         break;
     case DV_SMARK:                      /* (its keys:  windows_view) */
         dv_begin(scis_event == 0x4d ? "Cut" : "Copy", 22);
@@ -2613,7 +2657,8 @@ static int windows_view(odq_catalog *catalog, char *status)
         }
         t = front();
         w = &win[t];
-        if (mode == 6 && t != mark_task) {      /* its window has gone */
+        if ((mode == 6 || mode == 12) && t != mark_task) {  /* its window
+                                                             * has gone */
             mode = 0;
             mark_on = 0;
             menu = DV_MAIN;
@@ -2665,7 +2710,7 @@ static int windows_view(odq_catalog *catalog, char *status)
                 dv_bar(0);
         }
         if (menu == DV_MARK || menu == DV_TRANSFER || menu == DV_DIAL ||
-            menu == DV_SMARK)
+            menu == DV_SMARK || menu == DV_PASTE)
             dv_sel = dv_count;          /* (no bar:  their keys act) */
         if (menu == DV_MRS && mode >= 1 && mode <= 3)
             dv_sel = mode - 1;
@@ -2798,6 +2843,11 @@ static int windows_view(odq_catalog *catalog, char *status)
                 if (scan == 80) ++help_top;     /* (help_draw limits it) */
                 if (scan == 73) help_top = help_top > 10 ? help_top - 10 : 0;
                 if (scan == 81) help_top += 10;
+            } else if (mode == 12) {    /* Paste's block */
+                if (scan == 72 && paste_row > 0) --paste_row;
+                if (scan == 80 && paste_row + paste_rows < SCREEN_ROWS) ++paste_row;
+                if (scan == 75 && paste_col > 0) --paste_col;
+                if (scan == 77 && paste_col + paste_cols < SCREEN_COLS) ++paste_col;
             } else if (mode == 6) {     /* the mark, its window's view
                                          * following it */
                 if (scan == 72 && mark_row > 0) --mark_row;
@@ -2914,6 +2964,42 @@ static int windows_view(odq_catalog *catalog, char *status)
                 mode = 0;
                 menu = DV_HELP;
                 fresh = 1;
+            }
+            continue;
+        }
+        if (mode == 12) {               /* Paste:  the block placed (its
+                                         * arrows above) */
+            if (key == 13) {            /* the program told:  event, its
+                                         * window, row, column, 0, the
+                                         * window with the text, rows,
+                                         * columns (DESQview 2.80's) */
+                unsigned char msg[14];
+                unsigned seg = mvhost_clip(t, paste_rows, paste_cols,
+                                           paste_text);
+
+                memset(msg, 0, sizeof msg);
+                msg[0] = 0x4f;
+                msg[5] = (unsigned char)paste_row;
+                msg[6] = (unsigned char)paste_col;
+                msg[10] = (unsigned char)seg;
+                msg[11] = (unsigned char)(seg >> 8);
+                msg[12] = (unsigned char)paste_rows;
+                msg[13] = (unsigned char)paste_cols;
+                if (seg == 0)
+                    strcpy(status, "No room for Paste's window.");
+                else if (mvhost_note(t, msg, sizeof msg, 1))
+                    sprintf(status, "Paste:  %u x %u to the program.",
+                            paste_rows, paste_cols);
+                else
+                    strcpy(status, "The program's mailbox is full.");
+            }
+            if (key == 13 || key == 27) {
+                w->scrolled = saved.scrolled;
+                w->vtop = saved.vtop;
+                w->hoff = saved.hoff;
+                mode = 0;
+                menu = DV_MAIN;
+                to_window(t);
             }
             continue;
         }
@@ -3185,6 +3271,18 @@ static int windows_view(odq_catalog *catalog, char *status)
             case A_SCISSORS:
                 if (scis_mask & (MVN_CUT | MVN_COPY | MVN_PASTE))
                     menu = DV_SCISSORS;
+                break;
+            case A_SPASTE:              /* Paste:  the marked text placed
+                                         * from the top left */
+                if (!(scis_mask & MVN_PASTE) || !paste_build())
+                    break;
+                saved = *w;
+                w->scrolled = 1;
+                w->vtop = w->hoff = 0;
+                mark_task = t;
+                paste_row = paste_col = 0;
+                mode = 12;
+                menu = DV_PASTE;
                 break;
             case A_SCOPY:               /* Copy, Cut:  marked from the top
                                          * left, the program told */

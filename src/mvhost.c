@@ -250,6 +250,22 @@ unsigned long mvhost_deny(unsigned task)
     return (unsigned long)r.x.dx << 16 | r.x.ax;
 }
 
+unsigned mvhost_clip(unsigned task, unsigned rows, unsigned cols,
+                     const char __far *text)
+{
+    union REGS r;
+    struct SREGS s;
+
+    segread(&s);
+    s.es = FP_SEG(text);
+    r.x.ax = 0xd713;
+    r.x.bx = task;
+    r.x.cx = rows << 8 | cols;
+    r.x.di = FP_OFF(text);
+    int86x(0x2f, &r, &r, &s);
+    return r.x.ax == 0 ? r.x.dx : 0;
+}
+
 void mvhost_mouse(unsigned task, unsigned pos, unsigned size, unsigned view)
 {
     union REGS r;

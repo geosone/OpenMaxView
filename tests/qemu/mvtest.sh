@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -568,6 +568,23 @@ scis)
     check "Cut:  4Dh, row 0, column 0, 1 row, 2 columns" "echo \"\$n1\" | grep -q '^  a 4D $h 00 00 00 00 00 00 00 01 02'"
     check "the messages come from the own mailbox (HANDLE 03h)" "m=\$(echo \"\$n1\" | sed -n 's/^mbx //p'); [ -n \"\$m\" ] && echo \"\$n1\" | grep -q \"^q \$m\""
     check "the program read its x and ended, DOS works afterwards" "grep -q '^scis end' '$d/end.txt'"
+    ;;
+paste)
+    echo "== paste:  Mark, then Scissors Paste into a program asking for 4Fh (NTFPRB C)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:paste_end:30" run paste 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:cls sleep:1 type:echo_HELLOWORLD sleep:2 $M key:m wait:Mark_Begin:10 key:up,up,left,left,left,left key:b key:right,right,right,right key:e sleep:1 key:ret sleep:1 $M key:x sleep:1 text:nopaste key:o wait:Change_a_Program:20 key:d sleep:5 type:C:\\NTFPRB_C:\\N2.TXT_C wait:ntfprb_ready:30 sleep:1 $M key:x wait:Paste:10 text:scis key:p sleep:2 text:paste key:down,right sleep:1 text:moved key:ret sleep:3 text:done key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_paste_end"
+    d=$OUT/paste
+    n2=$(file paste N2.TXT)
+    echo "$n2" | grep '^  [art]' | sed 's/^/  /'
+    check "a DOS window:  Scissors without a key; a program asking for 4Fh after a Mark:  Paste P" "grep -q 'Scissors' '$d/nopaste.txt' && ! grep -q 'Scissors *X' '$d/nopaste.txt' && grep -q 'Paste *P' '$d/scis.txt'"
+    check "the block placed from the top left, the arrows move it" "grep -q 'HELLO' '$d/paste.txt' && grep -q 'Paste:  arrows' '$d/moved.txt'"
+    check "Enter:  4Fh (14 bytes), row 1, column 1, a window, 1 x 5" "echo \"\$n2\" | grep -B1 '^  a 4F' | grep -q '0000:000E' && echo \"\$n2\" | grep -q '^  a 4F 00 00 .. .. 01 01 00 00 00 .. .. 01 05'"
+    check "READ of that window:  its 5 characters (as DESQview 2.80)" "echo \"\$n2\" | grep -q '^  r 8 0000:0005 ' && echo \"\$n2\" | grep -q '^  t 48 45 4C 4C 4F'"
+    check "DOS works afterwards" "grep -q '^paste end' '$d/end.txt'"
     ;;
 ntf)
     echo "== ntf:  notifications of move, resize, help, front and back, hide, close (NTFPRB)"

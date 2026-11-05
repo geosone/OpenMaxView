@@ -67,5 +67,10 @@ void mvhost_mouse(unsigned task, unsigned pos, unsigned size, unsigned view);
  * (MAXVTSR, INT 2Fh D70Fh), as DESQview sends them (handle:  its window's
  * handle put in bytes 1-4):  1, else 0. */
 int mvhost_note(unsigned task, const void *msg, unsigned len, int handle);
+/* Paste's window for task:  rows x cols characters at text, a window object
+ * of its own, not shown, READ gives them (MAXVTSR, INT 2Fh D713h); its
+ * handle's segment, 0:  none */
+unsigned mvhost_clip(unsigned task, unsigned rows, unsigned cols,
+                     const char __far *text);
 
 #endif

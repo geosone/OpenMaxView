@@ -86,6 +86,10 @@
 ;                                    (row, column), CX rows, columns,
 ;                                    showing its screen from SI (row,
 ;                                    column):  cells relative to it
+;   INT 2Fh AX=D713h, BX=task        from the host:  a window object of
+;                                    task's, not shown, CH rows, CL columns,
+;                                    their characters at ES:DI (Paste's);
+;                                    AX=0, DX its handle's segment, else 1
 ;   INT 2Fh AX=D70Fh, BX=task        from the host:  ES:DI, CX bytes (up to
 ;                                    128) to its own mailbox, as DESQview's
 ;                                    notification messages (DX bit 0:  its
@@ -157,6 +161,8 @@ MUX_GEOM       equ 0D70Dh
 MUX_NOTIFY     equ 0D70Eh
 MUX_DENY       equ 0D711h
 MUX_MOUSE      equ 0D712h
+MUX_CLIP       equ 0D713h
+WREAD_SIZE     equ 2000                ; READ of a window object
 MUX_NOTE       equ 0D70Fh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
@@ -1271,7 +1277,9 @@ message_read_gateway_not7:
         cmp     bl,6                  ; a task's:  only the own one
         jne     short message_read_gateway_not6
         cmp     word ptr ss:[bp+10],0
-        jne     short message_read_gateway_chain
+        je      short message_read_gateway_h6
+        jmp     message_read_gateway_chain
+message_read_gateway_h6:
         mov     ax,word ptr ss:[bp+12]
         cmp     ax,word ptr cs:task_handle_segment
         jne     short message_read_gateway_chain
@@ -1316,7 +1324,7 @@ message_read_gateway_not_pointer:
 message_read_gateway_not_kobj:
         mov     ax,word ptr ss:[bp+12]
         call    keyboard_validate
-        jc      short message_read_gateway_chain
+        jc      short message_read_gateway_wobj
         pop     si
         pop     ax
         pop     bp
@@ -1333,6 +1341,15 @@ message_read_gateway_objectq:
         pop     ax
         pop     bp
         jmp     int15_message_objectq_read
+message_read_gateway_wobj:
+        mov     ax,word ptr ss:[bp+12]
+        call    wobj_validate
+        jc      short message_read_gateway_chain
+        mov     word ptr cs:wread_obj,si
+        pop     si
+        pop     ax
+        pop     bp
+        jmp     int15_message_wobj_read
 message_read_gateway_chain:
         pop     si
         pop     ax
@@ -10118,6 +10135,103 @@ capture_done:
         popf
         ret
 
+; READ of window object wread_obj:  its characters, row by
+; row (rows * columns, at most WREAD_SIZE), as DESQview 2.80 gives a
+; Paste's window (measured).
+int15_message_wobj_read:
+        push    bp
+        mov     bp,sp
+        push    ax
+        push    cx
+        push    dx
+        push    si
+        mov     si,word ptr cs:wread_obj
+        push    di
+        push    es
+        mov     ax,word ptr cs:wobj_size[si]
+        mul     ah
+        cmp     ax,WREAD_SIZE
+        jbe     short wobj_read_len
+        mov     ax,WREAD_SIZE
+wobj_read_len:
+        mov     cx,ax
+        mov     word ptr cs:message_result_len_lo,ax
+        mov     word ptr cs:message_result_len_hi,0
+        mov     word ptr cs:message_result_ptr_off,offset wread_buf
+        mov     word ptr cs:message_result_ptr_seg,cs
+        push    ds
+        push    cs
+        pop     ds
+        push    cs
+        pop     es
+        mov     si,word ptr cs:wobj_buf[si]
+        add     si,offset wobj_pool
+        mov     di,offset wread_buf
+        cld
+        jcxz    wobj_read_done
+wobj_read_copy:
+        lodsw
+        stosb
+        loop    wobj_read_copy
+wobj_read_done:
+        pop     ds
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     ax
+        jmp     message_expand4
+
+; Paste's window (D713h) for task BX:  CH rows, CL columns, their
+; characters at ES:DI; not shown, the task's own.  AX=0, DX its handle's
+; segment; AX=1:  no task, no room.
+clip_make:
+        push    bx
+        push    cx
+        push    si
+        push    di
+        push    ds
+        mov     ax,1
+        cmp     bx,TASK_OBJECT_COUNT
+        jae     short clip_make_ret
+        push    word ptr cs:wtarget
+        mov     word ptr cs:wtarget,1 ; (not the caller's colours)
+        call    wobj_create
+        pop     word ptr cs:wtarget
+        jc      short clip_make_ret
+        inc     bx                    ; its tag
+        mov     word ptr cs:wobj_owner[si],bx
+        mov     word ptr cs:wobj_flags[si],WF_FRAME
+        mov     word ptr cs:wobj_color[si],07h
+        mov     ax,word ptr cs:wobj_size[si]
+        mul     ah
+        mov     cx,ax
+        push    es
+        pop     ds
+        push    si
+        mov     si,di
+        pop     bx
+        push    cs
+        pop     es
+        mov     di,word ptr cs:wobj_buf[bx]
+        add     di,offset wobj_pool
+        cld
+        mov     ah,07h
+clip_make_copy:
+        lodsb
+        stosw
+        loop    clip_make_copy
+        mov     dx,word ptr cs:wobj_handle_segments[bx]
+        xor     ax,ax
+clip_make_ret:
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        pop     bx
+        ret
+
 int2f_handler:
         pushf
         cmp     ax,MUX_STATUS
@@ -10254,6 +10368,12 @@ int2f_notify_ret:
         popf
         iret
 int2f_not_notify:
+        cmp     ax,MUX_CLIP
+        jne     short int2f_not_clip
+        call    clip_make
+        popf
+        iret
+int2f_not_clip:
         cmp     ax,MUX_MOUSE
         jne     short int2f_not_mouse
         mov     word ptr cs:mouse_owner,bx
@@ -10617,6 +10737,8 @@ wobj_title     db (WOBJ_COUNT * WOBJ_TITLE_SIZE) dup(0)
 WOBJ_OBJECT_PAD equ (16 - ((($ - start) + 100h) mod 16)) mod 16
         db      WOBJ_OBJECT_PAD dup (0) ; (segment:0000 handles)
 wobj_objects   db (WOBJ_COUNT * 32) dup(0)
+wread_obj      dw 0                   ; READ of a window object (not
+wread_buf      db WREAD_SIZE dup(0)   ; the task's state:  DVSTMAX)
 wobj_pool      db WOBJ_POOL_SIZE dup(0)
 ; The logical colours 1-16 (DAh; the attribute's low nibble, 0 for 16):
 ; DESQview 2.80's before its window colours (DV shows them through those,
