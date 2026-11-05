@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune video mark help catalog learn lpause dial scis ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -999,6 +999,28 @@ pntf)
     seq=$(echo "$n1" | grep '^  [0-9]' | awk '{print $2}' | tr '\n' ' ')
     check "MVRUN ended" "grep -q 'MVRUN: done' '$OUT/pntf/end.txt'"
     check "each click:  its pointer message (6 bytes), then 49h and the pointer's handle (5 bytes)" "[ \"\$(echo '$seq' | cut -d' ' -f1-4)\" = '0000:0006 0000:0005 0000:0006 0000:0005' ] && [ \"\$(echo \"\$n1\" | grep -c '^  a 49 00 00 ')\" = 2 ]"
+    ;;
+revive)
+    echo "== revive:  Tune's Revive Mouse with a driver, pointer messages afterwards (NTFPRB P)"
+    CTM=${CTMOUSE:-$HOME/mars/scratch-386max/ctm/bin/ctmouse.exe}
+    if [ ! -f "$CTM" ]; then echo "  SKIP  no CuteMouse (CTMOUSE=path of ctmouse.exe)"; continue; fi
+    cp "$CTM" "$OUT/CTMOUSE.EXE"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    printf 'C:\\CTMOUSE.EXE\r\nC:\\MAXVIEW\r\n' > "$OUT/R.BAT"
+    M="key:alt wait:Switch_Windows:20"
+    R="$M key:r wait:Tune_Performance:10"
+    mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
+    click="$(mv -100 -100 10) $(mv 4 0 20) $(mv 0 8 6) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0 sleep:2"
+    CMD="C:\\R.BAT" END="wait:revive_end:30" run revive 0 "" \
+        "$OUT/R.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT_P wait:ntfprb_ready:30 sleep:1 $click $R key:t wait:This_Window:10 key:m sleep:2 text:tune key:esc sleep:1 key:esc sleep:1 key:esc sleep:1 $click key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:3 type:echo_revive_end"
+    d=$OUT/revive
+    n1=$(file revive N1.TXT)
+    echo "$n1" | grep '^  [0-9]\|^  a' | sed 's/^/  /'
+    check "M:  Mouse revived (the driver's reset)" "grep -q 'Mouse revived' '$d/tune.txt'"
+    check "a click before and after:  a pointer message each (6 bytes), relative to the window's contents (screen 6, 10 in DosOne's from 2, 2:  4, 8)" "[ \"\$(echo \"\$n1\" | grep -c '^  [0-9]* 0000:0006 ')\" = 2 ] && [ \"\$(echo \"\$n1\" | grep -c '^  a 04 00 08 00 01 00')\" = 2 ]"
+    check "DOS works afterwards" "grep -q '^revive end' '$d/end.txt'"
     ;;
 pointer)
     echo "== pointer:  a pointer object (as under DV)"

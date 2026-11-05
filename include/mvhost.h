@@ -58,6 +58,11 @@ unsigned long mvhost_notify(unsigned task);
 #define MVD_OPEN   (1ul << 0x12)
 #define MVD_QUIT   (1ul << 0x13)
 unsigned long mvhost_deny(unsigned task);
+/* The pointer objects of task (0xffff:  the full screen's) take the mouse,
+ * its window's contents at pos (row << 8 | column), size rows << 8 |
+ * columns, showing its screen from view (row << 8 | column) (MAXVTSR,
+ * INT 2Fh D712h) */
+void mvhost_mouse(unsigned task, unsigned pos, unsigned size, unsigned view);
 /* A notification message (len bytes, up to 128) into task's own mailbox
  * (MAXVTSR, INT 2Fh D70Fh), as DESQview sends them (handle:  its window's
  * handle put in bytes 1-4):  1, else 0. */

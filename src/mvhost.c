@@ -250,6 +250,18 @@ unsigned long mvhost_deny(unsigned task)
     return (unsigned long)r.x.dx << 16 | r.x.ax;
 }
 
+void mvhost_mouse(unsigned task, unsigned pos, unsigned size, unsigned view)
+{
+    union REGS r;
+
+    r.x.ax = 0xd712;
+    r.x.bx = task;
+    r.x.dx = pos;
+    r.x.cx = size;
+    r.x.si = view;
+    int86(0x2f, &r, &r);
+}
+
 int mvhost_note(unsigned task, const void *msg, unsigned len, int handle)
 {
     union REGS r;

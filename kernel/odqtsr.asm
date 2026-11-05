@@ -80,6 +80,12 @@
 ;                                    functions its window disallowed
 ;                                    (manager stream 20h-33h:  bit N ALW_* N;
 ;                                    D710h is MAXVANSI's)
+;   INT 2Fh AX=D712h, BX=task        from the host:  its pointer objects take
+;                                    the mouse (FFFFh:  D70Ah's task, full
+;                                    screen), its window's contents at DX
+;                                    (row, column), CX rows, columns,
+;                                    showing its screen from SI (row,
+;                                    column):  cells relative to it
 ;   INT 2Fh AX=D70Fh, BX=task        from the host:  ES:DI, CX bytes (up to
 ;                                    128) to its own mailbox, as DESQview's
 ;                                    notification messages (DX bit 0:  its
@@ -150,6 +156,7 @@ MUX_TITLE      equ 0D70Ch
 MUX_GEOM       equ 0D70Dh
 MUX_NOTIFY     equ 0D70Eh
 MUX_DENY       equ 0D711h
+MUX_MOUSE      equ 0D712h
 MUX_NOTE       equ 0D70Fh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
 APPREQ_MAX     equ 1A0h                ; DVP bytes (DESQview 2.x's 416)
@@ -9040,7 +9047,11 @@ pointer_poll_driver:
         call    caller_tag
         xor     ah,ah
         mov     dx,ax
+        mov     ax,word ptr cs:mouse_owner    ; the host's (D712h), else
+        cmp     ax,0FFFFh                     ; the full screen's
+        jne     short pointer_poll_owner
         mov     ax,word ptr cs:foreground_task
+pointer_poll_owner:
         cmp     ax,0FFFFh
         je      short pointer_poll_fg
         inc     ax                    ; (tag = number + 1)
@@ -9095,6 +9106,8 @@ pointer_poll_move:
         mov     di,bx
         and     di,3
         call    pointer_cell
+        call    pointer_rel
+        jc      short pointer_poll_ret
         cmp     ax,word ptr cs:pointer_last[si]
         je      short pointer_poll_ret
         jmp     short pointer_poll_store
@@ -9107,6 +9120,9 @@ pointer_poll_event_press:
         or      di,80h
 pointer_poll_event:
         call    pointer_cell
+        call    pointer_rel
+        jnc     short pointer_poll_store
+        jmp     pointer_poll_ret      ; (outside its window:  none)
 pointer_poll_store:
         mov     word ptr cs:pointer_last[si],ax
         push    ax
@@ -9172,6 +9188,35 @@ pointer_notify_ret:
         pop     cx
         pop     bx
         pop     ax
+        ret
+
+; The screen cell AX (AH row, AL column) as the cell of the window's
+; contents the host gave (D712h); CF:  outside them.  Full screen:  as is.
+pointer_rel:
+        cmp     word ptr cs:mouse_owner,0FFFFh
+        je      short pointer_rel_ok
+        push    bx
+        push    cx
+        mov     bx,word ptr cs:mouse_pos
+        mov     cx,word ptr cs:mouse_size
+        sub     ah,bh                 ; the row in the window
+        jb      short pointer_rel_out
+        cmp     ah,ch
+        jae     short pointer_rel_out
+        sub     al,bl
+        jb      short pointer_rel_out
+        cmp     al,cl
+        jae     short pointer_rel_out
+        add     ax,word ptr cs:mouse_view     ; (no carry:  < 80, 25)
+        pop     cx
+        pop     bx
+pointer_rel_ok:
+        clc
+        ret
+pointer_rel_out:
+        pop     cx
+        pop     bx
+        stc
         ret
 
 ; AX = the cell (AH row, AL column) of the pixel position CX, DX.
@@ -10209,6 +10254,16 @@ int2f_notify_ret:
         popf
         iret
 int2f_not_notify:
+        cmp     ax,MUX_MOUSE
+        jne     short int2f_not_mouse
+        mov     word ptr cs:mouse_owner,bx
+        mov     word ptr cs:mouse_pos,dx
+        mov     word ptr cs:mouse_size,cx
+        mov     word ptr cs:mouse_view,si
+        xor     ax,ax
+        popf
+        iret
+int2f_not_mouse:
         cmp     ax,MUX_NOTE
         jne     short int2f_not_note
         call    note_put
@@ -10636,6 +10691,10 @@ notify_psp     dw TASK_OBJECT_COUNT dup(0) ; the program that asked
 note_handle    dw 0                   ; note_put's
 note_flags     dw 0
 note_len       dw 0
+mouse_owner    dw 0FFFFh              ; D712h:  the host's mouse task
+mouse_pos      dw 0
+mouse_size     dw 0
+mouse_view     dw 0
 pointer_note   db 49h,0,0,0,0         ; 49h, the pointer's handle
 deny_mask      dw (TASK_OBJECT_COUNT * 2) dup(0) ; D711h:  functions disallowed
 notify_mask    dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Eh:  the notifications

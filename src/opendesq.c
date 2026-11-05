@@ -1869,10 +1869,28 @@ static int form_save(odq_catalog *catalog)
  * framed in Open 386MAX's), a message (status_line) on the bottom row;
  * MAXVIEW's menu over them while it has the keys (mode 0); mode 1, 2:
  * moving, resizing the front window */
+/* the mouse's owner MAXVTSR was told (mouse_tell), its window */
+static unsigned mouse_task = 0xfffe, mouse_pos, mouse_size, mouse_view;
+
+static void mouse_tell(unsigned t, unsigned pos, unsigned size,
+                       unsigned view)
+{
+    if (t != mouse_task || pos != mouse_pos || size != mouse_size ||
+        view != mouse_view) {
+        mvhost_mouse(t, pos, size, view);
+        mouse_task = t;
+        mouse_pos = pos;
+        mouse_size = size;
+        mouse_view = view;
+    }
+}
+
 static void compose(int mode)
 {
     unsigned i, r, c, t, cur, vrow, vtop, hoff, gpos, gsize;
     unsigned focus = mvk_focused();
+    int mouse = 0;                      /* the window with the keys drawn:
+                                         * its pointers take the mouse */
     unsigned crow = 0, ccol = 0;
     int cursor = 0;
     char line[SCREEN_COLS + 1];
@@ -1938,6 +1956,11 @@ static void compose(int mode)
                 w->hoff = (unsigned char)(SCREEN_COLS - w->cols);
             vtop = w->vtop;
             hoff = w->hoff;
+        }
+        if (t == focus) {
+            mouse_tell(t, w->top << 8 | w->left, w->rows << 8 | w->cols,
+                       vtop << 8 | hoff);
+            mouse = 1;
         }
         sput(w->top - 1, w->left - 1, active ? 201 : 218, fa);
         sput(w->top - 1, w->left + w->cols, active ? 187 : 191, fa);
@@ -2021,6 +2044,8 @@ static void compose(int mode)
         form_draw(&crow, &ccol);
         cursor = 1;
     }
+    if (!mouse)                         /* MAXVIEW's menu:  no window's */
+        mouse_tell(0, 0, 0, 0);
     _fmemcpy(video, scr, desk_rows * desk_cols * sizeof scr[0]);
     set_cursor(crow, ccol, cursor);
 }
@@ -3070,7 +3095,9 @@ static int windows_view(odq_catalog *catalog, char *status)
                 if (!close_asked())
                     menu = DV_QUIT;
                 break;
-            case A_ZOOM:
+            case A_ZOOM:                /* full screen:  its pointers take the
+                                         * mouse as the core says (D70Ah) */
+                mouse_tell(0xffff, 0, 0, 0);
                 mvk_setfg(t);
                 while (mvk_fg() != 0 && mvk_state(t) == MVK_READY)
                     mvk_yield();
@@ -3434,6 +3461,7 @@ int main(void)
 
             desk_set(video_cols, video_rows);
             rc = windows_view(&catalog, status);
+            mouse_tell(0xffff, 0, 0, 0);        /* (the full screen's) */
             if (selected >= catalog.count)      /* (programs deleted) */
                 selected = catalog.count ? catalog.count - 1 : 0;
             if (desk_rows != SCREEN_ROWS || desk_cols != SCREEN_COLS) {
