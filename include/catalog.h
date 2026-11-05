@@ -58,6 +58,9 @@ int odq_program_valid(const odq_program *program);
  * clear, flags1 bit 0 clear, as DESQview 2.80 writes it), else 1 (Y, the
  * field blank, no DVP profile) */
 int odq_program_swappable(const odq_program *program);
+/* Share EGA when foreground/zoomed (DVP 2.x):  flags4 bit 0, as DESQview
+ * 2.80 writes it; 1 without a DVP profile */
+int odq_program_share_ega(const odq_program *program);
 
 #endif
 

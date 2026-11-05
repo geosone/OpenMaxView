@@ -62,9 +62,12 @@ typedef struct mv_window {
     unsigned char fg, bg;
     unsigned char swapped;      /* put aside and swapped out (MVSWAPnn.TMP) */
     unsigned char npages;       /*   its private pages */
-    unsigned char noswap;       /* its program:  Can be swapped out N */
+    unsigned char noswap;       /* its program:  Can be swapped out N, or
+                                 * Tune's Allow swapping out N */
+    unsigned char noega;        /* its program:  Share EGA N (shown only) */
 } mv_window;
 static unsigned tune_fg = 6, tune_bg = 2;      /* mvk_start(2)'s slices */
+static unsigned char tune_noswap;       /* Tune's system Allow swapping N */
 static mv_window win[MVK_MAXTASK];
 static unsigned char zorder[MVK_MAXTASK];
 static unsigned nwin;
@@ -685,6 +688,7 @@ static void win_add(unsigned t)
     win[t].gpos = win[t].gsize = 0;
     win[t].hidden = win[t].aside = win[t].frozen = win[t].scrolled = 0;
     win[t].exclusive = win[t].colors = win[t].swapped = win[t].noswap = 0;
+    win[t].noega = 0;
     zorder[nwin++] = (unsigned char)t;
 }
 
@@ -749,12 +753,32 @@ static int swap_out(unsigned t)
     return 1;
 }
 
+/* Revive Mouse:  the driver's software reset (INT 33h 21h), its full one
+ * (00h) without it; 0:  no driver */
+static int revive_mouse(void)
+{
+    union REGS r;
+    unsigned long far *vec = (unsigned long far *)MK_FP(0, 0x33 * 4);
+
+    if (*vec == 0)
+        return 0;
+    r.x.ax = 0x21;
+    int86(0x33, &r, &r);
+    if (r.x.ax == 0xffff)
+        return 1;
+    r.x.ax = 0;
+    int86(0x33, &r, &r);
+    return r.x.ax == 0xffff;
+}
+
 /* a window put aside (not except) swapped out to make room:  1; not one
  * whose program says Can be swapped out N */
 static int swap_some(unsigned except)
 {
     unsigned t;
 
+    if (tune_noswap)
+        return 0;
     for (t = 1; t < MVK_MAXTASK; ++t)
         if (task_live[t] && t != except && win[t].aside && !win[t].noswap &&
             swap_out(t))
@@ -902,6 +926,7 @@ static int launch_task(const odq_program *program, char *status)
     task_live[t] = 1;
     win_add(t);
     win[t].noswap = (unsigned char)!odq_program_swappable(program);
+    win[t].noega = (unsigned char)!odq_program_share_ega(program);
     view_windows = 1;
     sprintf(status, "%.40s runs as task %d; Alt returns.", program->title, t);
     mvk_setfg(t);
@@ -2177,6 +2202,7 @@ enum {
     A_VIDEO, A_MARK, A_TRANSFER, A_HELP, A_ADDP, A_CHANGEP, A_DELETEP,
     A_LSTART, A_LFINISH, A_LCANCEL, A_LDISPLAY, A_LSAVE, A_LLOAD,
     A_LFIXED, A_LVAR, A_LDELAY, A_SCISSORS, A_SCOPY, A_SCUT, A_PHELP,
+    A_REVIVE, A_WSWAP, A_SSWAP,
     A_HELPPAGE = 40, A_PLACE = 50, A_ROWS = 60, A_PROGRAM = 100, A_WINDOW = 200
 };
 
@@ -2278,6 +2304,8 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
     case DV_TUNE:                       /* a key or Enter changes the value */
         t = front();
         dv_begin("Tune Performance", 28);
+        dv_add(DV_ITEM, "Revive Mouse", "M", A_REVIVE);
+        dv_add(DV_LINE, "", "", 0);
         dv_add(DV_TEXT, "This Window", "", 0);
         sprintf(dv_labels[0], "Run in background   [%c]",
                 win[t].frozen ? 'N' : 'Y');
@@ -2285,12 +2313,21 @@ static void dv_build(unsigned menu, const odq_catalog *catalog)
         sprintf(dv_labels[1], "Share CPU in front  [%c]",
                 win[t].exclusive ? 'N' : 'Y');
         dv_add(DV_ITEM, dv_labels[1], "S", A_SHARE);
+        sprintf(dv_labels[4], "Share EGA in front   %c",  /* (its program's) */
+                win[t].noega ? 'N' : 'Y');
+        dv_add(DV_TEXT, dv_labels[4], "", 0);
+        sprintf(dv_labels[5], "Allow swapping out  [%c]",
+                win[t].noswap ? 'N' : 'Y');
+        dv_add(DV_ITEM, dv_labels[5], "A", A_WSWAP);
         dv_add(DV_LINE, "", "", 0);
         dv_add(DV_TEXT, "System", "", 0);
         sprintf(dv_labels[2], "Foreground ticks  [%2u]", tune_fg);
         dv_add(DV_ITEM, dv_labels[2], "F", A_FGTICKS);
         sprintf(dv_labels[3], "Background ticks  [%2u]", tune_bg);
         dv_add(DV_ITEM, dv_labels[3], "K", A_BGTICKS);
+        sprintf(dv_labels[6], "Allow swapping out  [%c]",
+                tune_noswap ? 'N' : 'Y');
+        dv_add(DV_ITEM, dv_labels[6], "W", A_SSWAP);
         break;
     case DV_MARK:                       /* (its keys:  windows_view) */
         dv_begin("Mark", 22);
@@ -3175,6 +3212,23 @@ static int windows_view(odq_catalog *catalog, char *status)
             case A_SHARE:
                 w->exclusive = (unsigned char)!w->exclusive;
                 mvk_share(t, !w->exclusive);
+                fresh = 0;
+                break;
+            case A_WSWAP:
+                w->noswap = (unsigned char)!w->noswap;
+                fresh = 0;
+                break;
+            case A_SSWAP:
+                tune_noswap = (unsigned char)!tune_noswap;
+                fresh = 0;
+                break;
+            case A_REVIVE:              /* the driver reset (a program left
+                                         * it odd); MAXVTSR's pointers poll
+                                         * it again */
+                if (revive_mouse())
+                    strcpy(status, "Mouse revived.");
+                else
+                    strcpy(status, "No mouse driver.");
                 fresh = 0;
                 break;
             case A_FGTICKS:

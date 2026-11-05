@@ -81,6 +81,14 @@ int odq_program_swappable(const odq_program *program)
            (profile->flags4 & 0x40) != 0 || (profile->flags1 & 0x01) != 0;
 }
 
+int odq_program_share_ega(const odq_program *program)
+{
+    const odq_process_profile *profile = &program->profile;
+
+    return profile->version == 0 || profile->source_version < 2 ||
+           (profile->flags4 & 0x01) != 0;
+}
+
 int odq_program_valid(const odq_program *program)
 {
     return isprint((unsigned char)program->hotkey) && program->hotkey != '|' &&

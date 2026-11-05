@@ -375,13 +375,15 @@ tune)
     R="$M key:r wait:Tune_Performance:10"
     CMD="C:\\MAXVIEW" END="wait:tune_end:30" run tune 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $TICK $cfg" \
-        "wait:Open_Program:60 key:ret sleep:3 $M key:o wait:Change_a_Program:20 key:b sleep:2 $R key:t wait:This_Window:10 text:tune0 key:s,f sleep:1 text:tune1 key:esc,esc sleep:20 $M sleep:3 key:o wait:Change_a_Program:20 key:k wait:keyprobe_D_ready:20 $R key:c sleep:1 key:down,right sleep:1 key:ret sleep:2 mon:xp+/4000xb+0xb8000>col $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_tune_end"
+        "wait:Open_Program:60 key:ret sleep:3 $M key:o wait:Change_a_Program:20 key:b sleep:2 $R key:t wait:This_Window:10 text:tune0 key:s,f,a,w sleep:1 text:tune1 key:m sleep:1 text:tune2 key:esc,esc sleep:20 $M sleep:3 key:o wait:Change_a_Program:20 key:k wait:keyprobe_D_ready:20 $R key:c sleep:1 key:down,right sleep:1 key:ret sleep:2 mon:xp+/4000xb+0xb8000>col $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_tune_end"
     d=$OUT/tune
     a=$(last tune TA.TXT tick); b=$(last tune TB.TXT tick)
     hb=$(awk '/^[0-9a-f]+:/' "$d/col.txt" | grep -o "0x[0-9a-f][0-9a-f]" | tr '\n' ' ')
     echo "  ticks:  A $a (started first), B $b (in front, not sharing ~20 s)"
     check "Tune Performance:  this window and the system's values" "grep -q 'Run in background *\[Y\] *B' '$d/tune0.txt' && grep -q 'Share CPU in front *\[Y\] *S' '$d/tune0.txt' && grep -q 'Foreground ticks *\[ 6\]' '$d/tune0.txt' && grep -q 'Background ticks *\[ 2\]' '$d/tune0.txt'"
-    check "S, F:  Share CPU N, foreground ticks 7" "grep -q 'Share CPU in front *\[N\]' '$d/tune1.txt' && grep -q 'Foreground ticks *\[ 7\]' '$d/tune1.txt'"
+    check "Revive Mouse, Share EGA (the program's, shown), Allow swapping out (this window, the system)" "grep -q 'Revive Mouse *M' '$d/tune0.txt' && grep -q 'Share EGA in front *Y' '$d/tune0.txt' && [ \"\$(grep -c 'Allow swapping out *\[Y\]' '$d/tune0.txt')\" = 2 ]"
+    check "S, F, A, W:  Share CPU N, foreground ticks 7, swapping N twice" "grep -q 'Share CPU in front *\[N\]' '$d/tune1.txt' && grep -q 'Foreground ticks *\[ 7\]' '$d/tune1.txt' && [ \"\$(grep -c 'Allow swapping out *\[N\]' '$d/tune1.txt')\" = 2 ]"
+    check "M:  Revive Mouse (no driver here:  said so)" "grep -q 'No mouse driver' '$d/tune2.txt'"
     check "not sharing:  the window behind waited (A + 10 < B)" "[ -n '$a' ] && [ -n '$b' ] && [ $((a + 10)) -lt $b ]"
     check "Change Colors:  the program's 07h shown 18h (Down:  blue, Right:  dark grey)" "echo '$hb' | grep -q '0x6b 0x18 0x65 0x18 0x79 0x18 0x70 0x18'"
     check "DOS works afterwards" "grep -q '^tune end' '$d/end.txt'"

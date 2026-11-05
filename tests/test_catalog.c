@@ -118,6 +118,18 @@ int main(void)
     catalog.programs[0].profile.source_version = 1;
     if (!odq_program_swappable(&catalog.programs[0]))
         fail("a DVP 1.x profile not swappable");
+    /* Share EGA when foreground/zoomed:  flags4 bit 0 (DESQview 2.80:  Y
+     * 18Bh CFh, N CEh) */
+    catalog.programs[0].profile.source_version = 2;
+    catalog.programs[0].profile.flags4 = 0xce;
+    if (odq_program_share_ega(&catalog.programs[0]))
+        fail("Share EGA N sharing");
+    catalog.programs[0].profile.flags4 = 0xcf;
+    if (!odq_program_share_ega(&catalog.programs[0]))
+        fail("Share EGA Y not sharing");
+    catalog.programs[0].profile.version = 0;
+    if (!odq_program_share_ega(&catalog.programs[0]))
+        fail("a program without a profile not sharing EGA");
 
     puts("catalog tests passed");
     return 0;
