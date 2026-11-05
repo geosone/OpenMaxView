@@ -391,15 +391,16 @@ tune)
 dvpopt)
     echo "== dvpopt:  a DVP's Runs in background N, Share CPU N, Allow Close Window N (as DESQview 2.80 writes them)"
     cfg=$OUT/MAXVIEW.CFG
-    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\nN|TickN|C:\\TICK.EXE C:\\TN.TXT||64|640|1|2|0|0|0|0|0|0|0|0|0|0|0|225|0|48|205\r\n' > "$cfg"
+    printf 'A|TickA|C:\\TICK.EXE C:\\TA.TXT||64|640\r\nN|TickN|C:\\TICK.EXE C:\\TN.TXT||64|640|1|2|0|0|0|0|0|0|0|0|0|0|0|225|0|48|205\r\nE|EchoN|ECHO closeexit_N||64|640|1|2|0|0|0|0|0|25|80|0|0|0|0|0|0|0|77|0|0|0|0|2\r\n' > "$cfg"
     M="key:alt wait:Switch_Windows:20"
     R="$M key:r wait:Tune_Performance:10"
     CMD="C:\\MAXVIEW" END="wait:dvpopt_end:30" run dvpopt 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $TICK $cfg" \
-        "wait:Open_Program:60 key:ret sleep:3 $M key:o wait:Change_a_Program:20 key:n sleep:3 $M text:menu $R key:t wait:This_Window:10 text:tune key:esc sleep:1 key:esc sleep:1 key:esc sleep:1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_dvpopt_end"
+        "wait:Open_Program:60 key:ret sleep:3 $M key:o wait:Change_a_Program:20 key:n sleep:3 $M text:menu $R key:t wait:This_Window:10 text:tune key:esc sleep:1 key:esc sleep:1 key:esc sleep:1 $M key:o wait:Change_a_Program:20 key:e sleep:5 text:echon $M key:s sleep:2 text:echosw key:esc sleep:1 key:esc sleep:1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_dvpopt_end"
     d=$OUT/dvpopt
     check "Allow Close Window N:  Close Window without a key" "grep -q 'Close Window' '$d/menu.txt' && ! grep -q 'Close Window *C' '$d/menu.txt'"
     check "Runs in background N, Share CPU N:  Tune shows them" "grep -q 'Run in background *\[N\]' '$d/tune.txt' && grep -q 'Share CPU in front *\[N\]' '$d/tune.txt'"
+    check "Close on exit N (18Bh bit 7 clear, 17Ch 0):  after ECHO its window stays, a DOS prompt in it" "grep -q 'closeexit_N' '$d/echon.txt' && grep -q '^C:.*>' '$d/echon.txt' && grep -q 'EchoN' '$d/echosw.txt'"
     check "DOS works afterwards" "grep -q '^dvpopt end' '$d/end.txt'"
     ;;
 dvpwin)

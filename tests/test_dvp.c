@@ -82,6 +82,7 @@ int main(int argc, char **argv)
     assert(program.profile.source_version == 2);
     assert(program.profile.system_kb == 4);
     assert(program.profile.start_row == 4 && program.profile.start_col == 10);
+    assert(program.profile.close_on_exit == 2);
     assert(program.profile.start_rows == 17 &&
            program.profile.start_cols == 59);
     assert(program.profile.script_bytes == 1000);

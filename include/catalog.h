@@ -32,6 +32,8 @@ typedef struct odq_process_profile {
     unsigned start_col;
     unsigned start_rows;
     unsigned start_cols;
+    unsigned close_on_exit;     /* DVP 17Ch:  1 set, 2 clear (flags4 bit 7
+                                 * clear:  Y, N); 0:  not known */
 } odq_process_profile;
 
 typedef struct odq_program {
@@ -75,6 +77,9 @@ int odq_program_share_ega(const odq_program *program);
 int odq_program_background(const odq_program *program);
 int odq_program_share_cpu(const odq_program *program);
 int odq_program_closable(const odq_program *program);
+/* Close on exit N (DVP 2.x:  flags4 bit 7 clear, 17Ch 0, kept as 2):  1, the shell
+ * stays after the program (COMSPEC /K) */
+int odq_program_keep(const odq_program *program);
 
 #endif
 

@@ -951,9 +951,11 @@ static int launch_task(const odq_program *program, char *status)
 {
     int t;
 
-    t = mvhost_launch(program->directory, program->command, 0);
+    t = mvhost_launch(program->directory, program->command,
+                      odq_program_keep(program));
     while (t == -MVE_MEM && swap_some(0))       /* room:  swapping */
-        t = mvhost_launch(program->directory, program->command, 0);
+        t = mvhost_launch(program->directory, program->command,
+                          odq_program_keep(program));
     if (t == -MVE_DIR) {
         sprintf(status, "Cannot change to %.52s", program->directory);
         return -1;

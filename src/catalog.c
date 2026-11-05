@@ -9,6 +9,7 @@
 #define ODQ_CATALOG_FIELDS_V1 6
 #define ODQ_CATALOG_FIELDS_V2 23
 #define ODQ_CATALOG_FIELDS_V3 27     /* (the window at the start) */
+#define ODQ_CATALOG_FIELDS_V4 28     /* (and Close on exit) */
 
 static char *trim(char *text)
 {
@@ -66,7 +67,8 @@ static int profile_valid(const odq_process_profile *profile)
                profile->flags1 == 0 && profile->flags2 == 0 &&
                profile->flags3 == 0 && profile->flags4 == 0 &&
                profile->start_row == 0 && profile->start_col == 0 &&
-               profile->start_rows == 0 && profile->start_cols == 0;
+               profile->start_rows == 0 && profile->start_cols == 0 &&
+               profile->close_on_exit == 0;
     return profile->version == ODQ_PROFILE_VERSION &&
            profile->source_version <= 0xff && profile->rows <= 0xff &&
            profile->columns <= 0xff && profile->text_pages <= 0xff &&
@@ -75,7 +77,8 @@ static int profile_valid(const odq_process_profile *profile)
            profile->flags1 <= 0xff && profile->flags2 <= 0xff &&
            profile->flags3 <= 0xff && profile->flags4 <= 0xff &&
            profile->start_row <= 0xff && profile->start_col <= 0xff &&
-           profile->start_rows <= 0xff && profile->start_cols <= 0xff;
+           profile->start_rows <= 0xff && profile->start_cols <= 0xff &&
+           profile->close_on_exit <= 2;
 }
 
 int odq_program_swappable(const odq_program *program)
@@ -121,6 +124,14 @@ int odq_program_closable(const odq_program *program)
     return !odq_dvp2(profile) || (profile->flags3 & 0x10) == 0;
 }
 
+int odq_program_keep(const odq_program *program)
+{
+    const odq_process_profile *profile = &program->profile;
+
+    return odq_dvp2(profile) && (profile->flags4 & 0x80) == 0 &&
+           profile->close_on_exit == 2;
+}
+
 int odq_program_valid(const odq_program *program)
 {
     return isprint((unsigned char)program->hotkey) && program->hotkey != '|' &&
@@ -133,20 +144,21 @@ int odq_program_valid(const odq_program *program)
 
 static int parse_line(char *line, odq_program *program)
 {
-    char *fields[ODQ_CATALOG_FIELDS_V3];
+    char *fields[ODQ_CATALOG_FIELDS_V4];
     char *cursor;
     unsigned count = 1, index;
 
     fields[0] = line;
     cursor = line;
     while ((cursor = strchr(cursor, '|')) != NULL) {
-        if (count == ODQ_CATALOG_FIELDS_V3)
+        if (count == ODQ_CATALOG_FIELDS_V4)
             return 0;
         *cursor = '\0';
         fields[count++] = ++cursor;
     }
     if (count != ODQ_CATALOG_FIELDS_V1 &&
-        count != ODQ_CATALOG_FIELDS_V2 && count != ODQ_CATALOG_FIELDS_V3)
+        count != ODQ_CATALOG_FIELDS_V2 && count != ODQ_CATALOG_FIELDS_V3 &&
+        count != ODQ_CATALOG_FIELDS_V4)
         return 0;
     for (index = 0; index < count; ++index)
         fields[index] = trim(fields[index]);
@@ -183,11 +195,14 @@ static int parse_line(char *line, odq_program *program)
          !parse_memory(fields[21], &program->profile.flags3) ||
          !parse_memory(fields[22], &program->profile.flags4)))
         return 0;
-    if (count == ODQ_CATALOG_FIELDS_V3 &&
+    if (count >= ODQ_CATALOG_FIELDS_V3 &&
         (!parse_memory(fields[23], &program->profile.start_row) ||
          !parse_memory(fields[24], &program->profile.start_col) ||
          !parse_memory(fields[25], &program->profile.start_rows) ||
          !parse_memory(fields[26], &program->profile.start_cols)))
+        return 0;
+    if (count == ODQ_CATALOG_FIELDS_V4 &&
+        !parse_memory(fields[27], &program->profile.close_on_exit))
         return 0;
     return odq_program_valid(program);
 }
@@ -290,7 +305,8 @@ int odq_catalog_save(const char *path, const odq_catalog *catalog)
     fputs("# Optional profile: |profile-version|source-version|system-kb|"
           "script-bytes|idle-polls|max-ems-kb|extra-system|rows|columns|"
           "text-pages|graphics-pages|serial-ports|protection|flags1|flags2|"
-          "flags3|flags4[|start-row|start-col|start-rows|start-cols]\n",
+          "flags3|flags4[|start-row|start-col|start-rows|start-cols|"
+          "close-on-exit]\n",
           stream);
     for (index = 0; index < catalog->count; ++index) {
         const odq_program *program = &catalog->programs[index];
@@ -315,11 +331,12 @@ int odq_catalog_save(const char *path, const odq_catalog *catalog)
             if (!failed && (profile->start_rows != 0 ||
                             profile->start_cols != 0 ||
                             profile->start_row != 0 ||
-                            profile->start_col != 0))
-                failed = fprintf(stream, "|%u|%u|%u|%u",
+                            profile->start_col != 0 ||
+                            profile->close_on_exit != 0))
+                failed = fprintf(stream, "|%u|%u|%u|%u|%u",
                                  profile->start_row, profile->start_col,
-                                 profile->start_rows,
-                                 profile->start_cols) < 0;
+                                 profile->start_rows, profile->start_cols,
+                                 profile->close_on_exit) < 0;
         }
         if (!failed)
             failed = fputc('\n', stream) == EOF;

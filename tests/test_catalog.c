@@ -26,12 +26,24 @@ int main(void)
           stream);
     fputs("w|Window|WINDOW.EXE||128|640|1|2|0|0|0|0|0|9|54|0|0|0|0|0|0|0|0|1|1|9|54\n",
           stream);
+    fputs("k|Keep|KEEP.EXE||128|640|1|2|0|0|0|0|0|25|80|0|0|0|0|0|0|0|77|0|0|0|0|2\n",
+          stream);
     fclose(stream);
 
     if (odq_catalog_load("build/test.cfg", &catalog, &line) != ODQ_CATALOG_OK)
         fail("valid catalogue rejected");
-    if (catalog.count != 4)
+    if (catalog.count != 5)
         fail("wrong entry count");
+    if (!odq_program_keep(&catalog.programs[4]) ||
+        odq_program_keep(&catalog.programs[0]))
+        fail("Close on exit N (18Bh bit 7 clear, 17Ch 0) not kept");
+    catalog.programs[4].profile.close_on_exit = 1;
+    if (odq_program_keep(&catalog.programs[4]))
+        fail("Close on exit Y kept");
+    catalog.programs[4].profile.close_on_exit = 0;   /* (before:  not known) */
+    if (odq_program_keep(&catalog.programs[4]))
+        fail("an older record's Close on exit taken as N");
+    catalog.programs[4].profile.close_on_exit = 2;
     if (catalog.programs[3].profile.start_row != 1 ||
         catalog.programs[3].profile.start_col != 1 ||
         catalog.programs[3].profile.start_rows != 9 ||
@@ -56,7 +68,8 @@ int main(void)
         fail("valid catalogue could not be saved");
     memset(&catalog, 0, sizeof(catalog));
     if (odq_catalog_load("build/test-saved.cfg", &catalog, &line) !=
-        ODQ_CATALOG_OK || catalog.count != 4 ||
+        ODQ_CATALOG_OK || catalog.count != 5 ||
+        !odq_program_keep(&catalog.programs[4]) ||
         strcmp(catalog.programs[1].title, "Example") != 0 ||
         catalog.programs[2].profile.max_ems_kb != 2048 ||
         catalog.programs[2].profile.start_rows != 0 ||

@@ -33,7 +33,7 @@ An imported DVP appends a versioned process profile:
 |profile-version|source-version|system-kb|script-bytes|idle-polls|
 max-ems-kb|extra-system|rows|columns|text-pages|graphics-pages|
 serial-ports|protection|flags1|flags2|flags3|flags4[|start-row|start-col|
-start-rows|start-cols]
+start-rows|start-cols|close-on-exit]
 ```
 
 The last four (DVP `0EBh`, `0ECh`, `180h`, `181h`, measured with DESQview
@@ -41,7 +41,10 @@ The last four (DVP `0EBh`, `0ECh`, `180h`, `181h`, measured with DESQview
 column, height and width.  They are written only when one is not 0; with a
 height or width of 0 MAXVIEW places the window itself.  MAXVIEW opens the
 window there (kept inside the screen, its frame around it) and Resize stops
-at `rows` and `columns` (Maximum Height and Width).
+at `rows` and `columns` (Maximum Height and Width).  `close-on-exit` is
+DVP byte `17Ch`:  1 set, 2 clear, 0 not known (older records); with
+`flags4` bit 7 clear (not blank) and 2, Close on exit N, the program runs
+under `COMSPEC /K`:  its window stays with a DOS prompt, as DESQview's.
 
 The display above wraps the definition for readability; one catalogue record
 always occupies one physical line.

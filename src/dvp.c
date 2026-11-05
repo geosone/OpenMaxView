@@ -175,5 +175,6 @@ int dvp_make_program(const dvp_info *info, char hotkey,
     program->profile.start_col = info->start_col;
     program->profile.start_rows = info->start_rows;
     program->profile.start_cols = info->start_cols;
+    program->profile.close_on_exit = info->close_on_exit ? 1 : 2;
     return odq_program_valid(program) ? DVP_OK : DVP_INVALID;
 }

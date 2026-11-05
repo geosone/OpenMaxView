@@ -329,10 +329,11 @@ int main(int argc, char **argv)
                        profile->protection, profile->flags1,
                        profile->flags2, profile->flags3, profile->flags4);
                 if (profile->start_rows != 0 || profile->start_cols != 0 ||
-                    profile->start_row != 0 || profile->start_col != 0)
-                    printf("|%u|%u|%u|%u", profile->start_row,
+                    profile->start_row != 0 || profile->start_col != 0 ||
+                    profile->close_on_exit != 0)
+                    printf("|%u|%u|%u|%u|%u", profile->start_row,
                            profile->start_col, profile->start_rows,
-                           profile->start_cols);
+                           profile->start_cols, profile->close_on_exit);
             }
             putchar('\n');
         }
