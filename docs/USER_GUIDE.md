@@ -169,6 +169,15 @@ G, A, K, M, P, S, V and W or PgUp/PgDn choose a page, Enter changes a field, F2
 saves.  MAXVIEW reads them when it starts.  Every displayed setting is used. The exact keys and defaults are documented in
 [Configuration](CONFIGURATION.md).
 
+## Networks
+
+Load the network drivers (for example Novell's LSL, the card's ODI driver
+and IPXODI) before MaxView.  MAXVTSR then gives every program IPX through
+itself:  a program in a window that is not in front keeps receiving, and its
+event service routine runs in its own window, as with DESQview's "Multitask
+IPX".  Up to 8 sends, listens or IPX events can be outstanding at a time.
+SPX and NETBIOS are not yet multitasked; run such programs in front.
+
 ## Included services
 
 `MAXVFILE` (DOS Services) lists a directory's files with size, date and

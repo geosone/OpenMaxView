@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/MVTEST.PLB || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/MVTEST.PLB || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -481,6 +481,36 @@ lefthand)
     echo "  the pointer messages' buttons:  $st"
     check "right button pressed:  left (01h); left pressed:  right (02h)" "[ '$st' = '01 02 ' ]"
     check "DOS works afterwards" "grep -q '^lefthand end' '$OUT/lefthand/end.txt'"
+    ;;
+ipx)
+    echo "== ipx:  IPX in a window behind a busy one (Novell ODI, NE2000, a second VM sending; DESQview's Multitask IPX)"
+    NET=${NETDRV:-$ROOT/build/net/bin}
+    if [ ! -f "$NET/IPXODI.COM" ]; then echo "  SKIP  no LSL, NE2000, IPXODI (NETDRV=directory of them)"; continue; fi
+    d=$OUT/ipx; rm -rf "$d" "$d-b"; mkdir -p "$d" "$d-b"
+    printf 'Link Driver NE2000\r\n    INT 3\r\n    PORT 300\r\n    FRAME Ethernet_802.3\r\n' > "$OUT/NET.CFG"
+    printf 'I|IpxRecv|C:\\IPXPRB.COM C:\\I.TXT R 30||64|640\r\nT|Busy|C:\\TICK.EXE C:\\T.TXT||64|640\r\n' > "$OUT/MAXVIEW.CFG"
+    NF="$NET/LSL.COM $NET/NE2000.COM $NET/IPXODI.COM $OUT/NET.CFG $ROOT/build/IPXPRB.COM"
+    nic() { echo "-device ne2k_isa,netdev=n0,iobase=0x300,irq=3,mac=52:54:00:12:34:$1 -netdev socket,id=n0,$2"; }
+    port=$((20000 + RANDOM % 20000))
+    M="key:alt wait:Switch_Windows:20"
+    KEEP=1 ACCEL="-accel tcg" XFILES="$NF $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $OUT/MAXVIEW.CFG $TICK" \
+        AUTO='@ECHO OFF|C:\LSL|C:\NE2000|C:\IPXODI|C:\MAXVIEW' QEMU_EXTRA="$(nic 0a listen=127.0.0.1:$port)" \
+        STEPS="wait:Open_Program:120 key:ret wait:ipxprb_ready:30 sleep:2 $M key:o wait:Change_a_Program:20 key:t sleep:140 $M sleep:2 text:menu key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_ipx_end wait:ipx_end:30 text:end" \
+        TESTDIR="$d" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/ipx.log" 2>&1 &
+    pa=$!
+    sleep 2
+    KEEP=1 ACCEL="-accel tcg" XFILES="$NF" \
+        AUTO='@ECHO OFF|C:\LSL|C:\NE2000|C:\IPXODI|CHOICE /T:N,60 /N /C:NY|C:\IPXPRB C:\I.TXT S 30|ECHO b done' \
+        QEMU_EXTRA="$(nic 0b connect=127.0.0.1:$port)" STEPS="wait:b_done:300 text:b" \
+        TESTDIR="$d-b" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/ipx-b.log" 2>&1
+    wait $pa
+    i=$(file ipx I.TXT); s=$(file ipx-b I.TXT)
+    echo "  receiver:  $(echo "$i" | head -1); $(echo "$i" | tail -1)"
+    check "the sender:  30 packets sent" "echo '$s' | grep -q '^s 30 00'"
+    check "IPX entry MAXVTSR's (the driver's kept)" "echo '$i' | grep -q '^ipx ' && echo '$i' | grep -q '^open 00'"
+    check "behind the busy window:  all 30 received, each ESR in the program's own task (none wrong)" "echo '$i' | grep -q '^end 30 esr 30 bad 0'"
+    check "the busy window ran on, the menu answers" "[ \"\$(last ipx T.TXT tick)\" -gt 20 ] && grep -q 'Switch Windows' '$d/menu.txt'"
+    check "DOS works afterwards" "grep -q '^ipx end' '$d/end.txt'"
     ;;
 mvlaunch)
     echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"
@@ -1172,7 +1202,7 @@ revive)
     mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
     click="$(mv -100 -100 10) $(mv 4 0 20) $(mv 0 8 6) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0 sleep:2"
     CMD="C:\\R.BAT" END="wait:revive_end:30" run revive 0 "" \
-        "$OUT/R.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg" \
+        "$OUT/R.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg $(oldwin)" \
         "wait:Open_Program:60 key:ret sleep:4 type:C:\\NTFPRB_C:\\N1.TXT_P wait:ntfprb_ready:30 sleep:1 $click $R key:t wait:This_Window:10 key:m sleep:2 text:tune key:esc sleep:1 key:esc sleep:1 key:esc sleep:1 $click key:x sleep:3 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:3 type:echo_revive_end"
     d=$OUT/revive
     n1=$(file revive N1.TXT)

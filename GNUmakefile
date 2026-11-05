@@ -230,6 +230,12 @@ $(BUILD)/ntfprb.obj: tests/ntfprb.asm | $(BUILD)
 $(BUILD)/NTFPRB.COM: $(BUILD)/ntfprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name NTFPRB.COM option quiet option map=NTFPRB.MAP file ntfprb.obj
 
+$(BUILD)/ipxprb.obj: tests/ipxprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/IPXPRB.COM: $(BUILD)/ipxprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name IPXPRB.COM option quiet option map=IPXPRB.MAP file ipxprb.obj
+
 $(BUILD)/MVTEST.PLB: tests/panels/mkplb.py | $(BUILD)
 	python3 $< $@
 

@@ -86,6 +86,14 @@
 ;                                    (row, column), CX rows, columns,
 ;                                    showing its screen from SI (row,
 ;                                    column):  cells relative to it
+;   INT 2Fh AX=7A00h                 IPX:  the driver's entry kept, ES:DI
+;                                    = MAXVTSR's (as DESQview's Network
+;                                    option "Multitask IPX"):  a send,
+;                                    listen or event goes through a shadow
+;                                    ECB and buffer here (shared memory),
+;                                    its result and ESR reach the program
+;                                    in its own task (at once if it runs,
+;                                    else at its next tick or IPX call)
 ;   INT 2Fh AX=D714h, BL             from the host:  Setup's mouse (bit 0:
 ;                                    no mouse for DESQview's pointers and
 ;                                    select fields; bit 1:  left-handed,
@@ -321,6 +329,7 @@ int1c_handler:
         push    ds
         push    es
         call    sound_tick
+        call    ipx_deliver_mine      ; (IPX results of this task's)
         pop     es
         pop     ds
         pop     bp
@@ -10266,6 +10275,10 @@ clip_make_ret:
 
 int2f_handler:
         pushf
+        cmp     ax,7A00h
+        jne     short int2f_not_ipx
+        jmp     int2f_ipx
+int2f_not_ipx:
         cmp     ax,MUX_STATUS
         je      int2f_status
         cmp     ax,MUX_INFO
@@ -10501,6 +10514,12 @@ int2f_reset:
 ; when a window is closed)
 int2f_task_end:
         push    ax
+        mov     ax,bx                 ; its IPX shadows cancelled
+        shl     ax,1
+        add     ax,word ptr cs:task_objects_base
+        call    ipx_task_end
+        pop     ax
+        push    ax
         push    cx
         push    dx
         push    si
@@ -10651,6 +10670,492 @@ int2f_sound_empty:
 int2f_chain:
         popf
         jmp     dword ptr cs:old2f
+
+
+; ---------------------------------------------------------------------------
+; IPX for tasks (DESQview's Network option "Multitask IPX"):  a program's
+; ECB and buffers are in its own memory, present only while it runs; IPX
+; fills them and calls their ESR at interrupt time, in whatever task runs
+; then.  So a send, listen or IPX event (03h, 04h, 05h) goes through a
+; shadow ECB with one fragment, a buffer here (shared, below the task
+; base); its completion (ipx_esr) waits for the program's task:  its ECB
+; filled (completion code, immediate address, the data into its fragments),
+; then its ESR called (ES:SI its ECB, AL FFh, interrupts off).
+; ---------------------------------------------------------------------------
+IPXN    equ     8                     ; shadows
+IPXECB  equ     36                    ; an ECB with one fragment
+IPXBUF  equ     576                   ; the largest IPX packet
+
+int2f_ipx:                            ; 7A00h:  the driver's, then ours
+        popf
+        pushf
+        call    dword ptr cs:old2f
+        cmp     al,0FFh
+        jne     short int2f_ipx_ret
+        mov     word ptr cs:ipx_real,di
+        mov     word ptr cs:ipx_real+2,es
+        push    cs
+        pop     es
+        mov     di,offset ipx_shim
+int2f_ipx_ret:
+        iret
+
+; MAXVTSR's IPX entry (far, BX the function)
+ipx_shim:
+        cmp     bx,03h
+        jb      short ipx_shim_pass
+        cmp     bx,05h
+        jbe     short ipx_shim_ecb
+        cmp     bx,06h
+        je      short ipx_shim_cancel
+        cmp     bx,0Ah
+        jne     short ipx_shim_pass
+        call    ipx_deliver_mine      ; RELINQUISH:  results first
+ipx_shim_pass:
+        jmp     dword ptr cs:ipx_real
+ipx_shim_ecb:
+        jmp     ipx_ecb_call
+ipx_shim_cancel:
+        jmp     ipx_cancel
+
+; DI = shadow ECB AX (0 ..)
+ipx_ecbof:
+        push    ax
+        push    dx
+        mov     dx,IPXECB
+        mul     dx
+        add     ax,offset ipx_ecbs
+        mov     di,ax
+        pop     dx
+        pop     ax
+        ret
+
+; 03h SEND, 04h LISTEN, 05h EVENT (AX ticks):  ES:SI the program's ECB
+ipx_ecb_call:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     bp,sp                 ; [bp+16] AX, [bp+14] BX, [bp+8] SI,
+        call    ipx_deliver_mine      ; [bp] ES
+        cmp     word ptr cs:task_handle_segment,0
+        jne     short ipx_ecb_owner
+        call    task_handle_init      ; (a program of IPX only)
+ipx_ecb_owner:
+        cli
+        xor     bx,bx
+ipx_ecb_find:
+        cmp     byte ptr cs:ipx_state[bx],0
+        je      short ipx_ecb_slot
+        inc     bx
+        cmp     bx,IPXN
+        jb      short ipx_ecb_find
+        sti                           ; none free:  straight to IPX
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        jmp     dword ptr cs:ipx_real
+ipx_ecb_slot:
+        mov     byte ptr cs:ipx_state[bx],1
+        sti
+        mov     al,byte ptr [bp+14]
+        mov     byte ptr cs:ipx_kind[bx],al
+        mov     ax,bx
+        shl     bx,1
+        mov     dx,word ptr cs:task_handle_segment
+        mov     word ptr cs:ipx_owner[bx],dx
+        shl     bx,1
+        mov     dx,word ptr [bp+8]
+        mov     word ptr cs:ipx_tecb[bx],dx
+        mov     dx,word ptr [bp]
+        mov     word ptr cs:ipx_tecb[bx+2],dx
+        mov     word ptr cs:ipx_slot,ax
+        call    ipx_ecbof             ; the shadow, zero
+        push    cs
+        pop     es
+        push    di
+        mov     cx,IPXECB / 2
+        xor     ax,ax
+        rep     stosw
+        pop     di
+        mov     ds,word ptr [bp]      ; DS:SI the program's ECB
+        mov     si,word ptr [bp+8]
+        mov     word ptr es:[di+4],offset ipx_esr
+        mov     word ptr es:[di+6],cs
+        mov     ax,word ptr [si+0Ah]  ; socket, immediate address
+        mov     word ptr es:[di+0Ah],ax
+        mov     ax,word ptr [si+1Ch]
+        mov     word ptr es:[di+1Ch],ax
+        mov     ax,word ptr [si+1Eh]
+        mov     word ptr es:[di+1Eh],ax
+        mov     ax,word ptr [si+20h]
+        mov     word ptr es:[di+20h],ax
+        mov     byte ptr [si+9],0     ; the program's:  in use
+        mov     al,0FFh               ; (sending)
+        cmp     byte ptr [bp+14],03h
+        je      short ipx_ecb_inuse
+        dec     al                    ; (listening)
+        cmp     byte ptr [bp+14],04h
+        je      short ipx_ecb_inuse
+        dec     al                    ; (an event)
+ipx_ecb_inuse:
+        mov     byte ptr [si+8],al
+        cmp     byte ptr [bp+14],05h
+        je      short ipx_ecb_go
+        mov     ax,word ptr cs:ipx_slot ; one fragment:  the buffer
+        mov     dx,IPXBUF
+        mul     dx
+        add     ax,offset ipx_bufs
+        mov     word ptr es:[di+22h],1
+        mov     word ptr es:[di+24h],ax
+        mov     word ptr es:[di+26h],cs
+        mov     cx,word ptr [si+22h]  ; its fragments' bytes (up to 576),
+        xor     dx,dx                 ; a send's gathered
+        push    di
+        mov     di,ax
+        lea     bx,[si+24h]
+ipx_ecb_frag:
+        jcxz    short ipx_ecb_fragged
+        push    cx
+        push    si
+        push    ds
+        mov     cx,word ptr [bx+4]
+        mov     ax,IPXBUF
+        sub     ax,dx
+        cmp     cx,ax
+        jbe     short @F
+        mov     cx,ax
+@@:     add     dx,cx
+        cmp     byte ptr [bp+14],03h
+        jne     short ipx_ecb_nocopy
+        lds     si,dword ptr [bx]
+        rep     movsb
+        jmp     short ipx_ecb_copied
+ipx_ecb_nocopy:
+        add     di,cx
+ipx_ecb_copied:
+        pop     ds
+        pop     si
+        pop     cx
+        add     bx,6
+        dec     cx
+        jmp     short ipx_ecb_frag
+ipx_ecb_fragged:
+        pop     di
+        mov     word ptr es:[di+28h],dx
+ipx_ecb_go:
+        mov     si,di                 ; IPX with the shadow
+        mov     ax,word ptr [bp+16]
+        mov     bx,word ptr [bp+14]
+        call    dword ptr cs:ipx_real
+        mov     byte ptr cs:ipx_result,al
+        cmp     byte ptr [bp+14],04h
+        jne     short ipx_ecb_done
+        or      al,al
+        jz      short ipx_ecb_done
+        mov     bx,word ptr cs:ipx_slot ; a listen refused:  the program's
+        mov     byte ptr cs:ipx_state[bx],0 ; ECB done with its code
+        mov     es,word ptr [bp]
+        mov     di,word ptr [bp+8]
+        mov     byte ptr es:[di+9],al
+        mov     byte ptr es:[di+8],0
+ipx_ecb_done:
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        cmp     bx,04h
+        jne     short @F
+        mov     al,byte ptr cs:ipx_result
+@@:     retf
+
+; 06h CANCEL ES:SI:  a shadowed ECB's shadow cancelled (its ECB FCh, no
+; ESR), or, done already, delivered (F9h)
+ipx_cancel:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     bp,sp
+        xor     bx,bx
+ipx_cancel_find:
+        cmp     byte ptr cs:ipx_state[bx],0
+        je      short ipx_cancel_next
+        mov     di,bx
+        shl     di,1
+        shl     di,1
+        cmp     si,word ptr cs:ipx_tecb[di]
+        jne     short ipx_cancel_next
+        mov     ax,es
+        cmp     ax,word ptr cs:ipx_tecb[di+2]
+        je      short ipx_cancel_it
+ipx_cancel_next:
+        inc     bx
+        cmp     bx,IPXN
+        jb      short ipx_cancel_find
+        pop     es                    ; not one of ours
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        jmp     dword ptr cs:ipx_real
+ipx_cancel_it:
+        mov     word ptr cs:ipx_slot,bx
+        mov     al,0F9h
+        cmp     byte ptr cs:ipx_state[bx],1
+        jne     short ipx_cancel_done
+        mov     ax,bx
+        call    ipx_ecbof
+        push    cs
+        pop     es
+        mov     si,di
+        mov     bx,06h
+        call    dword ptr cs:ipx_real
+        or      al,al
+        jnz     short ipx_cancel_done
+        mov     bx,word ptr cs:ipx_slot
+        mov     byte ptr cs:ipx_state[bx],0
+        mov     es,word ptr [bp]
+        mov     di,word ptr [bp+8]
+        mov     byte ptr es:[di+9],0FCh
+        mov     byte ptr es:[di+8],0
+        xor     al,al
+ipx_cancel_done:
+        push    ax
+        call    ipx_deliver_mine      ; (done meanwhile:  delivered)
+        pop     ax
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        retf
+
+; IPX's ESR for a shadow (ES:SI, interrupts off):  done; delivered at once
+; when its task runs
+ipx_esr:
+        push    ax
+        push    bx
+        push    dx
+        mov     ax,si
+        sub     ax,offset ipx_ecbs
+        xor     dx,dx
+        mov     bx,IPXECB
+        div     bx
+        cmp     ax,IPXN
+        jae     short ipx_esr_ret
+        mov     bx,ax
+        cmp     byte ptr cs:ipx_state[bx],1
+        jne     short ipx_esr_ret
+        mov     byte ptr cs:ipx_state[bx],2
+        call    ipx_deliver_mine
+ipx_esr_ret:
+        pop     dx
+        pop     bx
+        pop     ax
+        retf
+
+; the done shadows of the task running delivered (all registers kept)
+ipx_deliver_mine:
+        pushf
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        cli
+        cmp     word ptr cs:task_handle_segment,0
+        je      short ipx_mine_done
+        xor     bx,bx
+ipx_mine_loop:
+        cmp     byte ptr cs:ipx_state[bx],2
+        jne     short ipx_mine_next
+        mov     si,bx
+        shl     si,1
+        mov     ax,word ptr cs:ipx_owner[si]
+        cmp     ax,word ptr cs:task_handle_segment
+        jne     short ipx_mine_next
+        push    bx
+        call    ipx_deliver
+        pop     bx
+ipx_mine_next:
+        inc     bx
+        cmp     bx,IPXN
+        jb      short ipx_mine_loop
+ipx_mine_done:
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        popf
+        ret
+
+; shadow BX (done) to its program's ECB, then its ESR (interrupts off)
+ipx_deliver:
+        mov     byte ptr cs:ipx_state[bx],3
+        mov     ax,bx
+        call    ipx_ecbof             ; CS:DI the shadow
+        mov     si,di
+        mov     cl,byte ptr cs:ipx_kind[bx]
+        shl     bx,1
+        shl     bx,1
+        les     di,dword ptr cs:ipx_tecb[bx]
+        shr     bx,1
+        shr     bx,1
+        mov     al,byte ptr cs:[si+9] ; its completion code
+        mov     byte ptr es:[di+9],al
+        cmp     cl,04h
+        jne     short ipx_deliver_free
+        mov     ax,word ptr cs:[si+1Ch] ; a listen's:  immediate address,
+        mov     word ptr es:[di+1Ch],ax ; the data into its fragments
+        mov     ax,word ptr cs:[si+1Eh]
+        mov     word ptr es:[di+1Eh],ax
+        mov     ax,word ptr cs:[si+20h]
+        mov     word ptr es:[di+20h],ax
+        push    bx
+        push    di
+        mov     dx,word ptr cs:[si+28h] ; the bytes
+        mov     si,word ptr cs:[si+24h]
+        mov     cx,word ptr es:[di+22h]
+        lea     bx,[di+24h]
+        push    es
+        pop     ds                    ; DS:BX its fragments
+ipx_deliver_frag:
+        jcxz    short ipx_deliver_fragged
+        or      dx,dx
+        jz      short ipx_deliver_fragged
+        push    cx
+        push    es
+        mov     cx,word ptr [bx+4]
+        cmp     cx,dx
+        jbe     short @F
+        mov     cx,dx
+@@:     sub     dx,cx
+        les     di,dword ptr [bx]
+        push    ds
+        push    cs
+        pop     ds
+        rep     movsb
+        pop     ds
+        pop     es
+        pop     cx
+        add     bx,6
+        dec     cx
+        jmp     short ipx_deliver_frag
+ipx_deliver_fragged:
+        pop     di
+        pop     bx
+ipx_deliver_free:
+        mov     byte ptr es:[di+8],0  ; not in use
+        mov     byte ptr cs:ipx_state[bx],0
+        mov     ax,word ptr es:[di+4] ; its ESR
+        or      ax,word ptr es:[di+6]
+        jz      short ipx_deliver_ret
+        push    word ptr es:[di+6]
+        push    word ptr es:[di+4]
+        mov     bp,sp
+        mov     si,di
+        mov     al,0FFh
+        cli
+        call    dword ptr ss:[bp]
+        add     sp,4
+ipx_deliver_ret:
+        ret
+
+; task AX (its handle segment) ended:  its shadows cancelled, freed
+ipx_task_end:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    bp
+        push    ds
+        push    es
+        mov     dx,ax
+        xor     bx,bx
+ipx_end_loop:
+        cmp     byte ptr cs:ipx_state[bx],0
+        je      short ipx_end_next
+        mov     si,bx
+        shl     si,1
+        cmp     dx,word ptr cs:ipx_owner[si]
+        jne     short ipx_end_next
+        cmp     byte ptr cs:ipx_state[bx],1
+        jne     short ipx_end_free
+        push    bx
+        push    dx
+        mov     ax,bx
+        call    ipx_ecbof
+        push    cs
+        pop     es
+        mov     si,di
+        mov     bx,06h
+        call    dword ptr cs:ipx_real
+        pop     dx
+        pop     bx
+ipx_end_free:
+        mov     byte ptr cs:ipx_state[bx],0
+ipx_end_next:
+        inc     bx
+        cmp     bx,IPXN
+        jb      short ipx_end_loop
+        pop     es
+        pop     ds
+        pop     bp
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+ipx_real       dd 0                   ; the driver's entry (7A00h)
+ipx_slot       dw 0
+ipx_result     db 0
+ipx_state      db IPXN dup(0)         ; 0 free, 1 at IPX, 2 done, 3 delivering
+ipx_kind       db IPXN dup(0)         ; 03h, 04h, 05h
+ipx_owner      dw IPXN dup(0)         ; its task (handle segment)
+ipx_tecb       dd IPXN dup(0)         ; the program's ECB
+ipx_ecbs       db IPXN * IPXECB dup(0)
+ipx_bufs       db IPXN * IPXBUF dup(0)
 
 old10          dd 0
 old15          dd 0
