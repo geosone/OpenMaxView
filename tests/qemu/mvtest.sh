@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -432,7 +432,7 @@ setup)
     E="key:ret key:backspace,backspace"
     CMD="C:\\MAXVSET" END="wait:setup_end:30" run setup 0 "" \
         "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/MAXVSET.EXE $cfg" \
-        "wait:Load_resident:60 key:p wait:Foreground_ticks:10 $E type:9 sleep:1 text:perf key:s wait:Swapping_directory:10 key:spc key:down key:ret type:C:\\SW sleep:1 text:swap key:k wait:Use_Learn:10 key:spc key:w wait:Window_Positions:10 $E type:3 key:right $E type:10 key:right $E type:8 key:right $E type:40 sleep:1 text:wpos key:a wait:Dialer_baud:10 key:down $E type:4 sleep:1 text:dial key:f2 wait:Settings_saved:10 key:esc sleep:3 type:MAXVSET_/LIST_>C:\\SL.TXT sleep:3 type:MAXVIEW wait:Open_Program:60 key:ret sleep:5 key:shift-alt sleep:3 text:sa $M sleep:1 mon:xp+/4000xb+0xb8000>v1 key:r wait:Tune_Performance:10 key:t wait:This_Window:10 sleep:1 text:tune key:esc,esc sleep:2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_setup_end"
+        "wait:Load_resident:60 key:p wait:Foreground_ticks:10 $E type:9 sleep:1 text:perf key:s wait:Swapping_directory:10 key:spc key:down key:ret type:C:\\SW sleep:1 text:swap key:k wait:Use_Learn:10 key:spc key:w wait:Window_Positions:10 $E type:3 key:right $E type:10 key:right $E type:8 key:right $E type:40 sleep:1 text:wpos key:a wait:Dialer_baud:10 key:down $E type:4 sleep:1 text:dial key:m wait:Left-handed:10 key:down key:spc key:v wait:Blank_the_screen:10 key:down $E type:5 sleep:1 text:video key:f2 wait:Settings_saved:10 key:esc sleep:3 type:MAXVSET_/LIST_>C:\\SL.TXT sleep:3 type:MAXVIEW wait:Open_Program:60 key:ret sleep:5 key:shift-alt sleep:3 text:sa $M sleep:1 mon:xp+/4000xb+0xb8000>v1 key:r wait:Tune_Performance:10 key:t wait:This_Window:10 sleep:1 text:tune key:esc,esc sleep:2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_setup_end"
     d=$OUT/setup
     sl=$(file setup SL.TXT | tr '\n' ' ')
     echo "  /LIST:  $sl"
@@ -440,11 +440,47 @@ setup)
     corners="$(vc v1 2 9) $(vc v1 11 9) $(vc v1 2 50) $(vc v1 11 50)"
     echo "  frame corners (2,9) (11,9) (2,50) (11,50):  $corners"
     check "the pages:  Performance, Swapping, Window Positions, Auto Dialer (2400 shown)" "grep -q 'Foreground ticks *9' '$d/perf.txt' && grep -q 'C:.SW' '$d/swap.txt' && grep -q 'Height' '$d/wpos.txt' && grep -q '2400' '$d/dial.txt'"
-    check "saved:  FOREGROUND 9, SWAPPING NO, SWAP_DIR, LEARN NO, WINDOW1 3,10,8,40, DIAL_BAUD 4" "echo '$sl' | grep -q 'FOREGROUND=9 ' && echo '$sl' | grep -q 'SWAPPING=NO ' && echo '$sl' | grep -q 'SWAP_DIR=C:.SW ' && echo '$sl' | grep -q 'LEARN=NO ' && echo '$sl' | grep -q 'WINDOW1=3,10,8,40 ' && echo '$sl' | grep -q 'WINDOW2=14,1,10,78 ' && echo '$sl' | grep -q 'DIAL_BAUD=4 '"
+    check "saved:  FOREGROUND 9, SWAPPING NO, SWAP_DIR, LEARN NO, WINDOW1 3,10,8,40, DIAL_BAUD 4, LEFT_HANDED, BLANK 5" "echo '$sl' | grep -q 'FOREGROUND=9 ' && echo '$sl' | grep -q 'SWAPPING=NO ' && echo '$sl' | grep -q 'SWAP_DIR=C:.SW ' && echo '$sl' | grep -q 'LEARN=NO ' && echo '$sl' | grep -q 'WINDOW1=3,10,8,40 ' && echo '$sl' | grep -q 'WINDOW2=14,1,10,78 ' && echo '$sl' | grep -q 'DIAL_BAUD=4 ' && echo '$sl' | grep -q 'LEFT_HANDED=YES ' && echo '$sl' | grep -q 'BLANK=5 ' && echo '$sl' | grep -q 'MOUSE=YES '"
     check "MAXVIEW:  window 1 (no starting window of its own) at Setup's position (row 3, column 10, 8 x 40)" "[ '$corners' = '0xc9 0xc8 0xbb 0xbc' ]"
     check "MAXVIEW:  Learn N (Shift+Alt opens nothing)" "! grep -q 'Display Scripts' '$d/sa.txt'"
     check "MAXVIEW:  Tune Performance with Setup's 9 foreground ticks, swapping N" "grep -q 'Foreground ticks *\[ 9\]' '$d/tune.txt' && grep -q 'Background ticks *\[ 2\]' '$d/tune.txt' && grep -q 'Allow swapping out *\[N\]' '$d/tune.txt'"
     check "DOS works afterwards" "grep -q '^setup end' '$d/end.txt'"
+    ;;
+blank)
+    echo "== blank:  Setup's screen blanker (BLANK=1):  the display off after a minute, a key on again and to the program (as DESQview 2.80, measured)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    printf 'BLANK=1\r\n' > "$OUT/MAXVSET.INI"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:blank_end:30" run blank 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg $OUT/MAXVSET.INI" \
+        "wait:Open_Program:60 key:ret sleep:5 shot:b0 sleep:30 shot:b1 sleep:45 shot:b2 key:x sleep:3 shot:b3 text:b3 key:backspace $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_blank_end"
+    d=$OUT/blank
+    lit() { python3 -c "from PIL import Image; import sys; print(max(max(p[:3]) for p in Image.open(sys.argv[1]).convert('RGB').getdata()))" "$1" 2>/dev/null; }
+    echo "  brightest pixel:  at 5 s $(lit $d/b0.png), 35 s $(lit $d/b1.png), 80 s $(lit $d/b2.png), after the key $(lit $d/b3.png)"
+    check "shown before the minute, blank after it" "[ \"\$(lit $d/b0.png)\" -gt 0 ] && [ \"\$(lit $d/b1.png)\" -gt 0 ] && [ \"\$(lit $d/b2.png)\" = 0 ]"
+    check "a key:  shown again, the key to the program" "[ \"\$(lit $d/b3.png)\" -gt 0 ] && grep -q 'C:.>x' '$d/b3.txt'"
+    check "DOS works afterwards" "grep -q '^blank end' '$d/end.txt'"
+    ;;
+lefthand)
+    echo "== lefthand:  Setup's Mouse left-handed:  a DESQview pointer's right button is its left one (NTFPRB P in MAXVIEW)"
+    CTM=${CTMOUSE:-$HOME/mars/scratch-386max/ctm/bin/ctmouse.exe}
+    if [ ! -f "$CTM" ]; then echo "  SKIP  no CuteMouse (CTMOUSE=path of ctmouse.exe)"; continue; fi
+    cp "$CTM" "$OUT/CTMOUSE.EXE"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'N|Pointer|C:\\NTFPRB.COM C:\\N1.TXT P||64|640\r\n' > "$cfg"
+    printf 'LEFT_HANDED=YES\r\n' > "$OUT/MAXVSET.INI"
+    printf 'C:\\CTMOUSE.EXE\r\nC:\\MAXVIEW\r\n' > "$OUT/L.BAT"
+    mv() { local s="" i; for ((i = 0; i < $3; i++)); do s="$s mon:mouse_move+$1+$2 sleep:0.2"; done; echo "$s"; }
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\L.BAT" END="wait:lefthand_end:30" run lefthand 0 "" \
+        "$OUT/L.BAT $OUT/CTMOUSE.EXE $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/NTFPRB.COM $cfg $OUT/MAXVSET.INI" \
+        "wait:Open_Program:60 key:ret wait:ntfprb_ready:60 sleep:3 $(mv -100 -100 10) $(mv 4 0 23) $(mv 0 8 4) $(mv 0 4 1) sleep:1 mon:mouse_button+2 sleep:0.5 mon:mouse_button+0 sleep:2 $(mv 4 0 8) sleep:1 mon:mouse_button+1 sleep:0.5 mon:mouse_button+0 sleep:2 key:x sleep:3 key:esc wait:Leave_Open_MaxView:10 key:y sleep:3 type:echo_lefthand_end"
+    n1=$(file lefthand N1.TXT)
+    st=$(echo "$n1" | grep '^  a 0[0-9A-F] 00 [0-9A-F][0-9A-F] 00 0[1-3] 00' | awk '{print $6}' | tr '\n' ' ')
+    echo "  the pointer messages' buttons:  $st"
+    check "right button pressed:  left (01h); left pressed:  right (02h)" "[ '$st' = '01 02 ' ]"
+    check "DOS works afterwards" "grep -q '^lefthand end' '$OUT/lefthand/end.txt'"
     ;;
 mvlaunch)
     echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"

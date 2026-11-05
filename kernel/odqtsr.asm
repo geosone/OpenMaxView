@@ -86,6 +86,10 @@
 ;                                    (row, column), CX rows, columns,
 ;                                    showing its screen from SI (row,
 ;                                    column):  cells relative to it
+;   INT 2Fh AX=D714h, BL             from the host:  Setup's mouse (bit 0:
+;                                    no mouse for DESQview's pointers and
+;                                    select fields; bit 1:  left-handed,
+;                                    the buttons swapped for them)
 ;   INT 2Fh AX=D713h, BX=task        from the host:  a window object of
 ;                                    task's, not shown, CH rows, CL columns,
 ;                                    their characters at ES:DI (Paste's);
@@ -162,6 +166,7 @@ MUX_NOTIFY     equ 0D70Eh
 MUX_DENY       equ 0D711h
 MUX_MOUSE      equ 0D712h
 MUX_CLIP       equ 0D713h
+MUX_MOUSEOPT   equ 0D714h
 WREAD_SIZE     equ 80                  ; READ of a window object:  a row
 MUX_NOTE       equ 0D70Fh
 TITLE_MAX      equ 16                  ; a task's title (D70Ch)
@@ -3838,6 +3843,7 @@ field_mouse_click:
         jc      short field_mouse_no
         mov     ax,5
         xor     bx,bx
+        call    mouse_button          ; (left-handed:  the right one)
         int     33h
         or      bx,bx
         jz      short field_mouse_no
@@ -8986,6 +8992,8 @@ mouse_driver:
         push    ax
         push    bx
         push    es
+        test    byte ptr cs:mouse_opt,1 ; Setup:  no mouse
+        jnz     short mouse_driver_no
         xor     ax,ax
         mov     es,ax
         les     bx,dword ptr es:[33h*4]
@@ -9003,6 +9011,14 @@ mouse_driver_ret:
         pop     bx
         pop     ax
         ret
+
+; BX the button (0 left, 1 right) asked of INT 33h:  left-handed (Setup)
+; the other one
+mouse_button:
+        test    byte ptr cs:mouse_opt,2
+        jz      short @F
+        xor     bx,1
+@@:     ret
 
 ; WRITE (BL=00h) to a pointer object:  its handle, the column, the row
 ; (DWORDs, top first):  the mouse pointer there, relative to the window it
@@ -9097,6 +9113,7 @@ pointer_poll_found:
 pointer_poll_press:
         mov     ax,5
         lea     bx,[di-1]
+        call    mouse_button
         int     33h
         or      bx,bx
         jnz     short pointer_poll_event_press
@@ -9109,6 +9126,7 @@ pointer_poll_press:
 pointer_poll_release:
         mov     ax,6
         lea     bx,[di-1]
+        call    mouse_button
         int     33h
         or      bx,bx
         jnz     short pointer_poll_event_release
@@ -9117,12 +9135,20 @@ pointer_poll_release:
         jbe     short pointer_poll_release
 pointer_poll_move:
         test    word ptr cs:pointer_flags[si],01h ; buttons only
-        jnz     short pointer_poll_ret
-        mov     ax,3
+        jz      short @F
+        jmp     pointer_poll_ret
+@@:     mov     ax,3
         int     33h
         mov     di,bx
         and     di,3
-        call    pointer_cell
+        test    byte ptr cs:mouse_opt,2 ; left-handed:  bits 0 and 1 swapped
+        jz      short @F
+        mov     bx,di
+        shr     bx,1
+        and     di,1
+        shl     di,1
+        or      di,bx
+@@:     call    pointer_cell
         call    pointer_rel
         jc      short pointer_poll_ret
         cmp     ax,word ptr cs:pointer_last[si]
@@ -10390,6 +10416,13 @@ int2f_not_clip:
         popf
         iret
 int2f_not_mouse:
+        cmp     ax,MUX_MOUSEOPT
+        jne     short int2f_not_mouseopt
+        mov     byte ptr cs:mouse_opt,bl
+        xor     ax,ax
+        popf
+        iret
+int2f_not_mouseopt:
         cmp     ax,MUX_NOTE
         jne     short int2f_not_note
         call    note_put
@@ -10823,6 +10856,7 @@ mouse_owner    dw 0FFFFh              ; D712h:  the host's mouse task
 mouse_pos      dw 0
 mouse_size     dw 0
 mouse_view     dw 0
+mouse_opt      db 0                   ; D714h:  Setup's mouse options
 pointer_note   db 49h,0,0,0,0         ; 49h, the pointer's handle
 deny_mask      dw (TASK_OBJECT_COUNT * 2) dup(0) ; D711h:  functions disallowed
 notify_mask    dw (TASK_OBJECT_COUNT * 2) dup(0) ; D70Eh:  the notifications

@@ -75,5 +75,8 @@ int mvhost_note(unsigned task, const void *msg, unsigned len, int handle);
  * handle's segment, 0:  none */
 unsigned mvhost_clip(unsigned task, unsigned rows, unsigned cols,
                      const char __far *text);
+/* Setup's mouse for DESQview's pointers and select fields (MAXVTSR, INT
+ * 2Fh D714h):  bit 0 none, bit 1 left-handed (the buttons swapped) */
+void mvhost_mouseopt(unsigned options);
 
 #endif

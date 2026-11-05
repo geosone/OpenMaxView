@@ -288,6 +288,15 @@ void mvhost_mouse(unsigned task, unsigned pos, unsigned size, unsigned view)
     int86(0x2f, &r, &r);
 }
 
+void mvhost_mouseopt(unsigned options)
+{
+    union REGS r;
+
+    r.x.ax = 0xd714;
+    r.x.bx = options;
+    int86(0x2f, &r, &r);
+}
+
 int mvhost_note(unsigned task, const void *msg, unsigned len, int handle)
 {
     union REGS r;

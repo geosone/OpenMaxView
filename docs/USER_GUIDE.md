@@ -160,10 +160,12 @@ program has been tested.
 Run `MAXVSET` to change global preferences. Its pages are Global (the
 launcher's own options) and, as in DESQview's Advanced Setup, Auto Dialer
 (port, baud rate, dial and hang-up commands, access codes), Keyboard (Learn
-on or off), Performance (foreground and background ticks), Swapping (on or
-off, the swap directory) and Window Positions (row, column, height and width
-of windows 1-9:  where a window opens whose program has no starting window).
-G, A, K, P, S and W or PgUp/PgDn choose a page, Enter changes a field, F2
+on or off), Mouse (on or off, left-handed), Performance (foreground and
+background ticks), Swapping (on or off, the swap directory), Video (blank
+the screen after minutes without a key or the mouse; synchronized access
+for a CGA's snow) and Window Positions (row, column, height and width of
+windows 1-9:  where a window opens whose program has no starting window).
+G, A, K, M, P, S, V and W or PgUp/PgDn choose a page, Enter changes a field, F2
 saves.  MAXVIEW reads them when it starts.  Every displayed setting is used. The exact keys and defaults are documented in
 [Configuration](CONFIGURATION.md).
 

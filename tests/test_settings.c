@@ -34,7 +34,9 @@ int main(void)
         fail("defaults are incorrect");
     if (settings.fg_ticks != 6 || settings.bg_ticks != 2 ||
         !settings.swapping || settings.swap_dir[0] != '\0' ||
-        !settings.learn || settings.dial_baud != 0 ||
+        !settings.learn || settings.dial_baud != 0 || !settings.mouse ||
+        settings.left_handed || settings.blank_minutes != 0 ||
+        settings.sync_video ||
         settings.window[2][0] != 5 || settings.window[2][1] != 16 ||
         settings.window[2][2] != 15 || settings.window[2][3] != 48 ||
         settings.window[8][0] != 14 || settings.window[8][3] != 37)
@@ -61,13 +63,16 @@ int main(void)
     write_text("build/test-settings-setup.ini",
                "FOREGROUND=9\nBACKGROUND=1\nSWAPPING=no\n"
                "SWAP_DIR=D:\\SWAP\nLEARN=no\nDIAL_BAUD=4\n"
-               "window4=3, 7, 12, 40\n");
+               "window4=3, 7, 12, 40\nMOUSE=no\nLEFT_HANDED=yes\n"
+               "BLANK=5\nSYNC_VIDEO=yes\n");
     if (odq_settings_load("build/test-settings-setup.ini", &loaded, &line) !=
         ODQ_SETTINGS_OK || loaded.fg_ticks != 9 || loaded.bg_ticks != 1 ||
         loaded.swapping || strcmp(loaded.swap_dir, "D:\\SWAP") != 0 ||
         loaded.learn || loaded.dial_baud != 4 || loaded.window[3][0] != 3 ||
         loaded.window[3][1] != 7 || loaded.window[3][2] != 12 ||
-        loaded.window[3][3] != 40 || loaded.window[4][1] != 42)
+        loaded.window[3][3] != 40 || loaded.window[4][1] != 42 ||
+        loaded.mouse || !loaded.left_handed || loaded.blank_minutes != 5 ||
+        !loaded.sync_video)
         fail("Setup settings parsed incorrectly");
     write_text("build/test-settings-setup.ini", "FOREGROUND=16\n");
     if (odq_settings_load("build/test-settings-setup.ini", &loaded, &line) !=
@@ -85,6 +90,8 @@ int main(void)
     settings.swapping = 0;
     strcpy(settings.swap_dir, "C:\\TMP");
     settings.window[0][3] = 60;
+    settings.left_handed = 1;
+    settings.blank_minutes = 12;
 
     if (odq_settings_save("build/test-settings.ini", &settings) !=
         ODQ_SETTINGS_OK)

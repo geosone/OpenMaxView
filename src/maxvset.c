@@ -12,12 +12,18 @@
 
 /* the pages:  MaxView's own options, then those of DESQview's Advanced
  * Setup that MaxView has (letters as DESQview's) */
-#define PAGES 6
+#define PAGES 8
 static const char *page_names[PAGES] = {
-    "Global", "Auto Dialer", "Keyboard", "Performance", "Swapping",
-    "Window Positions"
+    "Global", "Auto Dialer", "Keyboard", "Mouse", "Performance", "Swapping",
+    "Video", "Windows"
 };
-static const char page_keys[PAGES] = { 'G', 'A', 'K', 'P', 'S', 'W' };
+static const char *page_titles[PAGES] = {
+    "Global", "Auto Dialer", "Keyboard", "Mouse", "Performance", "Swapping",
+    "Video", "Window Positions"
+};
+static const char page_keys[PAGES] = {
+    'G', 'A', 'K', 'M', 'P', 'S', 'V', 'W'
+};
 
 enum { F_BOOL, F_NUM, F_BYTE, F_TEXT };
 
@@ -53,11 +59,16 @@ static const field fixed[] = {
     { 1, 18, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->access[2]), AT(access[2]),
       "Access code 3" },
     { 2, 6, 6, F_BOOL, 0, 1, AT(learn), "Use Learn (Shift+Alt)" },
-    { 3, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
-    { 3, 9, 30, F_NUM, 1, 15, AT(bg_ticks), "Background ticks" },
-    { 4, 6, 6, F_BOOL, 0, 1, AT(swapping),
+    { 3, 6, 6, F_BOOL, 0, 1, AT(mouse), "Use a mouse" },
+    { 3, 8, 6, F_BOOL, 0, 1, AT(left_handed), "Left-handed (buttons swapped)" },
+    { 4, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
+    { 4, 9, 30, F_NUM, 1, 15, AT(bg_ticks), "Background ticks" },
+    { 5, 6, 6, F_BOOL, 0, 1, AT(swapping),
       "Swap programs out as needed" },
-    { 4, 9, 4, F_TEXT, 0, 41, AT(swap_dir), "" }     /* (40 shown) */
+    { 5, 9, 4, F_TEXT, 0, 41, AT(swap_dir), "" },    /* (40 shown) */
+    { 6, 6, 6, F_BOOL, 0, 1, AT(sync_video),
+      "Synchronized access (CGA snow)" },
+    { 6, 9, 40, F_NUM, 0, 99, AT(blank_minutes), "Blank the screen after minutes" }
 };
 
 #define FIXED (sizeof fixed / sizeof fixed[0])
@@ -75,7 +86,7 @@ static void fields_init(void)
         for (j = 0; j < 4; ++j) {
             field *f = &fields[FIXED + i * 4 + j];
 
-            f->page = 5;
+            f->page = 7;
             f->row = (unsigned char)(6 + i);
             f->col = (unsigned char)(17 + j * 8);
             f->type = F_BYTE;
@@ -144,8 +155,8 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
     mvui_shadow(2, 1, 21, 55);
     mvui_fill(2, 59, 21, 77, ' ', MVUI_QUICK);
     mvui_shadow(2, 59, 21, 77);
-    mvui_write(3, (unsigned)(28 - strlen(page_names[page]) / 2),
-               page_names[page], MVUI_DATA_HIGH);
+    mvui_write(3, (unsigned)(28 - strlen(page_titles[page]) / 2),
+               page_titles[page], MVUI_DATA_HIGH);
     switch (page) {
     case 1:
         mvui_write(7, 29, baud_names[settings->dial_baud], MVUI_DATA);
@@ -155,15 +166,23 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
         mvui_write(8, 4, "Off:  Shift+Alt does not open Learn.", MVUI_DATA);
         break;
     case 3:
+        mvui_write(11, 4, "For DESQview programs' pointers and", MVUI_DATA);
+        mvui_write(12, 4, "select fields (MAXVTSR).", MVUI_DATA);
+        break;
+    case 4:
         mvui_write(5, 4, "Time slices in clock ticks (1-15)", MVUI_DATA);
         mvui_write(12, 4, "Tune Performance changes them while", MVUI_DATA);
         mvui_write(13, 4, "MaxView runs.", MVUI_DATA);
         break;
-    case 4:
+    case 5:
         mvui_write(8, 4, "Swapping directory:", MVUI_DATA);
         mvui_write(11, 4, "Blank:  the current directory.", MVUI_DATA);
         break;
-    case 5:
+    case 6:
+        mvui_write(11, 4, "0 minutes:  never.  A key or the mouse", MVUI_DATA);
+        mvui_write(12, 4, "shows it again (the key goes on).", MVUI_DATA);
+        break;
+    case 7:
         mvui_write(5, 6, "Window     Row  Column  Height   Width", MVUI_DATA);
         for (i = 0; i < 9; ++i) {
             sprintf(text, "%u", i + 1);
@@ -194,7 +213,8 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
                      MVUI_TRIGGER);
     }
     mvui_write(4, 61, "Quick Help", MVUI_QUICK_HIGH);
-    mvui_write(6, 61, "G A K P S W Page", MVUI_QUICK);
+    mvui_write(6, 61, "G A K M P S V W", MVUI_QUICK);
+    mvui_write(5, 61, "Page:", MVUI_QUICK);
     mvui_write(7, 61, "Arrows  Select", MVUI_QUICK);
     mvui_write(8, 61, "Space   Toggle", MVUI_QUICK);
     mvui_write(9, 61, "Enter   Change", MVUI_QUICK);
@@ -408,6 +428,10 @@ static void print_settings(const odq_settings *settings)
     printf("SWAPPING=%s\n", settings->swapping ? "YES" : "NO");
     printf("SWAP_DIR=%s\n", settings->swap_dir);
     printf("LEARN=%s\n", settings->learn ? "YES" : "NO");
+    printf("MOUSE=%s\n", settings->mouse ? "YES" : "NO");
+    printf("LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
+    printf("BLANK=%u\n", settings->blank_minutes);
+    printf("SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
     for (index = 0; index < 9; ++index)
         printf("WINDOW%u=%u,%u,%u,%u\n", index + 1,
                settings->window[index][0], settings->window[index][1],

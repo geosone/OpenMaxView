@@ -178,7 +178,8 @@ basename prevents its `.NEW` and `.BAK` files from colliding with catalogue
 updates.  The current options control resident-API and ANSI-console autoload,
 exit confirmation, catalogue reload after children, memory-limit display,
 program hotkeys and the Quick Help text, and, as DESQview's Advanced Setup,
-the Auto Dialer, Learn, the time slices, swapping and the window positions.  For automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and
+the Auto Dialer, Learn, the mouse, the time slices, swapping, the screen
+blanker and the window positions.  For automation use `MAXVSET /CHECK`, `MAXVSET /LIST`, and
 optional `/F:file`.
 
 `MAXVAUTO.EXE` detects known DOS programs in the current directory and every

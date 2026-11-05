@@ -65,8 +65,9 @@ executes an unknown file; review entries before applying them.
 
 `MAXVSET` edits global preferences on pages:  Global (the launcher's own
 options), and as DESQview's Advanced Setup Auto Dialer, Keyboard (Learn),
-Performance (ticks), Swapping (on or off, the directory) and Window Positions
-(where windows 1-9 open).  The page's letter (G, A, K, P, S, W) or PgUp and
+Mouse (on, left-handed), Performance (ticks), Swapping (on or off, the
+directory), Video (screen blanker, synchronized access) and Window Positions
+(where windows 1-9 open).  The page's letter (G, A, K, M, P, S, V, W) or PgUp and
 PgDn switch pages, the arrows select a field, Space toggles, Enter changes a
 number or text, F2 saves.  It exposes only settings MaxView honours.
 

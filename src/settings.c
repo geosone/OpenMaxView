@@ -65,6 +65,7 @@ void odq_settings_defaults(odq_settings *settings)
     settings->bg_ticks = 2;
     settings->swapping = 1;
     settings->learn = 1;
+    settings->mouse = 1;
     memcpy(settings->window, default_window, sizeof settings->window);
 }
 
@@ -170,6 +171,17 @@ int odq_settings_load(const char *path, odq_settings *settings,
             destination = &parsed.swapping;
         else if (equal_text(name, "LEARN"))
             destination = &parsed.learn;
+        else if (equal_text(name, "MOUSE"))
+            destination = &parsed.mouse;
+        else if (equal_text(name, "LEFT_HANDED"))
+            destination = &parsed.left_handed;
+        else if (equal_text(name, "SYNC_VIDEO"))
+            destination = &parsed.sync_video;
+        else if (equal_text(name, "BLANK")) {
+            if (!parse_number(value, 0, 99, &parsed.blank_minutes))
+                goto syntax_error;
+            continue;
+        }
         else if (equal_text(name, "DIAL_BAUD")) {
             if (!parse_number(value, 0, 6, &parsed.dial_baud))
                 goto syntax_error;
@@ -279,6 +291,10 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     fprintf(stream, "SWAPPING=%s\n", settings->swapping ? "YES" : "NO");
     fprintf(stream, "SWAP_DIR=%s\n", settings->swap_dir);
     fprintf(stream, "LEARN=%s\n", settings->learn ? "YES" : "NO");
+    fprintf(stream, "MOUSE=%s\n", settings->mouse ? "YES" : "NO");
+    fprintf(stream, "LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
+    fprintf(stream, "BLANK=%u\n", settings->blank_minutes);
+    fprintf(stream, "SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
     for (index = 0; index < 9; ++index)
         fprintf(stream, "WINDOW%u=%u,%u,%u,%u\n", index + 1,
                 settings->window[index][0], settings->window[index][1],

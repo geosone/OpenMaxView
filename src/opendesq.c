@@ -653,6 +653,85 @@ static void apply_resident_services(const odq_settings *settings, char *status)
         if (ansi_resident())
             strcpy(status, "ANSI console service installed.");
     }
+    mvhost_mouseopt((settings->mouse ? 0 : 1) |     /* Setup's Mouse */
+                    (settings->left_handed ? 2 : 0));
+}
+
+/* Setup's screen blanker, as DESQview's (measured):  after its minutes
+ * without a key (IRQ 1) or the mouse
+ * moved, the display off (its contents kept); a key, the mouse, on again
+ * (the key goes on to the program) */
+static unsigned char blanked;
+static unsigned long blank_since;
+static unsigned blank_seen[2];
+static volatile unsigned kbd_count;     /* INT 09h:  every key (the core
+                                         * takes the front task's keys and
+                                         * runs its INT 09h:  this one) */
+static void (__interrupt __far *kbd_old)(void);
+
+static void __interrupt __far kbd_irq(void)
+{
+    ++kbd_count;
+    _chain_intr(kbd_old);
+}
+
+static void kbd_hook(int on)
+{
+    if (on && kbd_old == NULL) {
+        kbd_old = _dos_getvect(0x09);
+        _dos_setvect(0x09, kbd_irq);
+    } else if (!on && kbd_old != NULL) {
+        _dos_setvect(0x09, kbd_old);
+        kbd_old = NULL;
+    }
+}
+
+static void blank_display(int off)
+{
+    union REGS r;
+    unsigned char mode = *(unsigned char far *)MK_FP(0x40, 0x65);
+    unsigned crtc = *(unsigned far *)MK_FP(0x40, 0x63);
+
+    r.h.ah = 0x12;                      /* EGA, VGA:  the attribute
+                                         * controller's palette source bit */
+    r.h.bl = 0x10;
+    int86(0x10, &r, &r);
+    if (r.h.bl != 0x10) {
+        inp(crtc + 6);
+        outp(0x3c0, off ? 0x00 : 0x20);
+    } else                              /* CGA, MDA:  the mode register's
+                                         * video enable */
+        outp(crtc + 4, off ? mode & ~0x08 : mode);
+    blanked = (unsigned char)off;
+}
+
+static void blank_poll(void)
+{
+    unsigned long now = *(unsigned long far *)MK_FP(0x40, 0x6c);
+    unsigned seen[2];
+    unsigned long far *vec = (unsigned long far *)MK_FP(0, 0x33 * 4);
+
+    if (mv_settings->blank_minutes == 0 && !blanked)
+        return;
+    seen[0] = kbd_count;
+    seen[1] = 0;
+    if (*vec != 0 && *(unsigned char far *)*vec != 0xcf &&  /* (not IRET) */
+        mv_settings->mouse) {
+        union REGS r;
+
+        r.x.ax = 3;
+        r.x.bx = r.x.cx = r.x.dx = 0;
+        int86(0x33, &r, &r);
+        seen[1] = r.x.cx ^ r.x.dx << 3 ^ r.x.bx;
+    }
+    if (memcmp(seen, blank_seen, sizeof seen) != 0 || now < blank_since) {
+        memcpy(blank_seen, seen, sizeof seen);
+        blank_since = now;
+        if (blanked)
+            blank_display(0);
+    } else if (!blanked && mv_settings->blank_minutes != 0 &&
+               now - blank_since >= mv_settings->blank_minutes * 1092UL)
+        blank_display(1);
 }
 
 static void reload_catalog_after_child(odq_catalog *catalog,
@@ -961,6 +1040,7 @@ static int poll_tasks(char *status)
 static int wait_key(char *status)
 {
     while (!kbhit()) {
+        blank_poll();
         if (!mv_on)
             continue;
         if (poll_tasks(status))
@@ -2155,6 +2235,35 @@ static void mouse_tell(unsigned t, unsigned pos, unsigned size,
     }
 }
 
+/* the composed screen to the display; Setup's synchronized access (CGA:
+ * no snow):  only the changed cells, each in a horizontal retrace */
+static unsigned short __far sync_shadow[SCREEN_ROWS * SCREEN_COLS];
+static unsigned char sync_valid;
+
+static void video_out(void)
+{
+    unsigned i, n = desk_rows * desk_cols;
+
+    if (!mv_settings->sync_video || n > SCREEN_ROWS * SCREEN_COLS ||
+        FP_SEG(video) != 0xb800) {
+        _fmemcpy(video, scr, n * sizeof scr[0]);
+        sync_valid = 0;
+        return;
+    }
+    for (i = 0; i < n; ++i)
+        if (!sync_valid || sync_shadow[i] != scr[i]) {
+            _disable();
+            while (inp(0x3da) & 1)
+                ;
+            while (!(inp(0x3da) & 1))
+                ;
+            video[i] = scr[i];
+            _enable();
+            sync_shadow[i] = scr[i];
+        }
+    sync_valid = 1;
+}
+
 static void compose(int mode)
 {
     unsigned i, r, c, t, cur, vrow, vtop, hoff, gpos, gsize;
@@ -2323,7 +2432,7 @@ static void compose(int mode)
     }
     if (!mouse)                         /* MAXVIEW's menu:  no window's */
         mouse_tell(0, 0, 0, 0);
-    _fmemcpy(video, scr, desk_rows * desk_cols * sizeof scr[0]);
+    video_out();
     set_cursor(crow, ccol, cursor);
 }
 
@@ -2939,6 +3048,8 @@ static int windows_view(odq_catalog *catalog, char *status)
             menu = DV_LEARN;
             fresh = 1;
         }
+        if (focus != last_focus)
+            sync_valid = 0;             /* (the screen a program's) */
         last_focus = focus;
         sel = dv_sel;
         dv_build(menu, catalog);
@@ -2969,6 +3080,7 @@ static int windows_view(odq_catalog *catalog, char *status)
             compose(mode);
             last = now;
         }
+        blank_poll();
         if (focus != 0 || !kbhit()) {
             mvk_yield();
             continue;
@@ -3810,6 +3922,9 @@ int main(void)
 
     apply_resident_services(&settings, status);
     mt_open();
+    kbd_hook(1);                        /* (before the core:  the vector
+                                         * every task starts with, not
+                                         * one's own IRQ) */
     start_multitasking(status);
     if (mv_on)
         scripts_load();                 /* (Learn's scripts saved before) */
@@ -3903,6 +4018,10 @@ int main(void)
     }
     if (mv_on)
         stop_multitasking();
+    kbd_hook(0);
+    if (blanked)
+        blank_display(0);
+    mvhost_mouseopt(0);
     prepare_child_screen();
     return 0;
 }

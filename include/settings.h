@@ -26,6 +26,12 @@ typedef struct odq_settings {
     char swap_dir[64];
     unsigned learn;
     unsigned char window[9][4];
+    /* Mouse:  used, left-handed; Video:  blank the screen after minutes
+     * (0:  never), synchronized access (CGA) */
+    unsigned mouse;
+    unsigned left_handed;
+    unsigned blank_minutes;
+    unsigned sync_video;
 } odq_settings;
 
 enum odq_settings_result {
