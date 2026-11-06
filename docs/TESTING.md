@@ -114,6 +114,7 @@ DESQview test:
 | `netbios` | As `ipx` with Novell's NETBIOS.EXE (over IPX) loaded before MAXVTSR:  NBPRB R adds a name and keeps a no-wait RECEIVE BROADCAST DATAGRAM with a POST routine behind TICK, the other VM's NBPRB S sends 30 broadcast datagrams:  all 30 arrive, each POST in the program's own task (the 31st the cancelled receive's), TICK runs on.  Without MAXVTSR's NETBIOS shadows (loaded after it) only 8 of 27 POSTs reached the receiver |
 | `spx` | As `ipx` with SPX (IPXODI's):  SPXPRB R posts four LISTEN FOR SEQUENCED PACKET with an ESR and a LISTEN FOR CONNECTION behind TICK, the other VM's SPXPRB S establishes a connection, sends 30 sequenced packets and terminates it:  the connection is there, all 30 arrive in order, each ESR in the program's own task, the termination is seen and acknowledged, TICK runs on |
 | `tcpip` | One VM with Novell Client32 (local only:  `C32DIR`, default `build/c32`, `bin/` NIOS and its NLMs, `x/` the unpacked kit; skipped without them), its TCPIP.NLM on the NE2000 (Ethernet_II) and QEMU's user network:  PING to the gateway (20, one a second) in a window behind TICK:  TCP/IP bound, all 20 answered, TICK runs on |
+| `rtc` | RTCPRB hooks IRQ8 (the clock's periodic interrupt, 64 a second) in a window, TICK comes in front:  40 seconds counted, the last 30 at 3/4 of the rate at least (behind the busy window), TICK runs on.  Before IRQ8-15 calldowns:  774 in 40 s (only while in front); DESQview 2.80:  none (`dvcompare.sh rtc`) |
 | `mvlaunch` | `APP_START` in `MAXVIEW`:  demos/LAUNCH starts WORMS, a window of its own in Switch Windows next to the Launcher's |
 | `memstat` | Memory Status (MAXVMEM) in a MAXVIEW window:  DESQview's rows (Common, Conventional, Expanded Memory; total, available, largest); what new windows can get is less with a DOS window open |
 | `dossvc` | DOS Services (MAXVFILE) in C:\FT:  the list with size, date and time; Mark by Name `*.TXT` (2), Only Marked; Copy and Append of the marked files; Type shows the text; Move (Overwrite asked), Erase, Sort by extension, More's Make Directory; the files checked with DIR afterwards |
@@ -166,8 +167,8 @@ DESQview test:
 | `many` | 16 task slots (`MVRUN /N16 @list`):  15 TICK tasks count side by side, a 16th finds the table full |
 | `progs` | Open386MAX's regression tests (XMS, EMS, VCPI, VDS, DPMI, ...) each in a task, compared with plain DOS |
 
-`tests/qemu/dvcompare.sh` runs the scenarios `two`, `dvapi`, `cwd`, `ems`
-and `gfx` in two windows of real DESQview 2.80 on Open 386MAX (a local
+`tests/qemu/dvcompare.sh` runs the scenarios `two`, `dvapi`, `cwd`, `ems`,
+`gfx` and `rtc` in two windows of real DESQview 2.80 on Open 386MAX (a local
 image, `DVIMG`, default `~/mars/scratch-386max/dvbbs.img`; DESQview is not
 free software and stays out of the repository) and in MaxView tasks, and
 prints the measurements side by side.  MaxView must do at least what
@@ -178,7 +179,9 @@ it favours the foreground; the core now gives the task with the keys
 three times the slice, MVRUN /Tf,b, and comes to x4.6); its DOS window cannot show its menu over a VGA graphics
 program (on QEMM 97 it can:  GFXPROBE behind a second window is held there
 the whole time and draws again when back, as in MaxView); and an Open 386MAX bug (IRQs on vector 68h swallowed in PL0,
-DESQview hung on EMS 47h/48h), fixed there.  Opening DOS windows (128K) until
+DESQview hung on EMS 47h/48h), fixed there.  A window's hooked IRQ8 (RTCPRB) got
+nothing under DESQview, in front or not; MaxView now gives IRQ8-15 to the
+window that hooked it, as IRQ0-7.  Opening DOS windows (128K) until
 DESQview refused ("Not enough DESQview common memory", its default
 setup) gave 13 windows on Open 386MAX and 14 on QEMM 97:  MaxView has
 16 task slots in MAXVIEW.EXE (up to 30, `mvk_datasize`).  LEAKPRB in DESQview windows showed

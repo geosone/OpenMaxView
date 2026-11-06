@@ -248,6 +248,12 @@ $(BUILD)/spxprb.obj: tests/spxprb.asm | $(BUILD)
 $(BUILD)/SPXPRB.COM: $(BUILD)/spxprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name SPXPRB.COM option quiet option map=SPXPRB.MAP file spxprb.obj
 
+$(BUILD)/rtcprb.obj: tests/rtcprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/RTCPRB.COM: $(BUILD)/rtcprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name RTCPRB.COM option quiet option map=RTCPRB.MAP file rtcprb.obj
+
 $(BUILD)/MVTEST.PLB: tests/panels/mkplb.py | $(BUILD)
 	python3 $< $@
 

@@ -4,7 +4,7 @@
 # linux/test/desqview.sh runs it) and in MaxView tasks; the measurements
 # side by side.  MaxView must do at least what DESQview does.
 #
-#   tests/qemu/dvcompare.sh [two|dvapi|cwd|ems|gfx] [...]   (default: all)
+#   tests/qemu/dvcompare.sh [two|dvapi|cwd|ems|gfx|rtc] [...]   (default: all)
 #
 #   two    TICK in the background, TICK in the foreground:  lines each
 #          (a line a second while it runs)
@@ -14,6 +14,8 @@
 #   ems    EMSPROBE A and B:  each window keeps its EMS pages
 #   gfx    GFXPROBE (VGA 13h) in window 1, KEYPROBE in window 2, back to
 #          window 1:  the screens, the graphics task in the background
+#   rtc    RTCPRB (IRQ8 hooked, 64 a second) in window 1, TICK in window 2:
+#          the IRQ8s counted after 10 s and after 40 s
 #
 # DESQview is not free software:  its image stays local (DVIMG, default
 # ~/mars/scratch-386max/dvbbs.img, the one of desqview.sh).  MAXROOT as in
@@ -27,12 +29,12 @@ MVOUT=$ROOT/build/test-qemu
 DVIMG=${DVIMG:-$HOME/mars/scratch-386max/dvbbs.img}
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two dvapi cwd ems gfx}
+CASES=${*:-two dvapi cwd ems gfx rtc}
 
 [ -s "$DVIMG" ] || { echo "no DESQview image $DVIMG (DVIMG=)"; exit 2; }
 [ -s "$TICK" ] || { echo "no $TICK (make -C $MAXROOT TESTS)"; exit 2; }
 make -s -C "$ROOT" build/DVTASK.COM build/CWDPROBE.COM build/EMSPROBE.COM \
-    build/GFXPROBE.COM build/KEYPROBE.COM build/MAXVTSR.COM || exit 2
+    build/GFXPROBE.COM build/KEYPROBE.COM build/RTCPRB.COM build/MAXVTSR.COM || exit 2
 mkdir -p "$OUT"
 B=$ROOT/build
 
@@ -75,6 +77,8 @@ ems)
     dvrun ems "$READY $(open b,d Version_6.22) type:C:\\EMSPROBE_C:\\E1.TXT_A sleep:2 $(open b,d Version_6.22) type:C:\\EMSPROBE_C:\\E2.TXT_B sleep:30 text:run" "$B/EMSPROBE.COM" & ;;
 gfx)
     dvrun gfx "$READY $(open d,1 _1__DOS) type:C:\\GFXPROBE_C:\\G1.TXT sleep:6 shot:gfx1 $(open d,1 _2__DOS) type:C:\\KEYPROBE_C:\\K2.TXT_D wait:keyprobe_D_ready:30 text:fg2 sleep:6 key:alt sleep:2 key:s sleep:2 key:1 sleep:4 shot:gfx3 key:dot sleep:4 text:run" "$B/GFXPROBE.COM $B/KEYPROBE.COM" & ;;
+rtc)
+    dvrun rtc "$READY $(open d,1 _1__DOS) type:C:\\RTCPRB_C:\\R.TXT_40 wait:rtcprb_ready:30 sleep:2 $(open d,1 _2__DOS) type:C:\\TICK_C:\\T.TXT sleep:50 text:run" "$B/RTCPRB.COM $TICK" & ;;
 *)  echo "unknown case $c"; exit 2 ;;
 esac
 done
@@ -130,6 +134,9 @@ gfx)
     row "gfx:  text window after it" "$dk" "$mk"
     row "gfx:  graphics back (green %)" "$(green $OUT/gfx/boot/gfx3.png)" "$(green $MVOUT/gfx/gfx3.png)"
     row "gfx:  GFXPROBE" "$(dvfile gfx G1.TXT)" "$(mvfile gfx G1.TXT)" ;;
+rtc)
+    rt() { awk '$1 == "rtc" {n++} n == 10 && $1 == "rtc" {a = $2} $1 == "end" {z = $2} END {print a " / " z}'; }
+    row "rtc:  IRQ8s after 10 s / 40 s (bg)" "$(dvfile rtc R.TXT | rt)" "$(mvfile rtc R.TXT | rt)" ;;
 esac
 done
 echo "  MaxView checks (mvtest.sh):  $mvres"

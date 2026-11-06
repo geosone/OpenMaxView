@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx ipx7a netbios spx tcpip mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx ipx7a netbios spx tcpip rtc mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/NBPRB.COM build/SPXPRB.COM build/MVTEST.PLB || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/NBPRB.COM build/SPXPRB.COM build/RTCPRB.COM build/MVTEST.PLB || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -554,6 +554,24 @@ tcpip)
     check "behind the busy window:  all 20 pings answered" "echo '$p' | grep -q '^20 packets sent, 20 responses received'"
     check "the busy window ran on, the menu answers" "[ \"\$(last tcpip T.TXT tick)\" -gt 20 ] && grep -q 'Switch Windows' '$d/menu.txt'"
     check "DOS works afterwards" "grep -q '^tcpip end' '$d/end.txt'"
+    ;;
+rtc)
+    echo "== rtc:  a slave PIC IRQ (IRQ8, the clock's periodic interrupt, 64 a second) to the task that hooked it, behind a busy one"
+    d=$OUT/rtc; rm -rf "$d"; mkdir -p "$d"
+    printf 'R|Clock|C:\\RTCPRB.COM C:\\R.TXT 40||64|640\r\nT|Busy|C:\\TICK.EXE C:\\T.TXT||64|640\r\n' > "$OUT/MAXVIEW.CFG"
+    M="key:alt wait:Switch_Windows:20"
+    KEEP=1 ACCEL="-accel tcg" XFILES="$ROOT/build/RTCPRB.COM $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $OUT/MAXVIEW.CFG $TICK" \
+        AUTO="@ECHO OFF|C:\\MAXVIEW" \
+        STEPS="wait:Open_Program:120 key:ret wait:rtcprb_ready:30 sleep:2 $M key:o wait:Change_a_Program:20 key:t sleep:50 $M sleep:2 text:menu key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_rtc_end wait:rtc_end:30 text:end" \
+        TESTDIR="$d" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/rtc.log" 2>&1
+    r=$(file rtc R.TXT)
+    a=$(echo "$r" | awk '$1 == "rtc" {n++} n == 10 && $1 == "rtc" {print $2}')
+    z=$(echo "$r" | awk '$1 == "end" {print $2}')
+    echo "  IRQ8s:  ${a:-?} after 10 s, ${z:-?} after 40 s"
+    check "40 seconds counted" "[ \$(echo '$r' | grep -c '^rtc ') -eq 40 ] && [ -n '$z' ]"
+    check "behind the busy window:  IRQ8 kept coming (the last 30 s at least 3/4 of 64 a second)" "[ \$(( ${z:-0} - ${a:-0} )) -ge 1440 ]"
+    check "the busy window ran on, the menu answers" "[ \"\$(last rtc T.TXT tick)\" -gt 20 ] && grep -q 'Switch Windows' '$d/menu.txt'"
+    check "DOS works afterwards" "grep -q '^rtc end' '$d/end.txt'"
     ;;
 mvlaunch)
     echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"

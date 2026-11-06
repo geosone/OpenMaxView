@@ -151,6 +151,7 @@ TASK    ends
 ; all tasks; mvk_datasize, mvk_init); the IRQ handlers find it by CS:KSEG
 MVKDATA segment para at 0
 cdtab   dd      8 dup (?)       ; IRQ0-7 calldown table (QPI copies it)
+cdtab2  dd      8 dup (?)       ; IRQ8-15 (1C03h)
 kstk    db      KSTACK dup (?)
 kstktop label   word
 istk    db      ISTACK dup (?)
@@ -217,13 +218,14 @@ free_typ db     0               ; its MCB type ('M' or 'Z')
 root_pt  dw     0
 ntasks   dw     0
 cur      dw     0
-irqown   dw     8 dup (0)       ; IRQ0-7:  the TASK (offset) that hooked its
+irqown   dw     16 dup (0)      ; IRQ0-15:  the TASK (offset) that hooked its
                                 ; vector last (0:  none), as under DESQview
                                 ; the window that hooked an IRQ last gets it
 scur     dw     0               ; whose screen cur has (its parent's for a
                                 ; subtask)
 running  dw     0
 crtok    db     0               ; QPI 0Eh took our cursor callbacks
+slvok    db     0               ; QPI 1C03h took our IRQ8-15 calldowns
 crtmode  db     0               ; QPI 0Dh now:  0 off, 1 mono, 2 colour
 dvst_ptr dd     0               ; MAXVTSR's per-task state block
 dvst_size dw    0               ;   (0:  none)
@@ -848,7 +850,7 @@ task_free proc near
         jne     tf_irq
         mov     cs:irqown[si],0
 tf_irq: add     si,2
-        cmp     si,16
+        cmp     si,32
         jb      @B
         cmp     [di].T_PARENT,0 ; a subtask:  nothing of its own
         je      @F
@@ -945,7 +947,7 @@ save_ivtsda proc near
         ret
 save_ivtsda endp
 
-; The IRQ1-7 vectors the TASK at DI (DS = DGROUP, its IVT the one in
+; The IRQ1-15 vectors the TASK at DI (DS = DGROUP, its IVT the one in
 ; memory) has hooked since its IVT was loaded:  it owns those IRQs now
 ; (irqown)
 irqhook proc near
@@ -961,18 +963,35 @@ ih_vec: mov     eax,es:[bx]
         cmp     eax,origivt[bx]
         je      ih_next
         push    bx
-        shr     bx,1            ; ((vector - 8) * 2)
-        mov     cs:irqown[bx-16],di
+        push    si
+        mov     si,bx
+        call    irqslot
+        mov     cs:irqown[bx],di
+        pop     si
         pop     bx
 ih_next:
         add     bx,4
         cmp     bx,10h*4
+        jne     @F
+        mov     bx,70h*4        ; IRQ8-15
+@@:     cmp     bx,78h*4
         jb      ih_vec
         pop     es
         pop     bx
         pop     eax
         ret
 irqhook endp
+
+; BX = the irqown slot ((IRQ) * 2) of the vector SI / 4 (08h-0Fh, 70h-77h)
+irqslot proc near
+        mov     bx,si
+        shr     bx,1
+        sub     bx,8*2          ; IRQ0-7
+        cmp     bx,16
+        jb      @F
+        sub     bx,(70h-8-8)*2  ; IRQ8-15
+@@:     ret
+irqslot endp
 
 ; IVT, SDA, key buffer and cursor data from the TASK at DI (DS = DGROUP;
 ; its context active)
@@ -3051,11 +3070,35 @@ es_ret: pop     es
         ret
 escroll endp
 
-; IRQ1-7:  to the task that hooked the vector (its IVT entry differs from
-; the one at mvk_start) last, as DESQview 2.80 gives an IRQ to the window
-; that hooked it last, in front or not (irqown; the current task when it
-; hooked it while running); else the current task first; none:  the
-; current IVT
+; IRQ1-15:  to the task that hooked the vector (its IVT entry differs
+; from the one at mvk_start) last, as DESQview 2.80 gives an IRQ to the
+; window that hooked it last, in front or not (irqown; the current task
+; when it hooked it while running); else the current task first; none:
+; the current IVT.  (IRQ8-15:  DESQview 2.80 gives a window none.)
+irq8:   push    ax
+        mov     al,70h
+        jmp     irqdisp
+irq9:   push    ax
+        mov     al,71h
+        jmp     irqdisp
+irq10:  push    ax
+        mov     al,72h
+        jmp     irqdisp
+irq11:  push    ax
+        mov     al,73h
+        jmp     irqdisp
+irq12:  push    ax
+        mov     al,74h
+        jmp     irqdisp
+irq13:  push    ax
+        mov     al,75h
+        jmp     irqdisp
+irq14:  push    ax
+        mov     al,76h
+        jmp     irqdisp
+irq15:  push    ax
+        mov     al,77h
+        jmp     irqdisp
 irq1:   push    ax
         mov     al,09h
         jmp     short irqdisp
@@ -3105,9 +3148,8 @@ irqdisp:
         cmp     eax,origivt[si]
         jne     irqd_here       ; the current one, while running
 @@:     mov     dx,bx
-        mov     bx,si
-        shr     bx,1
-        mov     di,cs:irqown[bx-16]
+        call    irqslot
+        mov     di,cs:irqown[bx]
         or      di,di
         jz      irqd_cur
         cmp     di,dx
@@ -3381,11 +3423,15 @@ start_k proc near
         pop     si
         pop     es
         pop     ds
-        mov     cs:irqown,0
-        mov     word ptr cs:irqown+2,0
-        mov     dword ptr cs:irqown+4,0
-        mov     dword ptr cs:irqown+8,0
-        mov     dword ptr cs:irqown+12,0
+        push    di
+        push    cx
+        xor     di,di
+        mov     cx,16
+@@:     mov     cs:irqown[di],0
+        add     di,2
+        loop    @B
+        pop     cx
+        pop     di
         call    hook_install
         ; calldown table
         mov     word ptr cdtab,offset irq0
@@ -3409,7 +3455,29 @@ start_k proc near
         qpi
         pop     es
         jc      st_irqbad
-        mov     cs:running,1
+        mov     word ptr cdtab2,offset irq8 ; IRQ8-15 too (an older QPI
+        mov     word ptr cdtab2+4,offset irq9 ; without 1C03h:  the
+        mov     word ptr cdtab2+8,offset irq10 ; current task's IVT)
+        mov     word ptr cdtab2+12,offset irq11
+        mov     word ptr cdtab2+16,offset irq12
+        mov     word ptr cdtab2+20,offset irq13
+        mov     word ptr cdtab2+24,offset irq14
+        mov     word ptr cdtab2+28,offset irq15
+        mov     cx,8
+        mov     di,offset cdtab2+2
+@@:     mov     [di],cs
+        add     di,4
+        loop    @B
+        push    es
+        push    ds
+        pop     es
+        mov     di,offset cdtab2
+        mov     ax,1C03h
+        qpi
+        pop     es
+        jc      @F
+        mov     cs:slvok,1
+@@:     mov     cs:running,1
         dbg     'S'
         sti
         push    bx              ; MAXVTSR:  READ may wait now
@@ -3483,7 +3551,12 @@ stop_k proc near
         mov     dx,0FFFFh
         call    fgtell
         pop     dx
-        mov     ax,1C00h
+        cmp     cs:slvok,0
+        je      @F
+        mov     ax,1C02h
+        qpi
+        mov     cs:slvok,0
+@@:     mov     ax,1C00h
         qpi
         xor     ax,ax
         mov     es,ax
@@ -3848,7 +3921,7 @@ mvk_swapcheck_ proc near
 @@:     cmp     cs:irqown[si],bx
         je      swc_ret
         add     si,2
-        cmp     si,16
+        cmp     si,32
         jb      @B
         push    bx              ; a subtask of its own
         xor     si,si
