@@ -71,6 +71,7 @@ void odq_settings_defaults(odq_settings *settings)
     settings->swapping = 1;
     settings->learn = 1;
     strcpy(settings->learn_quote, "`");
+    settings->shift_states = 1;
     settings->mouse = 1;
     memcpy(settings->window, default_window, sizeof settings->window);
     memcpy(settings->color, default_color, sizeof settings->color);
@@ -194,6 +195,8 @@ int odq_settings_load(const char *path, odq_settings *settings,
             destination = &parsed.quick_help;
         else if (equal_text(name, "SWAPPING"))
             destination = &parsed.swapping;
+        else if (equal_text(name, "SHIFT_STATES"))
+            destination = &parsed.shift_states;
         else if (equal_text(name, "LEARN_QUOTE"))
             text = parsed.learn_quote, text_size = sizeof parsed.learn_quote;
         else if (equal_text(name, "LEARN"))
@@ -332,6 +335,8 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     fprintf(stream, "SWAP_DIR=%s\n", settings->swap_dir);
     fprintf(stream, "LEARN=%s\n", settings->learn ? "YES" : "NO");
     fprintf(stream, "LEARN_QUOTE=%s\n", settings->learn_quote);
+    fprintf(stream, "SHIFT_STATES=%s\n",
+            settings->shift_states ? "YES" : "NO");
     fprintf(stream, "MOUSE=%s\n", settings->mouse ? "YES" : "NO");
     fprintf(stream, "LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     fprintf(stream, "BLANK=%u\n", settings->blank_minutes);

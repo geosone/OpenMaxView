@@ -204,6 +204,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_tune_
         public  mvk_prncont_
         public  mvk_quote_
+        public  mvk_shiftsep_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -257,6 +258,13 @@ skeys    dw     16 dup (0)
 ; script key (kqpend)
 kquote   db     0
 kqpend   db     0
+; Setup's separate shift states (kshsep):  the lock bits of 40:17h
+; (Insert, Caps, Num, Scroll Lock) of each task (kshf), the task whose
+; are live (kshlast), a new task's (kshinit:  as at mvk_shiftsep)
+kshsep   db     0
+kshinit  db     0
+kshlast  dw     0
+kshf     db     MAXTASK dup (0)
 krec     dw     0               ; recording
 kev_in   dw     0               ; the event ring
 kev_out  dw     0
@@ -3284,6 +3292,7 @@ irqk_fg:
         ; to the foreground task:  its INT 09h with its key buffer
         xor     ax,ax
         mov     es,ax
+        call    kshift
         mov     bx,cs:kfocus
         cmp     bx,cs:cur
         jne     irqk_other
@@ -3313,6 +3322,32 @@ irqk_other:
         pop     bx
         call    kbdload
         jmp     irqd_ret
+
+; separate shift states (kshsep):  the keys went to another task since the
+; last key:  its lock bits into 40:17h, the other's kept (ES = 0)
+kshift  proc near
+        cmp     cs:kshsep,0
+        je      ksh_ret
+        push    ax
+        push    bx
+        mov     bx,cs:kshlast
+        cmp     bx,cs:kfocus
+        je      ksh_same
+        mov     al,es:[417h]
+        and     al,0F0h
+        mov     cs:kshf[bx],al
+        mov     bx,cs:kfocus
+        mov     cs:kshlast,bx
+        mov     al,es:[417h]
+        and     al,0Fh
+        or      al,cs:kshf[bx]
+        mov     es:[417h],al
+ksh_same:
+        pop     bx
+        pop     ax
+ksh_ret:
+        ret
+kshift  endp
 
 ; event AL (type) with the key CX into the ring for task 0 (full:  lost)
 kevput  proc near
@@ -4378,7 +4413,15 @@ mvk_create_ proc near           ; prog, tail:  copied into the kernel data
         mov     ax,offset cprog
         mov     dx,offset ctail
         call    create_k
-        pop     ds
+        cmp     ax,MAXTASK      ; a task:  the shift states of a new one
+        jae     @F
+        push    bx
+        mov     bx,ax
+        mov     al,cs:kshinit
+        mov     cs:kshf[bx],al
+        mov     ax,bx
+        pop     bx
+@@:     pop     ds
         ret
 mvk_create_ endp
 
@@ -4402,6 +4445,30 @@ mvk_tune_ proc near
         mov     cs:fgquant,ax
 @@:     ret
 mvk_tune_ endp
+
+; void mvk_shiftsep(unsigned on):  separate shift states (kshift); the
+; ones now every task's and a new one's
+mvk_shiftsep_ proc near
+        push    bx
+        push    cx
+        push    es
+        mov     cs:kshsep,al
+        xor     bx,bx
+        mov     es,bx
+        mov     al,es:[417h]
+        and     al,0F0h
+        mov     cs:kshinit,al
+        mov     cx,MAXTASK
+@@:     mov     cs:kshf[bx],al
+        inc     bx
+        loop    @B
+        mov     ax,cs:kfocus
+        mov     cs:kshlast,ax
+        pop     es
+        pop     cx
+        pop     bx
+        ret
+mvk_shiftsep_ endp
 
 ; void mvk_quote(unsigned c):  Learn's quoting character (0:  none)
 mvk_quote_ proc near

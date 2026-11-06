@@ -25,7 +25,8 @@ typedef struct odq_settings {
     unsigned swapping;
     char swap_dir[64];
     unsigned learn;
-    char learn_quote[2];        /* Learn's quoting character (blank:  none) */
+    char learn_quote[2];
+    unsigned shift_states;      /* separate shift states for each window */        /* Learn's quoting character (blank:  none) */
     unsigned char window[9][4];
     /* Mouse:  used, left-handed; Video:  blank the screen after minutes
      * (0:  never), synchronized access (CGA) */

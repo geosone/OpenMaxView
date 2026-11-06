@@ -70,6 +70,9 @@ void mvk_prncont(unsigned on);
 /* Learn's quoting character c (0:  none):  the task with the keys does
  * not get it, its next key is not a script key (twice:  the character). */
 void mvk_quote(unsigned c);
+/* on:  each task its own Caps, Num, Scroll Lock and Insert (DESQview's
+ * separate shift states); a new task starts with those of now. */
+void mvk_shiftsep(unsigned on);
 /* The keys to task (0 or ready), the display unchanged (windows drawn by
  * task 0).  0 or MVE_x. */
 int mvk_focus(unsigned task);

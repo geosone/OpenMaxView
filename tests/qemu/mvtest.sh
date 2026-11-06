@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -788,6 +788,25 @@ lquote)
     check "\` F6:  F6 to DOS (^Z), the script not played" "grep -q '\\^Z' '$d/q1.txt' && [ \"$(file lquote L.TXT | grep -c '^learned')\" = 1 ]"
     check "a\`\`b\`c typed:  a\`bc" "[ '$l' = 'learned|a\`bc|' ]"
     check "DOS works afterwards" "grep -q '^lquote end' '$d/end.txt'"
+    ;;
+shift)
+    echo "== shift:  Setup's separate shift states:  Caps Lock on in window 1 stays its own (as DESQview 2.80, measured:  window 1 AA, window 2 aa; N:  AA, AA)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|ProbeA|C:\\KEYPROBE.COM C:\\K1.TXT B||64|640\r\nB|ProbeB|C:\\KEYPROBE.COM C:\\K2.TXT B||64|640\r\n' > "$cfg"
+    printf "SHIFT_STATES=${SHIFTSEP:-YES}\r\n" > "$OUT/MAXVSET.INI"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:7311:30" run shift 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg $OUT/MAXVSET.INI" \
+        "wait:Open_Program:60 key:ret wait:keyprobe_B_ready:20 key:caps_lock sleep:1 key:a sleep:1 $M key:o wait:Change_a_Program:20 key:b sleep:4 key:a sleep:1 $M key:s sleep:2 key:1 sleep:2 key:a sleep:1 key:dot wait:ProbeA_ended:20 sleep:2 key:esc sleep:2 text:w2 key:a sleep:1 key:dot wait:ProbeB_ended:20 key:esc wait:Exit_to_DOS:10 key:y sleep:3 type:echo_7311"
+    d=$OUT/shift
+    k1=$(file shift K1.TXT); k2=$(file shift K2.TXT)
+    echo "  K1 $k1, K2 $k2"
+    if [ "${SHIFTSEP:-YES}" = YES ]; then
+        check "window 1 Caps Lock (AA), window 2 its own (aa)" "[ '$k1' = AA ] && [ '$k2' = aa ]"
+    else
+        check "one Caps Lock for both (AA, AA)" "[ '$k1' = AA ] && [ '$k2' = AA ]"
+    fi
+    check "DOS works afterwards" "grep -q '^7311' '$d/end.txt'"
     ;;
 lpause)
     echo "== lpause:  Learn's Fixed-Size Pause, Variable Pause and Time Delay"
