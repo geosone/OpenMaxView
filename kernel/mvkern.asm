@@ -203,6 +203,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_datasize_
         public  mvk_tune_
         public  mvk_prncont_
+        public  mvk_quote_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -252,6 +253,10 @@ dvkey    dw     0               ; Alt alone:  task 0
 KEVN     equ    64
 nskeys   dw     0               ; script keys
 skeys    dw     16 dup (0)
+; Learn's quoting character (0 none):  swallowed, the next key not a
+; script key (kqpend)
+kquote   db     0
+kqpend   db     0
 krec     dw     0               ; recording
 kev_in   dw     0               ; the event ring
 kev_out  dw     0
@@ -3335,6 +3340,8 @@ keytap  proc near
         je      ktp_ret
         cmp     cs:nskeys,0
         jne     @F
+        cmp     cs:kquote,0
+        jne     @F
         cmp     cs:krec,0
         je      ktp_ret
 @@:     cmp     cx,1Eh
@@ -3357,6 +3364,17 @@ kt_next:
         cmp     si,3Eh
         jb      @F
         mov     si,1Eh
+@@:     cmp     cs:kqpend,0     ; quoted:  as it is
+        je      @F
+        mov     cs:kqpend,0
+        jmp     kt_keep
+@@:     mov     al,cs:kquote    ; the quoting character:  swallowed
+        or      al,al
+        jz      @F
+        cmp     cl,al
+        jne     @F
+        mov     cs:kqpend,1
+        jmp     kt_next
 @@:     xor     bx,bx
 kt_s:   cmp     bx,cs:nskeys
         jae     kt_keep
@@ -4384,6 +4402,13 @@ mvk_tune_ proc near
         mov     cs:fgquant,ax
 @@:     ret
 mvk_tune_ endp
+
+; void mvk_quote(unsigned c):  Learn's quoting character (0:  none)
+mvk_quote_ proc near
+        mov     cs:kquote,al
+        mov     cs:kqpend,0
+        ret
+mvk_quote_ endp
 
 ; void mvk_prncont(unsigned on):  Setup's printer contention (int17)
 mvk_prncont_ proc near

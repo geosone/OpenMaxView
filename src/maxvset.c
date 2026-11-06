@@ -60,6 +60,8 @@ static const field fixed[] = {
       "Access code 3" },
     { 2, 5, 6, F_BOOL, 0, 1, AT(colors), "Programs in their window's colours" },
     { 3, 6, 6, F_BOOL, 0, 1, AT(learn), "Use Learn (Shift+Alt)" },
+    { 3, 10, 30, F_TEXT, 0, sizeof(((odq_settings *)0)->learn_quote),
+      AT(learn_quote), "Quoting character" },
     { 4, 6, 6, F_BOOL, 0, 1, AT(mouse), "Use a mouse" },
     { 4, 8, 6, F_BOOL, 0, 1, AT(left_handed), "Left-handed (buttons swapped)" },
     { 5, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
@@ -192,6 +194,9 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
         break;
     case 3:
         mvui_write(8, 4, "Off:  Shift+Alt does not open Learn.", MVUI_DATA);
+        mvui_write(12, 4, "Typed before a key:  the key goes to", MVUI_DATA);
+        mvui_write(13, 4, "the program, not to its script; twice:", MVUI_DATA);
+        mvui_write(14, 4, "the character itself.  Blank:  none.", MVUI_DATA);
         break;
     case 4:
         mvui_write(11, 4, "For DESQview programs' pointers and", MVUI_DATA);
@@ -458,6 +463,7 @@ static void print_settings(const odq_settings *settings)
     printf("SWAPPING=%s\n", settings->swapping ? "YES" : "NO");
     printf("SWAP_DIR=%s\n", settings->swap_dir);
     printf("LEARN=%s\n", settings->learn ? "YES" : "NO");
+    printf("LEARN_QUOTE=%s\n", settings->learn_quote);
     printf("MOUSE=%s\n", settings->mouse ? "YES" : "NO");
     printf("LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     printf("BLANK=%u\n", settings->blank_minutes);

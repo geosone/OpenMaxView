@@ -65,7 +65,7 @@ executes an unknown file; review entries before applying them.
 
 `MAXVSET` edits global preferences on pages:  Global (the launcher's own
 options), and as DESQview's Advanced Setup Auto Dialer, Colors (the program
-in front in its window number's colours, off by default), Keyboard (Learn),
+in front in its window number's colours, off by default), Keyboard (Learn, its quoting character),
 Mouse (on, left-handed), Performance (ticks, printer contention), Swapping (on or off, the
 directory), Video (screen blanker, synchronized access) and Window Positions
 (where windows 1-9 open).  The page's letter (G, A, C, K, M, P, S, V, W) or PgUp and

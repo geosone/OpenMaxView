@@ -98,6 +98,7 @@ Performance, Swapping, Video and Window Positions):
 | `BACKGROUND` | 2 | Clock ticks of each other window (1-15). |
 | `SWAPPING` | YES | NO:  windows are never swapped out (Tune Performance's system Allow swapping out N at start). |
 | `SWAP_DIR` | (none) | The directory of the `MVSWAPnn.TMP` files; blank:  the current one. |
+| `LEARN_QUOTE` | `` ` `` | Learn's quoting character:  the program does not get it, its next key goes to the program instead of a script on that key; typed twice, the character itself (as DESQview's). Blank:  none. Only with `LEARN=YES`. |
 | `LEARN` | YES | NO:  Shift+Alt does not open Learn (scripts already learned still play). |
 | `MOUSE` | YES | NO:  DESQview programs' pointer objects and select fields get no mouse (MAXVTSR). |
 | `LEFT_HANDED` | NO | YES:  for them the buttons are swapped (the right one is the left). Programs using INT 33h themselves are not changed. |

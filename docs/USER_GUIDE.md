@@ -163,7 +163,8 @@ launcher's own options) and, as in DESQview's Advanced Setup, Auto Dialer
 default; on:  the program in front shows its black and grey as its window
 number's text and background colours, windows 1-4 and then again, as
 DESQview shows a window), Keyboard (Learn
-on or off), Mouse (on or off, left-handed), Performance (foreground and
+on or off, its quoting character:  `` ` `` before a key gives the key to the
+program rather than to its script, `` ` `` twice types it), Mouse (on or off, left-handed), Performance (foreground and
 background ticks; Manage printer contention:  a window printing waits while
 another printed in the last 3 seconds), Swapping (on or off, the swap directory), Video (blank
 the screen after minutes without a key or the mouse; synchronized access

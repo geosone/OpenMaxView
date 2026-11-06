@@ -17,6 +17,9 @@ DOCFILES := DOCS.TXT USERGUID.TXT TOOLS.TXT CONFIG.TXT BUILDING.TXT \
 	CONFORM.TXT
 
 DOS_CFLAGS := -bt=dos -ms -0 -os -s -zq -zm -w4 -i=include -i=$(WATCOM)/h
+# MAXVIEW's main module:  286 code (smaller; _TEXT is near 64 KB, and its
+# multitasking needs a 386 anyway)
+MV_CFLAGS := $(subst -0,-2,$(DOS_CFLAGS))
 
 .PHONY: all package setup-package release-check test test-dos books book-html book-pdf book-epub clean
 
@@ -38,7 +41,7 @@ $(BUILD)/MAXVTSR.COM: $(BUILD)/odqtsr.obj
 	cd $(BUILD) && $(JWLINK) format dos com name MAXVTSR.COM option quiet option map=MAXVTSR.MAP file odqtsr.obj
 
 $(BUILD)/opendesq.obj: src/opendesq.c include/mvkern.h include/mvhost.h include/catalog.h include/maxbackend.h include/odqapi.h include/scheduler.h include/settings.h | $(BUILD)
-	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<
+	WATCOM=$(WATCOM) $(WCC) $(MV_CFLAGS) -fo=$@ $<
 
 $(BUILD)/catalog.obj: src/catalog.c include/catalog.h | $(BUILD)
 	WATCOM=$(WATCOM) $(WCC) $(DOS_CFLAGS) -fo=$@ $<

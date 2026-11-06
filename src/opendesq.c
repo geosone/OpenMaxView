@@ -855,6 +855,8 @@ static void start_multitasking(char *status)
                      mv_settings->color[i][0]);
     mvk_dvcolors(mv_settings->colors);
     mvk_prncont(mv_settings->printer);  /* Setup's Performance */
+    mvk_quote(mv_settings->learn ?      /* Keyboard */
+              (unsigned char)mv_settings->learn_quote[0] : 0);
     mv_on = 1;
 }
 

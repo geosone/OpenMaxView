@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -772,6 +772,22 @@ learn)
     check "Display Scripts:  hi on F6" "grep -q 'hi *F6' '$d/list.txt'"
     check "Save Scripts:  MAXVIEW.SCR" "grep -q '1 script(s) saved in MAXVIEW.SCR' '$d/saved.txt' && mtype -i '$d/test.img@@32256' ::/MAXVIEW.SCR | grep -q MVSCR1"
     check "DOS works afterwards" "grep -q '^learn end' '$d/end.txt'"
+    ;;
+lquote)
+    echo "== lquote:  Learn's quoting character (\`):  swallowed, the next key to the program, not to its script; twice:  the character (as DESQview 2.80, measured)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    L="key:shift-alt wait:Display_Scripts:10"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:lquote_end:30" run lquote 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $cfg" \
+        "wait:Open_Program:60 key:ret sleep:4 $L key:equal wait:press_the_key:10 key:f6 wait:its_name:10 key:h,i key:ret sleep:2 type:echo_learned>>C:\\L.TXT sleep:2 $L key:minus sleep:2 key:grave_accent key:f6 sleep:3 text:q1 key:esc sleep:1 key:e,c,h,o,spc,a,grave_accent,grave_accent,b,grave_accent type:c>>C:\\L.TXT sleep:3 text:q2 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:20 sleep:2 type:echo_lquote_end"
+    d=$OUT/lquote
+    l=$(file lquote L.TXT | tr '\n' '|')
+    echo "  L.TXT:  $l"
+    check "\` F6:  F6 to DOS (^Z), the script not played" "grep -q '\\^Z' '$d/q1.txt' && [ \"$(file lquote L.TXT | grep -c '^learned')\" = 1 ]"
+    check "a\`\`b\`c typed:  a\`bc" "[ '$l' = 'learned|a\`bc|' ]"
+    check "DOS works afterwards" "grep -q '^lquote end' '$d/end.txt'"
     ;;
 lpause)
     echo "== lpause:  Learn's Fixed-Size Pause, Variable Pause and Time Delay"

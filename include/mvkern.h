@@ -67,6 +67,9 @@ void mvk_wincolor(unsigned n, unsigned attr);
  * printed to it in the last 3 seconds (DESQview's Manage printer
  * contention; default off). */
 void mvk_prncont(unsigned on);
+/* Learn's quoting character c (0:  none):  the task with the keys does
+ * not get it, its next key is not a script key (twice:  the character). */
+void mvk_quote(unsigned c);
 /* The keys to task (0 or ready), the display unchanged (windows drawn by
  * task 0).  0 or MVE_x. */
 int mvk_focus(unsigned task);
