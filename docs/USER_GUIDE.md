@@ -176,6 +176,7 @@ IPXODI and NETBIOS) before MaxView and MAXVTSR.  MAXVTSR then gives every
 program IPX, SPX and NETBIOS through itself:  a program in a window that is
 not in front keeps receiving, and its event service or POST routine runs in
 its own window, as with DESQview's "Multitask IPX" and "Multitask NETBIOS".
+Programs that call IPX by its interrupt 7Ah are included.
 Up to 8 IPX or SPX and 8 NETBIOS commands can be outstanding at a time
 (buffers up to 576 bytes).
 

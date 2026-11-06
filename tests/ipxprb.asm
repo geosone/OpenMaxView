@@ -1,5 +1,6 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; IPX (measurement and tests/qemu):  IPXPRB file S|R [n]
+; IPX (measurement and tests/qemu):  IPXPRB file S|R|S7|R7 [n]
+;   (S7, R7:  IPX's functions by INT 7Ah, not its entry)
 ;   the IPX entry (INT 2Fh AX=7A00h), "ipx SSSS:OOOO" and the own address
 ;   ("addr" net, node); socket 4545h opened (short-lived), "open cc".
 ;   S:  n packets (default 20) broadcast to the socket, one per half
@@ -18,7 +19,7 @@
 
 SOCKET  equ     4545h                 ; (as IPX wants it:  high byte first)
 NLISTEN equ     4
-ECBSIZE equ     36                    ; ECB with one fragment
+ECBSIZE equ     42                    ; ECB with one fragment (24h + 6)
 PKTSIZE equ     30 + 16               ; IPX header and the data
 
 start:
@@ -44,6 +45,10 @@ start:
         je      usage
         and     al,0DFh
         mov     mode,al
+        cmp     byte ptr [si],'7'     ; R7, S7:  IPX by INT 7Ah
+        jne     @F
+        inc     si
+        mov     use7a,1
 @@:     lodsb                         ; n
         cmp     al,' '
         je      @B
@@ -287,7 +292,12 @@ ipxcall proc near
         push    bp
         push    ds
         push    es
+        cmp     cs:use7a,0
+        jne     @F
         call    dword ptr cs:ipx
+        jmp     short ipxcall_back
+@@:     int     7Ah
+ipxcall_back:
         pop     es
         pop     ds
         pop     bp
@@ -471,8 +481,9 @@ t_esr   db      ' esr ',0
 t_end   db      'end ',0
 t_bad   db      ' bad ',0
 t_ready db      'ipxprb ready',13,10,'$'
-utext   db      'IPXPRB file S|R [n]',13,10,'$'
+utext   db      'IPXPRB file S|R|S7|R7 [n]',13,10,'$'
 mode    db      0
+use7a   db      0
 count   dw      20
 seq     dw      0
 got     dw      0

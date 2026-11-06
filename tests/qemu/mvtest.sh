@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx netbios spx mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx ipx7a netbios spx mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -482,11 +482,14 @@ lefthand)
     check "right button pressed:  left (01h); left pressed:  right (02h)" "[ '$st' = '01 02 ' ]"
     check "DOS works afterwards" "grep -q '^lefthand end' '$OUT/lefthand/end.txt'"
     ;;
-ipx|netbios|spx)
-    to=""
+ipx|ipx7a|netbios|spx)
+    to=""; rm=R
     if [ "$c" = ipx ]; then
         echo "== ipx:  IPX in a window behind a busy one (Novell ODI, NE2000, a second VM sending; DESQview's Multitask IPX)"
         prb=IPXPRB; ready=ipxprb_ready; nb=""; ftxt=I.TXT
+    elif [ "$c" = ipx7a ]; then
+        echo "== ipx7a:  as ipx, the receiver calling IPX by INT 7Ah (DESQview's Multitask IPX, interrupt 7A)"
+        prb=IPXPRB; ready=ipxprb_ready; nb=""; ftxt=I.TXT; rm=R7
     elif [ "$c" = spx ]; then
         echo "== spx:  SPX (Novell's IPXODI) in a window behind a busy one:  a connection, sequenced packets, its termination (DESQview's Multitask IPX)"
         prb=SPXPRB; ready=spxprb_ready; nb=""; ftxt=P.TXT; to=" 52540012340A"
@@ -498,7 +501,7 @@ ipx|netbios|spx)
     if [ ! -f "$NET/IPXODI.COM" ] || [ ! -f "$NET/NETBIOS.EXE" ]; then echo "  SKIP  no LSL, NE2000, IPXODI, NETBIOS (NETDRV=directory of them)"; continue; fi
     d=$OUT/$c; rm -rf "$d" "$d-b"; mkdir -p "$d" "$d-b"
     printf 'Link Driver NE2000\r\n    INT 3\r\n    PORT 300\r\n    FRAME Ethernet_802.3\r\n' > "$OUT/NET.CFG"
-    printf 'R|Receiver|C:\\%s.COM C:\\%s R 30||64|640\r\nT|Busy|C:\\TICK.EXE C:\\T.TXT||64|640\r\n' $prb $ftxt > "$OUT/MAXVIEW.CFG"
+    printf 'R|Receiver|C:\\%s.COM C:\\%s %s 30||64|640\r\nT|Busy|C:\\TICK.EXE C:\\T.TXT||64|640\r\n' $prb $ftxt $rm > "$OUT/MAXVIEW.CFG"
     NF="$NET/LSL.COM $NET/NE2000.COM $NET/IPXODI.COM $NET/NETBIOS.EXE $OUT/NET.CFG $ROOT/build/$prb.COM"
     nic() { echo "-device ne2k_isa,netdev=n0,iobase=0x300,irq=3,mac=52:54:00:12:34:$1 -netdev socket,id=n0,$2"; }
     port=$((20000 + RANDOM % 20000))
@@ -517,7 +520,7 @@ ipx|netbios|spx)
     i=$(file $c $ftxt); s=$(file $c-b $ftxt)
     echo "  receiver:  $(echo "$i" | head -1); $(echo "$i" | tail -1)"
     check "the sender:  30 sent" "echo '$s' | grep -q '^s 30 00'"
-    if [ "$c" = ipx ]; then
+    if [ "$c" = ipx ] || [ "$c" = ipx7a ]; then
         check "IPX entry MAXVTSR's (the driver's kept)" "echo '$i' | grep -q '^ipx ' && echo '$i' | grep -q '^open 00'"
         check "behind the busy window:  all 30 received, each ESR in the program's own task (none wrong)" "echo '$i' | grep -q '^end 30 esr 30 bad 0'"
     elif [ "$c" = spx ]; then

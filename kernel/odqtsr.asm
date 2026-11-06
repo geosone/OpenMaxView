@@ -295,6 +295,23 @@ no_netbios:
         mov     word ptr qpi_entry,di
         mov     word ptr qpi_entry+2,es
 no_qpi: pop     es
+        push    es                    ; IPX (loaded before):  its entry, and
+        push    di                    ; its interrupt (7Ah, older programs)
+        mov     ax,7A00h              ; through ours too
+        int     2Fh
+        cmp     al,0FFh
+        jne     short no_ipx7a
+        mov     ax,357Ah
+        int     21h
+        mov     ax,es
+        or      ax,bx
+        jz      short no_ipx7a
+        mov     dx,offset int7a_handler
+        mov     ax,257Ah
+        int     21h
+no_ipx7a:
+        pop     di
+        pop     es
 
         mov     dx,offset installed_msg
         mov     ah,09h
@@ -10742,6 +10759,12 @@ int2f_ipx:                            ; 7A00h:  the driver's, then ours
         pop     es
         mov     di,offset ipx_shim
 int2f_ipx_ret:
+        iret
+
+; INT 7Ah:  IPX called by its interrupt, as MAXVTSR's entry
+int7a_handler:
+        push    cs
+        call    ipx_shim
         iret
 
 ; MAXVTSR's IPX entry (far, BX the function)

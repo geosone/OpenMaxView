@@ -21,7 +21,7 @@
 
 SOCKET  equ     4646h                 ; (as IPX wants it:  high byte first)
 NLISTEN equ     4
-ECBSIZE equ     36                    ; ECB with one fragment
+ECBSIZE equ     42                    ; ECB with one fragment (24h + 6)
 SPXHDR  equ     42
 PKTSIZE equ     SPXHDR + 16           ; SPX header and the data
 
