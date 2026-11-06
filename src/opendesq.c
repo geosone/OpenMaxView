@@ -3008,6 +3008,12 @@ static int windows_view(odq_catalog *catalog, char *status)
                     script_play((unsigned)script_find(k));
                 else if (ev == 3 && mode == 0 && mv_settings->learn)
                     learn_req = 1;              /* (Setup:  Learn Y) */
+                else if (ev == 4 && k != 0 && k < MVK_MAXTASK &&
+                         task_live[k] && !win[k].swapped) {
+                    mvk_kill(k);                /* Ctrl+Alt+Del:  DV's */
+                    sprintf(status, "%.40s is being closed.",  /* Reboot */
+                            task_title[k]);                     /* Window */
+                }
         }
         xfer_feed();
         if (swap_msg != NULL) {         /* (swapping could not) */

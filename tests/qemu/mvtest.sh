@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift reboot lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -807,6 +807,21 @@ shift)
         check "one Caps Lock for both (AA, AA)" "[ '$k1' = AA ] && [ '$k2' = AA ]"
     fi
     check "DOS works afterwards" "grep -q '^7311' '$d/end.txt'"
+    ;;
+reboot)
+    echo "== reboot:  Ctrl+Alt+Del in a window:  DESQview's Reboot Window, that window closed, the others on, no reboot (as DESQview 2.80, measured)"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'A|ProbeA|C:\\KEYPROBE.COM C:\\K1.TXT B||64|640\r\nD|DosTwo|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    CMD="C:\\MAXVIEW" END="wait:reboot_end:30" run reboot 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/KEYPROBE.COM $cfg" \
+        "wait:Open_Program:60 key:ret wait:keyprobe_B_ready:20 key:x sleep:1 $M key:o wait:Change_a_Program:20 key:d sleep:5 text:a key:ctrl-alt-delete sleep:5 text:b $M key:s sleep:2 text:list key:esc,esc sleep:2 key:z sleep:1 key:dot wait:ProbeA_ended:20 key:esc wait:Exit_to_DOS:10 key:y sleep:3 type:echo_reboot_end"
+    d=$OUT/reboot
+    k1=$(file reboot K1.TXT)
+    echo "  K1 $k1"
+    check "Ctrl+Alt+Del:  DosTwo closed, ProbeA left" "grep -q 'ProbeA' '$d/list.txt' && ! grep -q 'DosTwo' '$d/list.txt'"
+    check "ProbeA ran on (xz)" "[ '$k1' = xz ]"
+    check "no reboot:  DOS works afterwards" "grep -q '^reboot end' '$d/end.txt'"
     ;;
 lpause)
     echo "== lpause:  Learn's Fixed-Size Pause, Variable Pause and Time Delay"

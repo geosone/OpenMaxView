@@ -59,6 +59,10 @@ others go on in the background. A started program gets the full screen.
   windows (below), as DESQview's key does; **Ctrl+Alt+0** does the same. Once all
   programs have ended, the launcher comes back.
 * **Ctrl+Alt+1** to **Ctrl+Alt+7** switch directly to task 1 to 7.
+* **Ctrl+Alt+Del** closes the window with the keys at once (DESQview's Reboot
+  Window), even at a DOS prompt; the other windows run on and the PC does
+  not restart.  Ctrl+Alt+left Shift+Del on the keypad restarts the PC
+  (DESQview's Reboot System).
 * **T** in the launcher lists the running programs: Enter switches to one,
   **C** closes it (DOS ends it as if it had exited).
 * A program that ends gives the screen back to the launcher, which shows

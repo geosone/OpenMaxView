@@ -91,8 +91,9 @@ unsigned mvk_peek(unsigned task, unsigned short *buf);
 int mvk_putkey(unsigned task, unsigned key);
 /* Learn:  the script keys (up to 16) taken from the keys of the task with
  * them, and its keys recorded (rec); mvk_keyget:  the next event (0 none, 1
- * a key recorded, 2 a script key pressed, 3 the Learn key Shift+Alt), its
- * key (scan code << 8 | char) in *key */
+ * a key recorded, 2 a script key pressed, 3 the Learn key Shift+Alt, 4
+ * Ctrl+Alt+Del:  Reboot Window, *key the task with the keys), its key
+ * (scan code << 8 | char) in *key */
 void mvk_keytap(const unsigned *keys, unsigned n, unsigned rec);
 /* Swapping out (by the host, from task 0):  mvk_swapcheck gives the number
  * of task's private pages (4KB) when it may be swapped out now (held,

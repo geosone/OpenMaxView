@@ -2181,6 +2181,8 @@ i15_key:
         push    ds
         push    es
         mov     ds,cs:kseg
+        cmp     al,53h          ; Del (also in DOS)
+        je      i15_del
         les     bx,cs:sda_ptr
         cmp     byte ptr es:[bx],0
         jne     i15_chain
@@ -2242,6 +2244,7 @@ i15_ctl:
         mov     cs:newfg,ax
         mov     cs:kfocus,ax
         dbg     'F'
+i15_ours:
         pop     es
         pop     ds
         pop     bx
@@ -2255,6 +2258,26 @@ i15_chain:
         pop     ax
 i15_old:
         jmp     dword ptr cs:old15
+; Ctrl+Alt+Del:  DESQview's Reboot Window, the window with the keys (event
+; 4 for task 0, which closes it); with the left Shift and the keypad's
+; Del its Reboot System, the BIOS's (DESQview 2.80's system keys)
+i15_del:
+        xor     bx,bx
+        mov     es,bx
+        mov     bl,es:[417h]
+        and     bl,0Ch
+        cmp     bl,0Ch          ; Ctrl and Alt
+        jne     i15_chain
+        test    byte ptr es:[417h],2
+        jz      @F
+        test    byte ptr es:[496h],2    ; (E0h before:  the grey Del)
+        jz      i15_chain
+@@:     push    cx
+        mov     al,4
+        mov     cx,cs:kfocus
+        call    kevput
+        pop     cx
+        jmp     i15_ours
 int15   endp
 
 ; INT 15h AX=DEF0h (MAXVTSR, for a DESQview subtask:  NEW of a window with
