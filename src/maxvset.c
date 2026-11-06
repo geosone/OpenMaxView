@@ -64,6 +64,7 @@ static const field fixed[] = {
     { 4, 8, 6, F_BOOL, 0, 1, AT(left_handed), "Left-handed (buttons swapped)" },
     { 5, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
     { 5, 9, 30, F_NUM, 1, 15, AT(bg_ticks), "Background ticks" },
+    { 5, 15, 6, F_BOOL, 0, 1, AT(printer), "Manage printer contention" },
     { 6, 6, 6, F_BOOL, 0, 1, AT(swapping),
       "Swap programs out as needed" },
     { 6, 9, 4, F_TEXT, 0, 41, AT(swap_dir), "" },    /* (40 shown) */
@@ -200,6 +201,8 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
         mvui_write(5, 4, "Time slices in clock ticks (1-15)", MVUI_DATA);
         mvui_write(12, 4, "Tune Performance changes them while", MVUI_DATA);
         mvui_write(13, 4, "MaxView runs.", MVUI_DATA);
+        mvui_write(17, 4, "A window printing waits while another", MVUI_DATA);
+        mvui_write(18, 4, "printed in the last 3 seconds.", MVUI_DATA);
         break;
     case 6:
         mvui_write(8, 4, "Swapping directory:", MVUI_DATA);
@@ -459,6 +462,7 @@ static void print_settings(const odq_settings *settings)
     printf("LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     printf("BLANK=%u\n", settings->blank_minutes);
     printf("SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
+    printf("PRINTER_CONTENTION=%s\n", settings->printer ? "YES" : "NO");
     printf("COLORS=%s\n", settings->colors ? "YES" : "NO");
     for (index = 0; index < 4; ++index)
         printf("COLOR%u=%u,%u\n", index + 1,

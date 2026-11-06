@@ -254,6 +254,12 @@ $(BUILD)/rtcprb.obj: tests/rtcprb.asm | $(BUILD)
 $(BUILD)/RTCPRB.COM: $(BUILD)/rtcprb.obj
 	cd $(BUILD) && $(JWLINK) format dos com name RTCPRB.COM option quiet option map=RTCPRB.MAP file rtcprb.obj
 
+$(BUILD)/prnprb.obj: tests/prnprb.asm | $(BUILD)
+	$(JWASM) -Zm -c -q -W1 -Fo$@ $<
+
+$(BUILD)/PRNPRB.COM: $(BUILD)/prnprb.obj
+	cd $(BUILD) && $(JWLINK) format dos com name PRNPRB.COM option quiet option map=PRNPRB.MAP file prnprb.obj
+
 $(BUILD)/MVTEST.PLB: tests/panels/mkplb.py | $(BUILD)
 	python3 $< $@
 

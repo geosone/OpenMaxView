@@ -201,6 +201,8 @@ int odq_settings_load(const char *path, odq_settings *settings,
             destination = &parsed.left_handed;
         else if (equal_text(name, "SYNC_VIDEO"))
             destination = &parsed.sync_video;
+        else if (equal_text(name, "PRINTER_CONTENTION"))
+            destination = &parsed.printer;
         else if (equal_text(name, "COLORS"))
             destination = &parsed.colors;
         else if (strlen(name) == 6 && name[5] >= '1' && name[5] <= '4') {
@@ -330,6 +332,8 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     fprintf(stream, "LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     fprintf(stream, "BLANK=%u\n", settings->blank_minutes);
     fprintf(stream, "SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
+    fprintf(stream, "PRINTER_CONTENTION=%s\n",
+            settings->printer ? "YES" : "NO");
     fprintf(stream, "COLORS=%s\n", settings->colors ? "YES" : "NO");
     for (index = 0; index < 4; ++index)
         fprintf(stream, "COLOR%u=%u,%u\n", index + 1,

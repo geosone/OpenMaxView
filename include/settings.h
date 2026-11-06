@@ -36,6 +36,8 @@ typedef struct odq_settings {
      * colours (windows 1-4, then again):  text 0-15, background 0-7 */
     unsigned colors;
     unsigned char color[4][2];
+    /* Performance's Manage printer contention */
+    unsigned printer;
 } odq_settings;
 
 enum odq_settings_result {

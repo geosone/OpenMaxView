@@ -202,6 +202,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_keyget_
         public  mvk_datasize_
         public  mvk_tune_
+        public  mvk_prncont_
 
 ; kernel data in CS:  the IRQ handlers find it without DS
 qpi_entry dd    0
@@ -282,13 +283,21 @@ old13    dd     0
 old16    dd     0
 old28    dd     0
 old15    dd     0
+old17    dd     0
+kticks   dw     0               ; timer ticks since the start
+; Setup's printer contention:  on, LPT1-3's last printing task (+1) and
+; its tick then
+prncont  dw     0
+prnown   dw     3 dup (0)
+prnlast  dw     3 dup (0)
 ; vector * 4, handler, old vector:  in every task's IVT while running
 hooktab  dw     10h*4, offset int10, offset old10
          dw     13h*4, offset int13, offset old13
          dw     16h*4, offset int16, offset old16
          dw     28h*4, offset int28, offset old28
          dw     15h*4, offset int15, offset old15
-NHOOK    equ    5
+         dw     17h*4, offset int17, offset old17
+NHOOK    equ    6
 
 ; QPI call:  AX = function, other registers as the function wants
 qpi     macro
@@ -1838,6 +1847,7 @@ killtask endp
 ; IRQ0 calldown:  timer, then maybe the next task or another foreground
 irq0    proc far
         int     08h             ; the task's timer chain (BIOS:  EOI)
+        inc     cs:kticks
         dbg     '.'
         cmp     cs:running,0
         je      irq0_out
@@ -2524,6 +2534,50 @@ eo_ret: pop     di
         pop     ax
         ret
 end_one endp
+
+; INT 17h:  printer contention (prncont, Setup's Performance):  a task's
+; character (AH 00h) to LPT1-3 waits in the other tasks while another task
+; printed to it in the last 55 ticks, then the printer is the task's (as
+; DESQview 2.80's, measured:  3 seconds)
+PRNIDLE equ     55
+int17   proc far
+        cmp     cs:running,0
+        je      i17_old
+        cmp     cs:prncont,0
+        je      i17_old
+        or      ah,ah
+        jnz     i17_old
+        cmp     dx,3
+        jae     i17_old
+        push    bx
+        push    si
+        mov     si,dx
+        shl     si,1
+        mov     bx,cs:cur
+        inc     bx
+@@:     cmp     cs:prnown[si],0
+        je      i17_mine
+        cmp     cs:prnown[si],bx
+        je      i17_mine
+        push    ax
+        mov     ax,cs:kticks
+        sub     ax,cs:prnlast[si]
+        cmp     ax,PRNIDLE
+        pop     ax
+        jae     i17_mine
+        call    yield
+        jmp     @B
+i17_mine:
+        mov     cs:prnown[si],bx
+        push    ax
+        mov     ax,cs:kticks
+        mov     cs:prnlast[si],ax
+        pop     ax
+        pop     si
+        pop     bx
+i17_old:
+        jmp     dword ptr cs:old17
+int17   endp
 
 ; INT 28h (DOS idle):  the other tasks
 int28   proc far
@@ -4330,6 +4384,12 @@ mvk_tune_ proc near
         mov     cs:fgquant,ax
 @@:     ret
 mvk_tune_ endp
+
+; void mvk_prncont(unsigned on):  Setup's printer contention (int17)
+mvk_prncont_ proc near
+        mov     cs:prncont,ax
+        ret
+mvk_prncont_ endp
 
 mvk_stop_ proc near
         push    ds

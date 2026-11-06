@@ -164,7 +164,8 @@ default; on:  the program in front shows its black and grey as its window
 number's text and background colours, windows 1-4 and then again, as
 DESQview shows a window), Keyboard (Learn
 on or off), Mouse (on or off, left-handed), Performance (foreground and
-background ticks), Swapping (on or off, the swap directory), Video (blank
+background ticks; Manage printer contention:  a window printing waits while
+another printed in the last 3 seconds), Swapping (on or off, the swap directory), Video (blank
 the screen after minutes without a key or the mouse; synchronized access
 for a CGA's snow) and Window Positions (row, column, height and width of
 windows 1-9:  where a window opens whose program has no starting window).

@@ -63,6 +63,10 @@ void mvk_dvcolors(unsigned on);
  * attr background << 4 | foreground (DESQview's 31h 61h 47h 21h by
  * default); for the task brought in front next. */
 void mvk_wincolor(unsigned n, unsigned attr);
+/* on:  a task printing (INT 17h) to LPT1-3 waits while another task
+ * printed to it in the last 3 seconds (DESQview's Manage printer
+ * contention; default off). */
+void mvk_prncont(unsigned on);
 /* The keys to task (0 or ready), the display unchanged (windows drawn by
  * task 0).  0 or MVE_x. */
 int mvk_focus(unsigned task);

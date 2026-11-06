@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -110,7 +110,7 @@ make -s -C "$ROOT" MVDEBUG=${MVDEBUG:-0} build/MVRUN.EXE build/MEMPROBE.COM \
     build/KEYPROBE.COM build/CRITPRB.COM build/MAXVIEW.EXE build/DVTASK.COM \
     build/MAXVTSR.COM build/CWDPROBE.COM build/EMSPROBE.COM build/GFXPROBE.COM build/LEAKPRB.COM build/IPCPRB.COM \
     build/MAXVANSI.COM build/KBDPRB.COM build/WINPRB.COM build/STRPRB.COM build/QRYPRB.COM build/CRTPRB.COM \
-    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/NBPRB.COM build/SPXPRB.COM build/RTCPRB.COM build/MVTEST.PLB || exit 2
+    build/OBQPRB.COM build/NTFPRB.COM build/FLDPRB.COM build/SELPRB.COM build/NUMPRB.COM build/MSEPRB.COM build/BCSPRB.COM build/PTRPRB.COM build/WOBPRB.COM build/MENU.COM build/HELLO.COM build/MOUSE.COM build/COUNTDN.COM build/SERVE.COM build/ASK.COM build/SUBPRB.COM build/WORMS.COM build/LAUNCH.COM build/OWNPRB.COM build/SOWPRB.COM build/SERPRB.COM build/PANPRB.COM build/ALWPRB.COM build/IPXPRB.COM build/NBPRB.COM build/SPXPRB.COM build/RTCPRB.COM build/PRNPRB.COM build/MVTEST.PLB || exit 2
 mkdir -p "$OUT"
 fail=0
 
@@ -592,6 +592,24 @@ rtc)
     check "behind the busy window:  IRQ8 kept coming (the last 30 s at least 3/4 of 64 a second)" "[ \$(( ${z:-0} - ${a:-0} )) -ge 1440 ]"
     check "the busy window ran on, the menu answers" "[ \"\$(last rtc T.TXT tick)\" -gt 20 ] && grep -q 'Switch Windows' '$d/menu.txt'"
     check "DOS works afterwards" "grep -q '^rtc end' '$d/end.txt'"
+    ;;
+printer)
+    echo "== printer:  Setup's Manage printer contention:  a window printing (INT 17h) waits while another printed in the last 3 s, then prints all its lines (as DESQview 2.80's, measured)"
+    d=$OUT/printer; rm -rf "$d"; mkdir -p "$d"; rm -f "$OUT/printer.lpt"
+    printf 'A|PrintA|C:\\PRNPRB.COM A 6 72 1200||64|640\r\nB|PrintB|C:\\PRNPRB.COM B 10 9 0||64|640\r\n' > "$OUT/MAXVIEW.CFG"
+    printf "PRINTER_CONTENTION=${PRNCONT:-YES}\r\n" > "$OUT/MAXVSET.INI"
+    M="key:alt wait:Switch_Windows:20"
+    KEEP=1 ACCEL="-accel tcg" XFILES="$ROOT/build/PRNPRB.COM $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $OUT/MAXVIEW.CFG $OUT/MAXVSET.INI" \
+        AUTO="@ECHO OFF|C:\\MAXVIEW" QEMU_EXTRA="-parallel file:$OUT/printer.lpt" \
+        STEPS="wait:Open_Program:120 key:ret wait:prnprb_A_ready:30 sleep:5 $M key:o wait:Change_a_Program:20 key:b wait:prnprb_B_ready:30 sleep:45 $M sleep:2 text:menu key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_printer_end wait:printer_end:30 text:end" \
+        TESTDIR="$d" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/printer.log" 2>&1
+    p=$(tr -d '\r' < "$OUT/printer.lpt" 2>/dev/null | awk '{print $1 $2}' | tr '\n' ' ')
+    echo "  printed:  $p"
+    o=$(echo "$p" | tr ' ' '\n' | cut -c1 | uniq | tr -d '\n')
+    check "all 18 lines printed" "[ \$(echo '$p' | wc -w) -eq 18 ]"
+    check "B's lines together, between A's (A printed before and after them):  ABA" "[ '$o' = ABA ]"
+    check "the menu answers" "grep -q 'Switch Windows' '$d/menu.txt'"
+    check "DOS works afterwards" "grep -q '^printer end' '$d/end.txt'"
     ;;
 mvlaunch)
     echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"

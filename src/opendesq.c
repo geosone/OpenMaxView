@@ -854,6 +854,7 @@ static void start_multitasking(char *status)
         mvk_wincolor(i, mv_settings->color[i][1] << 4 |
                      mv_settings->color[i][0]);
     mvk_dvcolors(mv_settings->colors);
+    mvk_prncont(mv_settings->printer);  /* Setup's Performance */
     mv_on = 1;
 }
 
