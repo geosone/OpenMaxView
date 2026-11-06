@@ -59,6 +59,10 @@ void mvk_dvkey(unsigned on);
  * black and grey are the window's), through the VGA palette; task 0 the
  * standard ones.  Default off:  programs show their own colours. */
 void mvk_dvcolors(unsigned on);
+/* Window n's colours (0-3:  windows 1-4, then again) for mvk_dvcolors,
+ * attr background << 4 | foreground (DESQview's 31h 61h 47h 21h by
+ * default); for the task brought in front next. */
+void mvk_wincolor(unsigned n, unsigned attr);
 /* The keys to task (0 or ready), the display unchanged (windows drawn by
  * task 0).  0 or MVE_x. */
 int mvk_focus(unsigned task);

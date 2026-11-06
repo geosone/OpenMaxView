@@ -12,17 +12,17 @@
 
 /* the pages:  MaxView's own options, then those of DESQview's Advanced
  * Setup that MaxView has (letters as DESQview's) */
-#define PAGES 8
+#define PAGES 9
 static const char *page_names[PAGES] = {
-    "Global", "Auto Dialer", "Keyboard", "Mouse", "Performance", "Swapping",
-    "Video", "Windows"
+    "Global", "Autodial", "Colors", "Keyboard", "Mouse", "Perform",
+    "Swapping", "Video", "Windows"
 };
 static const char *page_titles[PAGES] = {
-    "Global", "Auto Dialer", "Keyboard", "Mouse", "Performance", "Swapping",
-    "Video", "Window Positions"
+    "Global", "Auto Dialer", "Colors", "Keyboard", "Mouse", "Performance",
+    "Swapping", "Video", "Window Positions"
 };
 static const char page_keys[PAGES] = {
-    'G', 'A', 'K', 'M', 'P', 'S', 'V', 'W'
+    'G', 'A', 'C', 'K', 'M', 'P', 'S', 'V', 'W'
 };
 
 enum { F_BOOL, F_NUM, F_BYTE, F_TEXT };
@@ -58,21 +58,22 @@ static const field fixed[] = {
       "Access code 2" },
     { 1, 18, 24, F_TEXT, 0, sizeof(((odq_settings *)0)->access[2]), AT(access[2]),
       "Access code 3" },
-    { 2, 6, 6, F_BOOL, 0, 1, AT(learn), "Use Learn (Shift+Alt)" },
-    { 3, 6, 6, F_BOOL, 0, 1, AT(mouse), "Use a mouse" },
-    { 3, 8, 6, F_BOOL, 0, 1, AT(left_handed), "Left-handed (buttons swapped)" },
-    { 4, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
-    { 4, 9, 30, F_NUM, 1, 15, AT(bg_ticks), "Background ticks" },
-    { 5, 6, 6, F_BOOL, 0, 1, AT(swapping),
+    { 2, 5, 6, F_BOOL, 0, 1, AT(colors), "Programs in their window's colours" },
+    { 3, 6, 6, F_BOOL, 0, 1, AT(learn), "Use Learn (Shift+Alt)" },
+    { 4, 6, 6, F_BOOL, 0, 1, AT(mouse), "Use a mouse" },
+    { 4, 8, 6, F_BOOL, 0, 1, AT(left_handed), "Left-handed (buttons swapped)" },
+    { 5, 7, 30, F_NUM, 1, 15, AT(fg_ticks), "Foreground ticks" },
+    { 5, 9, 30, F_NUM, 1, 15, AT(bg_ticks), "Background ticks" },
+    { 6, 6, 6, F_BOOL, 0, 1, AT(swapping),
       "Swap programs out as needed" },
-    { 5, 9, 4, F_TEXT, 0, 41, AT(swap_dir), "" },    /* (40 shown) */
-    { 6, 6, 6, F_BOOL, 0, 1, AT(sync_video),
+    { 6, 9, 4, F_TEXT, 0, 41, AT(swap_dir), "" },    /* (40 shown) */
+    { 7, 6, 6, F_BOOL, 0, 1, AT(sync_video),
       "Synchronized access (CGA snow)" },
-    { 6, 9, 40, F_NUM, 0, 99, AT(blank_minutes), "Blank the screen after minutes" }
+    { 7, 9, 40, F_NUM, 0, 99, AT(blank_minutes), "Blank the screen after minutes" }
 };
 
 #define FIXED (sizeof fixed / sizeof fixed[0])
-#define FIELDS (FIXED + 36)
+#define FIELDS (FIXED + 36 + 8)
 static field fields[FIELDS];
 
 /* the Window Positions' grid:  row, column, height, width of windows 1-9 */
@@ -86,13 +87,26 @@ static void fields_init(void)
         for (j = 0; j < 4; ++j) {
             field *f = &fields[FIXED + i * 4 + j];
 
-            f->page = 7;
+            f->page = 8;
             f->row = (unsigned char)(6 + i);
             f->col = (unsigned char)(17 + j * 8);
             f->type = F_BYTE;
             f->low = low[j];
             f->high = high[j];
             f->offset = AT(window[0][0]) + i * 4 + j;
+            f->label = "";
+        }
+    for (i = 0; i < 4; ++i)             /* Colors:  windows 1-4 */
+        for (j = 0; j < 2; ++j) {
+            field *f = &fields[FIXED + 36 + i * 2 + j];
+
+            f->page = 2;
+            f->row = (unsigned char)(9 + i);
+            f->col = (unsigned char)(15 + j * 9);
+            f->type = F_BYTE;
+            f->low = 0;
+            f->high = j == 0 ? 15 : 7;
+            f->offset = AT(color[0][0]) + i * 2 + j;
             f->label = "";
         }
 }
@@ -163,26 +177,39 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
         mvui_write(13, 4, "Long distance:  put before a number", MVUI_DATA);
         break;
     case 2:
-        mvui_write(8, 4, "Off:  Shift+Alt does not open Learn.", MVUI_DATA);
+        mvui_write(8, 6, "Window   Text  Background", MVUI_DATA);
+        for (i = 0; i < 4; ++i) {
+            sprintf(text, "%u", i + 1);
+            mvui_write(9 + i, 9, text, MVUI_DATA);
+            mvui_write(9 + i, 35, " Sample ", (unsigned char)
+                       (settings->color[i][1] << 4 | settings->color[i][0]));
+        }
+        mvui_write(14, 4, "Text 0-15 (8-15 bright), background", MVUI_DATA);
+        mvui_write(15, 4, "0-7.  Windows 5-9 as 1-4 again.  The", MVUI_DATA);
+        mvui_write(16, 4, "program in front:  its black and grey", MVUI_DATA);
+        mvui_write(17, 4, "as these (VGA palette, text modes).", MVUI_DATA);
         break;
     case 3:
+        mvui_write(8, 4, "Off:  Shift+Alt does not open Learn.", MVUI_DATA);
+        break;
+    case 4:
         mvui_write(11, 4, "For DESQview programs' pointers and", MVUI_DATA);
         mvui_write(12, 4, "select fields (MAXVTSR).", MVUI_DATA);
         break;
-    case 4:
+    case 5:
         mvui_write(5, 4, "Time slices in clock ticks (1-15)", MVUI_DATA);
         mvui_write(12, 4, "Tune Performance changes them while", MVUI_DATA);
         mvui_write(13, 4, "MaxView runs.", MVUI_DATA);
         break;
-    case 5:
+    case 6:
         mvui_write(8, 4, "Swapping directory:", MVUI_DATA);
         mvui_write(11, 4, "Blank:  the current directory.", MVUI_DATA);
         break;
-    case 6:
+    case 7:
         mvui_write(11, 4, "0 minutes:  never.  A key or the mouse", MVUI_DATA);
         mvui_write(12, 4, "shows it again (the key goes on).", MVUI_DATA);
         break;
-    case 7:
+    case 8:
         mvui_write(5, 6, "Window     Row  Column  Height   Width", MVUI_DATA);
         for (i = 0; i < 9; ++i) {
             sprintf(text, "%u", i + 1);
@@ -213,7 +240,7 @@ static void draw(odq_settings *settings, unsigned page, unsigned selected,
                      MVUI_TRIGGER);
     }
     mvui_write(4, 61, "Quick Help", MVUI_QUICK_HIGH);
-    mvui_write(6, 61, "G A K M P S V W", MVUI_QUICK);
+    mvui_write(6, 61, "G A C K M P S V W", MVUI_QUICK);
     mvui_write(5, 61, "Page:", MVUI_QUICK);
     mvui_write(7, 61, "Arrows  Select", MVUI_QUICK);
     mvui_write(8, 61, "Space   Toggle", MVUI_QUICK);
@@ -432,6 +459,10 @@ static void print_settings(const odq_settings *settings)
     printf("LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     printf("BLANK=%u\n", settings->blank_minutes);
     printf("SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
+    printf("COLORS=%s\n", settings->colors ? "YES" : "NO");
+    for (index = 0; index < 4; ++index)
+        printf("COLOR%u=%u,%u\n", index + 1,
+               settings->color[index][0], settings->color[index][1]);
     for (index = 0; index < 9; ++index)
         printf("WINDOW%u=%u,%u,%u,%u\n", index + 1,
                settings->window[index][0], settings->window[index][1],

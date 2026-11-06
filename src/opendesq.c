@@ -838,6 +838,7 @@ static void win_remove(unsigned t)
 static void start_multitasking(char *status)
 {
     int rc = mvhost_init(MV_TASKS);
+    unsigned i;
 
     if (rc == 0)
         rc = mvk_start(2);
@@ -849,6 +850,10 @@ static void start_multitasking(char *status)
         return;
     }
     mvk_dvkey(1);
+    for (i = 0; i < 4; ++i)             /* Setup's Colors */
+        mvk_wincolor(i, mv_settings->color[i][1] << 4 |
+                     mv_settings->color[i][0]);
+    mvk_dvcolors(mv_settings->colors);
     mv_on = 1;
 }
 

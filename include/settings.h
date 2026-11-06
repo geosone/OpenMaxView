@@ -32,6 +32,10 @@ typedef struct odq_settings {
     unsigned left_handed;
     unsigned blank_minutes;
     unsigned sync_video;
+    /* Colors:  the program in front shows through its window number's
+     * colours (windows 1-4, then again):  text 0-15, background 0-7 */
+    unsigned colors;
+    unsigned char color[4][2];
 } odq_settings;
 
 enum odq_settings_result {

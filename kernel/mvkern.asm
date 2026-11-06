@@ -184,6 +184,7 @@ KDATASIZE equ   MAXTASK*(size TASK) + 32 + KSTACK + ISTACK + 4096 + 1024 + 80 + 
         public  mvk_setfg_
         public  mvk_fg_
         public  mvk_dvcolors_
+        public  mvk_wincolor_
         public  mvk_kill_
         public  mvk_yield_
         public  mvk_dvkey_
@@ -1522,6 +1523,7 @@ fp_none:
         ret
 fgpal   endp
 fp_win  db      31h,61h,47h,21h ; DV 2.80's window colours, by number
+                                ; (Setup's Colors:  mvk_wincolor)
 fp_std  db      0,1,2,3,4,5,14h,7,38h,39h,3Ah,3Bh,3Ch,3Dh,3Eh,3Fh
 
 ; void mvk_dvcolors(unsigned on):  DESQview's window colours (fgpal) on
@@ -1531,6 +1533,18 @@ mvk_dvcolors_ proc near
         mov     cs:dvcol,ax
         ret
 mvk_dvcolors_ endp
+
+; void mvk_wincolor(unsigned n, unsigned attr):  window n's colours (0-3,
+; windows 1-4 and then again; attr background << 4 | foreground), Setup's
+; Colors.  For the task brought in front next.
+mvk_wincolor_ proc near
+        push    bx
+        mov     bx,ax
+        and     bx,3
+        mov     cs:fp_win[bx],dl
+        pop     bx
+        ret
+mvk_wincolor_ endp
 
 ; QPI 0Dh for the task now running (cur):  the foreground's own CRTC and
 ; DAC, a background task's trapped (cursor address to crtget/crtset, the
@@ -2644,7 +2658,16 @@ i10_f1: mov     ds,cs:kseg
         mov     bx,cs:cur
         call    taskptr
         pop     [bx].T_VESA
-i10_fx: mov     bx,[bp+2]       ; the BIOS's flags to the caller
+i10_fx: mov     bl,[bp+5]       ; a mode, the border (as MS-DOS's CLS) or
+        cmp     bl,00h          ; the palette set:  the window's colours
+        je      @F              ; again (fgpal, Setup's Colors)
+        cmp     bl,0Bh
+        je      @F
+        cmp     bl,10h
+        jne     i10_fy
+@@:     mov     ds,cs:kseg
+        call    fgpal
+i10_fy: mov     bx,[bp+2]       ; the BIOS's flags to the caller
         mov     [bp+10],bx
         pop     ds
         pop     bx

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx ipx7a netbios spx tcpip rtc mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -445,6 +445,26 @@ setup)
     check "MAXVIEW:  Learn N (Shift+Alt opens nothing)" "! grep -q 'Display Scripts' '$d/sa.txt'"
     check "MAXVIEW:  Tune Performance with Setup's 9 foreground ticks, swapping N" "grep -q 'Foreground ticks *\[ 9\]' '$d/tune.txt' && grep -q 'Background ticks *\[ 2\]' '$d/tune.txt' && grep -q 'Allow swapping out *\[N\]' '$d/tune.txt'"
     check "DOS works afterwards" "grep -q '^setup end' '$d/end.txt'"
+    ;;
+colors)
+    echo "== colors:  Setup's Colors (MAXVSET page C):  window 1 in 14 on 4; the program in front shows its black as red, MAXVIEW gone the standard palette"
+    cfg=$OUT/MAXVIEW.CFG
+    printf 'D|DosOne|C:\\COMMAND.COM||64|640\r\n' > "$cfg"
+    M="key:alt wait:Switch_Windows:20"
+    E="key:ret key:backspace,backspace"
+    CMD="C:\\MAXVSET" END="wait:colors_end:30" run colors 0 "" \
+        "$ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $ROOT/build/MAXVSET.EXE $cfg" \
+        "wait:Load_resident:60 key:c wait:Programs_in_their:10 key:spc key:down $E type:14 key:right $E type:4 sleep:1 text:page key:f2 wait:Settings_saved:10 key:esc sleep:3 type:MAXVSET_/LIST_>C:\\SL.TXT sleep:3 type:MAXVIEW wait:Open_Program:60 key:ret sleep:5 type:CLS sleep:3 shot:c1 $M key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:CLS sleep:2 shot:c2 type:echo_colors_end"
+    d=$OUT/colors
+    sl=$(file colors SL.TXT | tr '\n' ' ')
+    echo "  /LIST:  $sl"
+    red() { python3 -c "from PIL import Image; import sys; p=list(Image.open(sys.argv[1]).convert('RGB').getdata()); print(100*sum(1 for x in p if x[:3]==(168,0,0))//len(p))" "$1" 2>/dev/null; }
+    echo "  red:  $(red $d/c1.png)% in front, $(red $d/c2.png)% MAXVIEW gone"
+    check "the page:  window 1 14 on 4" "grep -q 'Programs in their window' '$d/page.txt' && grep -q '1 *14 *4' '$d/page.txt'"
+    check "saved:  COLORS YES, COLOR1 14,4, COLOR2 as DV's 1,6" "echo '$sl' | grep -q 'COLORS=YES ' && echo '$sl' | grep -q 'COLOR1=14,4 ' && echo '$sl' | grep -q 'COLOR2=1,6 '"
+    check "MAXVIEW:  the program in front, its black red" "[ \"\$(red $d/c1.png)\" -ge 80 ]"
+    check "MAXVIEW gone:  the standard palette" "[ \"\$(red $d/c2.png)\" = 0 ]"
+    check "DOS works afterwards" "grep -q '^colors end' '$d/end.txt'"
     ;;
 blank)
     echo "== blank:  Setup's screen blanker (BLANK=1):  the display off after a minute, a key on again and to the program (as DESQview 2.80, measured)"

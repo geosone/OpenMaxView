@@ -77,7 +77,7 @@ their byte-sized DVP ranges are rejected rather than guessed.
 
 The version-1 settings file contains `KEY=YES` or `KEY=NO` records, the
 text records of Mark's Auto Dialer, and the options of DESQview's Advanced
-Setup that MaxView has (`MAXVSET`'s pages Auto Dialer, Keyboard, Mouse,
+Setup that MaxView has (`MAXVSET`'s pages Auto Dialer, Colors, Keyboard, Mouse,
 Performance, Swapping, Video and Window Positions):
 
 | Key | Default | Effect |
@@ -103,6 +103,8 @@ Performance, Swapping, Video and Window Positions):
 | `LEFT_HANDED` | NO | YES:  for them the buttons are swapped (the right one is the left). Programs using INT 33h themselves are not changed. |
 | `BLANK` | 0 | Minutes (0-99) without a key or a mouse move until MAXVIEW turns the display off (its contents kept); a key or the mouse turns it on, the key goes on to the program (as DESQview's, measured). 0:  never. |
 | `SYNC_VIDEO` | NO | YES:  MAXVIEW writes only the changed cells of its windows, each in a horizontal retrace (CGA:  no snow). |
+| `COLORS` | NO | YES:  the program in front (a text mode, colour) shows its black and grey as its window's colours, through the VGA palette (as DESQview shows a window's colours); windows 5-9 take those of 1-4 again. Programs and MAXVIEW's own windows otherwise show their own colours. |
+| `COLOR1`..`COLOR4` | 1,3 1,6 7,4 1,2 | Window 1-4's text (0-15, 8-15 bright) and background (0-7) colours for `COLORS`; the defaults are DESQview 2.80's (blue on cyan, blue on brown, grey on red, blue on green). |
 | `WINDOW1`..`WINDOW9` | DESQview's | Where window 1-9 opens when its program has no starting window:  row, column, height, width of its contents (frame around them), for example `WINDOW1=1,1,10,78`.  The defaults are DESQview 2.80's (measured). |
 
 Unknown, duplicate or malformed records are validation errors rather than

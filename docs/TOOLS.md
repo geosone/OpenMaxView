@@ -70,7 +70,7 @@ returns a diagnostic. `/F:` chooses a catalogue other than `MAXVIEW.CFG`.
 ## MAXVSET.EXE
 
 Interactive global settings editor:  the launcher's options and those of
-DESQview's Advanced Setup that MaxView has (Auto Dialer, Keyboard, Mouse,
+DESQview's Advanced Setup that MaxView has (Auto Dialer, Colors, Keyboard, Mouse,
 Performance, Swapping, Video, Window Positions), one page each.
 
 ```text

@@ -48,6 +48,11 @@ static const unsigned char default_window[9][4] = {
     { 1, 42, 10, 37 }, { 14, 1, 10, 38 }, { 14, 42, 10, 37 }
 };
 
+/* DESQview 2.80's Colors:  windows 1-4, text and background (measured) */
+static const unsigned char default_color[4][2] = {
+    { 1, 3 }, { 1, 6 }, { 7, 4 }, { 1, 2 }
+};
+
 void odq_settings_defaults(odq_settings *settings)
 {
     memset(settings, 0, sizeof *settings);
@@ -67,6 +72,7 @@ void odq_settings_defaults(odq_settings *settings)
     settings->learn = 1;
     settings->mouse = 1;
     memcpy(settings->window, default_window, sizeof settings->window);
+    memcpy(settings->color, default_color, sizeof settings->color);
 }
 
 /* a number from low to high */
@@ -108,6 +114,24 @@ static int parse_window(char *text, unsigned char *window)
         window[i] = (unsigned char)value;
         text = comma + 1;
     }
+    return 1;
+}
+
+/* COLORn:  text,background */
+static int parse_color(char *text, unsigned char *color)
+{
+    char *comma = strchr(text, ',');
+    unsigned value;
+
+    if (comma == NULL)
+        return 0;
+    *comma = '\0';
+    if (!parse_number(trim(text), 0, 15, &value))
+        return 0;
+    color[0] = (unsigned char)value;
+    if (!parse_number(trim(comma + 1), 0, 7, &value))
+        return 0;
+    color[1] = (unsigned char)value;
     return 1;
 }
 
@@ -177,6 +201,17 @@ int odq_settings_load(const char *path, odq_settings *settings,
             destination = &parsed.left_handed;
         else if (equal_text(name, "SYNC_VIDEO"))
             destination = &parsed.sync_video;
+        else if (equal_text(name, "COLORS"))
+            destination = &parsed.colors;
+        else if (strlen(name) == 6 && name[5] >= '1' && name[5] <= '4') {
+            unsigned index = (unsigned)(name[5] - '1');
+
+            name[5] = '\0';
+            if (!equal_text(name, "COLOR") ||
+                !parse_color(value, parsed.color[index]))
+                goto syntax_error;
+            continue;
+        }
         else if (equal_text(name, "BLANK")) {
             if (!parse_number(value, 0, 99, &parsed.blank_minutes))
                 goto syntax_error;
@@ -295,6 +330,10 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     fprintf(stream, "LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     fprintf(stream, "BLANK=%u\n", settings->blank_minutes);
     fprintf(stream, "SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
+    fprintf(stream, "COLORS=%s\n", settings->colors ? "YES" : "NO");
+    for (index = 0; index < 4; ++index)
+        fprintf(stream, "COLOR%u=%u,%u\n", index + 1,
+                settings->color[index][0], settings->color[index][1]);
     for (index = 0; index < 9; ++index)
         fprintf(stream, "WINDOW%u=%u,%u,%u,%u\n", index + 1,
                 settings->window[index][0], settings->window[index][1],
