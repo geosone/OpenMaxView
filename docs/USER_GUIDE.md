@@ -180,8 +180,8 @@ Programs that call IPX by its interrupt 7Ah are included.
 Up to 8 IPX or SPX and 8 NETBIOS commands can be outstanding at a time
 (buffers up to 576 bytes).
 
-Novell Client32 for DOS (NIOS and its NLMs, with its own NETBIOS) works
-the same way; it needs Open 386MAX from commit fd4fdac on (newer than
+Novell Client32 for DOS (NIOS and its NLMs, with its own NETBIOS and
+TCP/IP) works the same way; it needs Open 386MAX from commit fd4fdac on (newer than
 9.00-beta7; no release has it yet).  NIOS is a VCPI program and keeps a
 copy of the page table it got when it loaded; older 386MAX versions left
 that copy pointing at the memory of the window that was current then, and

@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx ipx7a netbios spx mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup blank lefthand ipx ipx7a netbios spx tcpip mvlaunch memstat dossvc video mark help catalog learn lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -533,6 +533,27 @@ ipx|ipx7a|netbios|spx)
     fi
     check "the busy window ran on, the menu answers" "[ \"\$(last $c T.TXT tick)\" -gt 20 ] && grep -q 'Switch Windows' '$d/menu.txt'"
     check "DOS works afterwards" "grep -q '^${c} end' '$d/end.txt'"
+    ;;
+tcpip)
+    echo "== tcpip:  Novell Client32's TCP/IP (TCPIP.NLM) for a window behind a busy one:  its PING to QEMU's gateway"
+    C32=${C32DIR:-$ROOT/build/c32}
+    if [ ! -f "$C32/bin/NIOS.EXE" ] || [ ! -f "$C32/x/TCPIP/TCPIP.NLM" ]; then echo "  SKIP  no Client32 (C32DIR:  bin/ with NIOS and its NLMs, x/ the unpacked kit with TCPIP)"; continue; fi
+    d=$OUT/tcpip; rm -rf "$d"; mkdir -p "$d"
+    printf 'Protocol TCPIP\r\n    ip_address 10.0.2.15\r\n    ip_netmask 255.255.255.0\r\n    ip_router 10.0.2.2\r\n' > "$OUT/NET.CFG"
+    printf '@ECHO OFF\r\nC:\\PING 10.0.2.2 /N20 /P1 >C:\\P.TXT\r\n' > "$OUT/P.BAT"
+    printf 'P|Ping|C:\\COMMAND.COM /C C:\\P.BAT||128|640\r\nT|Busy|C:\\TICK.EXE C:\\T.TXT||64|640\r\n' > "$OUT/MAXVIEW.CFG"
+    L='SET NWLANGUAGE=ENGLISH|MD C:\NLS|MD C:\NLS\ENGLISH|COPY C:\*.MSG C:\NLS\ENGLISH >NUL|C:\NIOS >NUL|LOAD C:\LSLC32.NLM >NUL|LOAD C:\NBIC32.NLM >NUL|LOAD C:\CMSM.NLM >NUL|LOAD C:\ETHERTSM.NLM >NUL|LOAD C:\CNE2000.LAN PORT=300 INT=3 FRAME=ETHERNET_II >NUL|LOAD C:\TCPIP.NLM >C:\TCP.TXT'
+    M="key:alt wait:Switch_Windows:20"
+    KEEP=1 ACCEL="-accel tcg" XFILES="$(ls "$C32"/bin/* | tr '\n' ' ') $C32/x/TCPIP/TCPIP.NLM $C32/x/TCPIP/PING.EXE $C32/x/TCPIP/PING.MSG $C32/x/NLS/ENGLISH/TCPIP/TCPIP.MSG $OUT/NET.CFG $OUT/P.BAT $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $OUT/MAXVIEW.CFG $TICK" \
+        AUTO="@ECHO OFF|$L|C:\\MAXVIEW" QEMU_EXTRA="-device ne2k_isa,netdev=n0,iobase=0x300,irq=3,mac=52:54:00:12:34:0a -netdev user,id=n0" \
+        STEPS="wait:Open_Program:300 key:ret sleep:3 $M key:o wait:Change_a_Program:20 key:t sleep:60 $M sleep:2 text:menu key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_tcpip_end wait:tcpip_end:30 text:end" \
+        TESTDIR="$d" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/tcpip.log" 2>&1
+    p=$(file tcpip P.TXT | sed 's/   */\n/g')
+    echo "  ping:  $(echo "$p" | grep 'packets sent')"
+    check "TCP/IP bound to the card" "file tcpip TCP.TXT | grep -q 'IP bound to CNE2000'"
+    check "behind the busy window:  all 20 pings answered" "echo '$p' | grep -q '^20 packets sent, 20 responses received'"
+    check "the busy window ran on, the menu answers" "[ \"\$(last tcpip T.TXT tick)\" -gt 20 ] && grep -q 'Switch Windows' '$d/menu.txt'"
+    check "DOS works afterwards" "grep -q '^tcpip end' '$d/end.txt'"
     ;;
 mvlaunch)
     echo "== mvlaunch:  APP_START in MAXVIEW (demos/LAUNCH starts WORMS), its window with its DVP's settings"
