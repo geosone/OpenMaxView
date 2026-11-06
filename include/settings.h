@@ -40,6 +40,7 @@ typedef struct odq_settings {
     unsigned char color[4][2];
     /* Performance's Manage printer contention */
     unsigned printer;
+    unsigned net_buffers;       /* MAXVTSR's network buffers (/N:, each) */
 } odq_settings;
 
 enum odq_settings_result {

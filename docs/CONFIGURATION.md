@@ -105,6 +105,7 @@ Performance, Swapping, Video and Window Positions):
 | `LEFT_HANDED` | NO | YES:  for them the buttons are swapped (the right one is the left). Programs using INT 33h themselves are not changed. |
 | `BLANK` | 0 | Minutes (0-99) without a key or a mouse move until MAXVIEW turns the display off (its contents kept); a key or the mouse turns it on, the key goes on to the program (as DESQview's, measured). 0:  never. |
 | `SYNC_VIDEO` | NO | YES:  MAXVIEW writes only the changed cells of its windows, each in a horizontal retrace (CGA:  no snow). |
+| `NET_BUFFERS` | 8 | IPX and NETBIOS commands outstanding at a time (1-16, each; 576 bytes a buffer):  MAXVIEW loads MAXVTSR with `/N:n` (DESQview's Network Buffers).  It takes effect when MAXVIEW loads MAXVTSR. |
 | `PRINTER_CONTENTION` | NO | YES:  a window printing (INT 17h, LPT1-3, also DOS's PRN) waits while another window printed to that port in the last 3 seconds, then the printer is its own (DESQview's Manage printer contention, measured). |
 | `COLORS` | NO | YES:  the program in front (a text mode, colour) shows its black and grey as its window's colours, through the VGA palette (as DESQview shows a window's colours); windows 5-9 take those of 1-4 again. Programs and MAXVIEW's own windows otherwise show their own colours. |
 | `COLOR1`..`COLOR4` | 1,3 1,6 7,4 1,2 | Window 1-4's text (0-15, 8-15 bright) and background (0-7) colours for `COLORS`; the defaults are DESQview 2.80's (blue on cyan, blue on brown, grey on red, blue on green). |

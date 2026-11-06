@@ -188,7 +188,9 @@ not in front keeps receiving, and its event service or POST routine runs in
 its own window, as with DESQview's "Multitask IPX" and "Multitask NETBIOS".
 Programs that call IPX by its interrupt 7Ah are included.
 Up to 8 IPX or SPX and 8 NETBIOS commands can be outstanding at a time
-(buffers up to 576 bytes).
+(buffers up to 576 bytes); Setup's Performance page (Network buffers) or
+`MAXVTSR /N:n` raises that to as many as 16 each, 576 bytes of
+conventional memory per buffer.
 
 Novell Client32 for DOS (NIOS and its NLMs, with its own NETBIOS and
 TCP/IP) works the same way; it needs Open 386MAX from commit fd4fdac on (newer than

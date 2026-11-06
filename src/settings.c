@@ -72,6 +72,7 @@ void odq_settings_defaults(odq_settings *settings)
     settings->learn = 1;
     strcpy(settings->learn_quote, "`");
     settings->shift_states = 1;
+    settings->net_buffers = 8;
     settings->mouse = 1;
     memcpy(settings->window, default_window, sizeof settings->window);
     memcpy(settings->color, default_color, sizeof settings->color);
@@ -229,6 +230,10 @@ int odq_settings_load(const char *path, odq_settings *settings,
             if (!parse_number(value, 0, 6, &parsed.dial_baud))
                 goto syntax_error;
             continue;
+        } else if (equal_text(name, "NET_BUFFERS")) {
+            if (!parse_number(value, 1, 16, &parsed.net_buffers))
+                goto syntax_error;
+            continue;
         } else if (equal_text(name, "FOREGROUND")) {
             if (!parse_number(value, 1, 15, &parsed.fg_ticks))
                 goto syntax_error;
@@ -341,6 +346,7 @@ int odq_settings_save(const char *path, const odq_settings *settings)
     fprintf(stream, "LEFT_HANDED=%s\n", settings->left_handed ? "YES" : "NO");
     fprintf(stream, "BLANK=%u\n", settings->blank_minutes);
     fprintf(stream, "SYNC_VIDEO=%s\n", settings->sync_video ? "YES" : "NO");
+    fprintf(stream, "NET_BUFFERS=%u\n", settings->net_buffers);
     fprintf(stream, "PRINTER_CONTENTION=%s\n",
             settings->printer ? "YES" : "NO");
     fprintf(stream, "COLORS=%s\n", settings->colors ? "YES" : "NO");

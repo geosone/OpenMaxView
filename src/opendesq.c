@@ -644,7 +644,10 @@ static void reload_settings(odq_settings *settings)
 static void apply_resident_services(const odq_settings *settings, char *status)
 {
     if (settings->auto_tsr && !odq_resident()) {
-        system("MAXVTSR.COM >NUL");
+        char command[32];
+
+        sprintf(command, "MAXVTSR.COM /N:%u >NUL", settings->net_buffers);
+        system(command);
         if (odq_resident())
             strcpy(status, "Resident compatibility API installed.");
     }

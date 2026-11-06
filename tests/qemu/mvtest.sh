@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift reboot lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a ipxmany netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift reboot lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -502,14 +502,18 @@ lefthand)
     check "right button pressed:  left (01h); left pressed:  right (02h)" "[ '$st' = '01 02 ' ]"
     check "DOS works afterwards" "grep -q '^lefthand end' '$OUT/lefthand/end.txt'"
     ;;
-ipx|ipx7a|netbios|spx)
-    to=""; rm=R
+ipx|ipx7a|ipxmany|netbios|spx)
+    to=""; rm=R; ini=""
     if [ "$c" = ipx ]; then
         echo "== ipx:  IPX in a window behind a busy one (Novell ODI, NE2000, a second VM sending; DESQview's Multitask IPX)"
         prb=IPXPRB; ready=ipxprb_ready; nb=""; ftxt=I.TXT
     elif [ "$c" = ipx7a ]; then
         echo "== ipx7a:  as ipx, the receiver calling IPX by INT 7Ah (DESQview's Multitask IPX, interrupt 7A)"
         prb=IPXPRB; ready=ipxprb_ready; nb=""; ftxt=I.TXT; rm=R7
+    elif [ "$c" = ipxmany ]; then
+        echo "== ipxmany:  as ipx, the receiver with 12 listens, MAXVSET.INI NET_BUFFERS=16 (MAXVTSR /N:16; DESQview's Network Buffers)"
+        prb=IPXPRB; ready=ipxprb_ready; nb=""; ftxt=I.TXT; rm=M; ini=$OUT/MAXVSET.INI
+        printf 'NET_BUFFERS=16\r\n' > "$ini"
     elif [ "$c" = spx ]; then
         echo "== spx:  SPX (Novell's IPXODI) in a window behind a busy one:  a connection, sequenced packets, its termination (DESQview's Multitask IPX)"
         prb=SPXPRB; ready=spxprb_ready; nb=""; ftxt=P.TXT; to=" 52540012340A"
@@ -526,7 +530,7 @@ ipx|ipx7a|netbios|spx)
     nic() { echo "-device ne2k_isa,netdev=n0,iobase=0x300,irq=3,mac=52:54:00:12:34:$1 -netdev socket,id=n0,$2"; }
     port=$((20000 + RANDOM % 20000))
     M="key:alt wait:Switch_Windows:20"
-    KEEP=1 ACCEL="-accel tcg" XFILES="$NF $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $OUT/MAXVIEW.CFG $TICK" \
+    KEEP=1 ACCEL="-accel tcg" XFILES="$NF $ROOT/build/MAXVIEW.EXE $ROOT/build/MAXVTSR.COM $ROOT/build/MAXVANSI.COM $OUT/MAXVIEW.CFG $TICK $ini" \
         AUTO="@ECHO OFF|C:\\LSL|C:\\NE2000|C:\\IPXODI|${nb}C:\\MAXVIEW" QEMU_EXTRA="$(nic 0a listen=127.0.0.1:$port)" \
         STEPS="wait:Open_Program:120 key:ret wait:$ready:30 sleep:2 $M key:o wait:Change_a_Program:20 key:t sleep:140 $M sleep:2 text:menu key:q wait:Are_you_sure:10 key:y gone:Switch_Windows:30 sleep:2 type:echo_${c}_end wait:${c}_end:30 text:end" \
         TESTDIR="$d" "$MAXROOT/linux/test/dosboot.sh" msdos622 > "$OUT/$c.log" 2>&1 &
@@ -540,7 +544,7 @@ ipx|ipx7a|netbios|spx)
     i=$(file $c $ftxt); s=$(file $c-b $ftxt)
     echo "  receiver:  $(echo "$i" | head -1); $(echo "$i" | tail -1)"
     check "the sender:  30 sent" "echo '$s' | grep -q '^s 30 00'"
-    if [ "$c" = ipx ] || [ "$c" = ipx7a ]; then
+    if [ "$c" = ipx ] || [ "$c" = ipx7a ] || [ "$c" = ipxmany ]; then
         check "IPX entry MAXVTSR's (the driver's kept)" "echo '$i' | grep -q '^ipx ' && echo '$i' | grep -q '^open 00'"
         check "behind the busy window:  all 30 received, each ESR in the program's own task (none wrong)" "echo '$i' | grep -q '^end 30 esr 30 bad 0'"
     elif [ "$c" = spx ]; then

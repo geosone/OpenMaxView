@@ -23,7 +23,8 @@ to finish.
 
 ## MAXVTSR.COM
 
-Install-once resident compatibility service. It exposes API version 2.80 and
+Install-once resident compatibility service (`MAXVTSR [/N:n]`:  n network
+buffers for IPX and n for NETBIOS, 1-16, default 8). It exposes API version 2.80 and
 the implemented pause, foreground task-state, nested critical-section,
 foreground keyboard `PUSHKEY` and alternate-video-buffer calls. Running it
 again is harmless and reports that it is installed. `API.TXT` documents the

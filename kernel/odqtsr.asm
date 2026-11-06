@@ -214,6 +214,30 @@ start:
         int     21h
 
 install:
+        mov     si,81h                ; /N:n (1-16):  the network buffers
+@@:     lodsb                         ; of IPX and of NETBIOS (each n)
+        cmp     al,13
+        je      short args_done
+        cmp     al,':'
+        jne     short @B
+        xor     bx,bx
+@@:     lodsb
+        sub     al,'0'
+        cmp     al,9
+        ja      short @F
+        cbw
+        xchg    ax,bx
+        mov     dx,10
+        mul     dx
+        add     bx,ax
+        jmp     short @B
+@@:     cmp     bx,1
+        jb      short args_done
+        cmp     bx,IPXN
+        ja      short args_done
+        mov     word ptr ipx_n,bx
+        mov     word ptr nb_n,bx
+args_done:
         call    initialize_task_objects
         call    initialize_keyboard_objects
         mov     ax,word ptr task_objects_base
@@ -326,8 +350,20 @@ no_ipx7a:
         pop     es
         mov     ah,4Ah
         int     21h
+        mov     ax,word ptr ipx_n     ; IPX's buffers, NETBIOS's after them
+        mov     dx,IPXBUF
+        mul     dx
+        mov     word ptr nb_base,ax
+        mov     bx,ax
+        mov     ax,word ptr nb_n
+        mov     dx,NBBUF
+        mul     dx
+        add     ax,bx
+        add     ax,15
+        mov     cl,4
+        shr     ax,cl
+        mov     bx,ax
         mov     ah,48h
-        mov     bx,(IPXN * IPXBUF + NBN * NBBUF + 15) / 16
         int     21h
         jc      short @F              ; (none:  IPX, NETBIOS not shadowed)
         mov     word ptr netseg,ax
@@ -10743,7 +10779,7 @@ int2f_chain:
 ; SEQUENCED PACKET (12h, 17h) as listens (the IPX workspace back too:  the
 ; connection); the others (10h, 14h, 15h) straight to SPX.
 ; ---------------------------------------------------------------------------
-IPXN    equ     8                     ; shadows
+IPXN    equ     16                    ; shadows at most (ipx_n:  /N:n, 8)
 IPXECB  equ     42                    ; an ECB with one fragment (24h + 6)
 IPXBUF  equ     576                   ; the largest IPX packet
 
@@ -10882,7 +10918,7 @@ ipx_ecb_find:
         cmp     byte ptr cs:ipx_state[bx],0
         je      short ipx_ecb_slot
         inc     bx
-        cmp     bx,IPXN
+        cmp     bx,word ptr cs:ipx_n
         jb      short ipx_ecb_find
         sti                           ; none free:  straight to IPX
         pop     es
@@ -11061,7 +11097,7 @@ ipx_cancel_find:
         je      short ipx_cancel_it
 ipx_cancel_next:
         inc     bx
-        cmp     bx,IPXN
+        cmp     bx,word ptr cs:ipx_n
         jb      short ipx_cancel_find
         pop     es                    ; not one of ours
         pop     ds
@@ -11120,7 +11156,7 @@ ipx_esr:
         xor     dx,dx
         mov     bx,IPXECB
         div     bx
-        cmp     ax,IPXN
+        cmp     ax,word ptr cs:ipx_n
         jae     short ipx_esr_ret
         mov     bx,ax
         cmp     byte ptr cs:ipx_state[bx],4
@@ -11171,7 +11207,7 @@ ipx_mine_loop:
         pop     bx
 ipx_mine_next:
         inc     bx
-        cmp     bx,IPXN
+        cmp     bx,word ptr cs:ipx_n
         jb      short ipx_mine_loop
         xor     bx,bx                 ; NETBIOS's too
 nb_mine_loop:
@@ -11190,7 +11226,7 @@ nb_mine_loop:
         pop     bx
 nb_mine_next:
         inc     bx
-        cmp     bx,NBN
+        cmp     bx,word ptr cs:nb_n
         jb      short nb_mine_loop
 ipx_mine_done:
         pop     es
@@ -11327,7 +11363,7 @@ ipx_end_free:
         mov     byte ptr cs:ipx_state[bx],0
 ipx_end_next:
         inc     bx
-        cmp     bx,IPXN
+        cmp     bx,word ptr cs:ipx_n
         jb      short ipx_end_loop
         pop     es
         pop     ds
@@ -11349,7 +11385,7 @@ ipx_end_next:
 ; interrupt) when its task runs.  CANCEL of a shadowed NCB cancels the
 ; shadow.  RESET, chain sends, UNLINK and a longer buffer go straight on.
 ; ---------------------------------------------------------------------------
-NBN     equ     8
+NBN     equ     16                    ; at most (nb_n:  /N:n, 8)
 NCBSZ   equ     64
 NBBUF   equ     576
 
@@ -11425,7 +11461,7 @@ nb_find:
         cmp     byte ptr cs:nb_state[bx],0
         je      short nb_slot
         inc     bx
-        cmp     bx,NBN
+        cmp     bx,word ptr cs:nb_n
         jb      short nb_find
         sti
 nb_pass:
@@ -11479,7 +11515,7 @@ nb_nopost:
         mov     ax,word ptr cs:nb_slot_n ; the buffer here
         mov     dx,NBBUF
         mul     dx
-        add     ax,IPXN * IPXBUF
+        add     ax,word ptr cs:nb_base
         mov     word ptr es:[di+4],ax
         mov     dx,word ptr cs:netseg
         mov     word ptr es:[di+6],dx
@@ -11553,7 +11589,7 @@ nb_cancel_find:
         je      short nb_cancel_it
 nb_cancel_next:
         inc     bx
-        cmp     bx,NBN
+        cmp     bx,word ptr cs:nb_n
         jb      short nb_cancel_find
         jmp     nb_pass
 nb_cancel_it:
@@ -11592,7 +11628,7 @@ nb_post:
         xor     dx,dx
         mov     bx,NCBSZ
         div     bx
-        cmp     ax,NBN
+        cmp     ax,word ptr cs:nb_n
         jae     short nb_post_ret
         mov     bx,ax
         cmp     byte ptr cs:nb_state[bx],1
@@ -11717,7 +11753,7 @@ nb_end_free:
         mov     byte ptr cs:nb_state[bx],0
 nb_end_next:
         inc     bx
-        cmp     bx,NBN
+        cmp     bx,word ptr cs:nb_n
         jb      short nb_end_loop
         pop     es
         pop     di
@@ -11758,6 +11794,9 @@ dlv_ctx        dw 0                   ; the page table active (delivery)
 ipx_tecb       dd IPXN dup(0)         ; the program's ECB
 ipx_ecbs       db IPXN * IPXECB dup(0)
 netseg         dw 0                   ; IPX's, then NETBIOS's buffers
+ipx_n          dw 8                   ; shadows (/N:n, 1-16; DV's Network
+nb_n           dw 8                   ; Buffers)
+nb_base        dw 0                   ; NETBIOS's buffers in netseg
 
 old10          dd 0
 old15          dd 0

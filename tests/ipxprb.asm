@@ -1,6 +1,7 @@
 ; SPDX-License-Identifier: GPL-3.0-or-later
-; IPX (measurement and tests/qemu):  IPXPRB file S|R|S7|R7 [n]
-;   (S7, R7:  IPX's functions by INT 7Ah, not its entry)
+; IPX (measurement and tests/qemu):  IPXPRB file S|R|S7|R7|M [n]
+;   (S7, R7:  IPX's functions by INT 7Ah, not its entry; M:  R with 12
+;   listens)
 ;   the IPX entry (INT 2Fh AX=7A00h), "ipx SSSS:OOOO" and the own address
 ;   ("addr" net, node); socket 4545h opened (short-lived), "open cc".
 ;   S:  n packets (default 20) broadcast to the socket, one per half
@@ -18,7 +19,7 @@
         org     100h
 
 SOCKET  equ     4545h                 ; (as IPX wants it:  high byte first)
-NLISTEN equ     4
+NLISTEN equ     12                    ; at most (listens)
 ECBSIZE equ     42                    ; ECB with one fragment (24h + 6)
 PKTSIZE equ     30 + 16               ; IPX header and the data
 
@@ -44,7 +45,11 @@ start:
         cmp     al,13
         je      usage
         and     al,0DFh
-        mov     mode,al
+        cmp     al,'M'                ; M:  R with 12 listens
+        jne     @F
+        mov     al,'R'
+        mov     listens,NLISTEN
+@@:     mov     mode,al
         cmp     byte ptr [si],'7'     ; R7, S7:  IPX by INT 7Ah
         jne     @F
         inc     si
@@ -183,7 +188,7 @@ receiver:
         xor     bx,bx
 @@:     call    post
         inc     bx
-        cmp     bx,NLISTEN
+        cmp     bx,listens
         jb      @B
         mov     ax,40h
         mov     es,ax
@@ -224,7 +229,7 @@ r_ecb:  call    ecbof
         jae     r_end
 r_ecb_next:
         inc     bx
-        cmp     bx,NLISTEN
+        cmp     bx,listens
         jb      r_ecb
         mov     bx,0Ah                ; RELINQUISH CONTROL
         call    ipxcall
@@ -249,7 +254,7 @@ r_end:  xor     bx,bx                 ; the listens cancelled
         call    ipxcall
         pop     bx
         inc     bx
-        cmp     bx,NLISTEN
+        cmp     bx,listens
         jb      @B
         mov     di,offset line
         mov     si,offset t_end
@@ -500,6 +505,7 @@ hdr     dw      0FFFFh, 0             ; checksum, length
         db      'IPXPRB', 0, 0        ; the data:  "IPXPRB", the number
         db      8 dup (0)
 sendecb db      ECBSIZE dup (0)
+listens dw      4
 lecb    db      NLISTEN * ECBSIZE dup (0)
 lpkt    db      NLISTEN * PKTSIZE dup (0)
 fname   db      80 dup (0)
