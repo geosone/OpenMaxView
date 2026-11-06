@@ -100,7 +100,7 @@ MAXROOT=${MAXROOT:-$(cd "$ROOT/../Open386MAX" && pwd)}
 OUT=$ROOT/build/test-qemu
 TICK=$MAXROOT/build/TESTS/TICK.EXE
 export MTOOLS_SKIP_CHECK=1
-CASES=${*:-two mem serial nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a ipxmany netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift reboot lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
+CASES=${*:-two mem serial comlat nodes samecom keys kill crit desk deskmany win rearr mrs tune dvpopt dvpwin setup colors blank lefthand ipx ipx7a ipxmany netbios spx tcpip rtc printer mvlaunch memstat dossvc video mark help catalog learn lquote shift reboot lpause dial scis paste ntf alw vntf swap noswap dvapi cwd ems gfx objs ipc kbd objq fields selects records mouse fieldops pointer pntf revive wobj panel menu demos countdn serve subtask worms launch ownwin subown wwrite wstream wquery crtc many progs}
 PROGS=${PROGS:-XMSFUNC XMSLOCK EMSFUNC EMSMORE VCPIFUNC VDSFUNC V86FUNC INT15 A20 DPMIMISC RMCBNEST PMSTACK}
 JOBS=${JOBS:-6}
 EXPECT_VDSFUNC='physical = linear FAIL'
@@ -189,6 +189,19 @@ serial)
     check "every byte echoed unchanged" "[ \"\${feed% ok}\" != \"\$feed\" ]"
     check "SERECHO counted 3000 bytes" "[ $rx -eq 3000 ]"
     check "task 2 counts" "[ $t2 -ge 100 ]"
+    ;;
+comlat)
+    echo "== comlat:  a serial node behind a busy window answers single bytes quickly (DESQview 2.80, Optimize communications Y and N alike:  median 26/23 ms, at most 333/283 ms; measured)"
+    sock=$OUT/comlat.sock; rm -f "$sock" "$OUT/comlat.ping"
+    ( sleep 5; START=15 python3 -I "$ROOT/tests/qemu/serping.py" "$sock" 60 --out "$OUT/comlat.ping" > /dev/null ) &
+    SERIAL="-serial unix:$sock,server,nowait" FG="/F2 " run comlat 70 \
+        "C:\\SERPRB.COM 1 C:\\S1.TXT ; C:\\TICK.EXE C:\\T.TXT" "$ROOT/build/SERPRB.COM $TICK"
+    wait
+    p=$(head -1 "$OUT/comlat.ping" 2>/dev/null); mx=$(echo "$p" | awk '{print $9}')
+    echo "  ${p:-no ping result}, TICK $(last comlat T.TXT tick)"
+    check "60 bytes echoed, none lost" "echo '$p' | grep -q 'n 60 .* lost 0$'"
+    check "each within 1 s (DESQview:  333 ms at most)" "[ '${mx:-9999}' -lt 1000 ]"
+    check "the busy window in front ran on" "[ \"\$(last comlat T.TXT tick)\" -gt 30 ]"
     ;;
 nodes)
     echo "== nodes:  two BBS nodes (COM1 IRQ4, COM2 IRQ3) at once, the foreground switched"
